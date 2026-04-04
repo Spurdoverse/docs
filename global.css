@@ -1,0 +1,16 @@
+/* Code blocks: wrap instead of horizontal scroll */
+pre.shiki {
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  overflow-x: hidden !important;
+}
+
+pre.shiki code {
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+}
+
+.code-block pre {
+  white-space: pre-wrap !important;
+  overflow-x: hidden !important;
+}

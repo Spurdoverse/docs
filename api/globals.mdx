@@ -1,0 +1,396 @@
+---
+title: "Globals"
+sidebarTitle: "Globals"
+description: "Timers, console output, frame time, game state, and the event system — available everywhere without imports."
+icon: "globe"
+---
+
+Everything on this page is available in every script without any import.
+These are the building blocks every script starts with: scheduling work,
+reacting to game events, and reading per-frame state.
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Timers" icon="clock" href="#timers">
+    Schedule one-shot or repeating callbacks with setTimeout and setInterval.
+  </Card>
+  <Card title="console" icon="terminal" href="#console">
+    Log, warn, and error output to the script console.
+  </Card>
+  <Card title="time & game" icon="gauge-high" href="#time--game">
+    Per-frame timestamps, tick counters, and map info.
+  </Card>
+  <Card title="Events — on()" icon="bolt" href="#events">
+    React to ticks, input, and engine events with on().
+  </Card>
+</CardGroup>
+
+---
+
+## Timers
+
+Standard browser-style timer API. IDs returned by `setTimeout` and
+`setInterval` are independent — pass the right ID to the right clear function.
+
+### setTimeout
+
+<br />
+
+```ts
+setTimeout(callback: () => void, ms: number): number
+```
+
+Calls `callback` once after `ms` milliseconds. Returns a timer ID.
+
+```ts
+// Log a message 3 seconds after the script loads
+setTimeout(() => {
+    console.log("3 seconds have passed");
+}, 3000);
+```
+
+---
+
+### setInterval
+
+<br />
+
+```ts
+setInterval(callback: () => void, ms: number): number
+```
+
+Calls `callback` repeatedly every `ms` milliseconds. Returns a timer ID.
+
+```ts
+// Print game time every second
+const id = setInterval(() => {
+    console.log("Server time:", game.serverTime.toFixed(2));
+}, 1000);
+```
+
+---
+
+### clearTimeout / clearInterval
+
+<br />
+
+```ts
+clearTimeout(id: number): void
+clearInterval(id: number): void
+```
+
+Cancels a pending timer by its ID. Safe to call with an invalid or
+already-fired ID.
+
+```ts
+const id = setInterval(() => {
+    console.log("tick");
+}, 500);
+
+// Stop after 5 seconds
+setTimeout(() => clearInterval(id), 5000);
+```
+
+<Warning>
+  Always cancel intervals you no longer need. Intervals keep firing even if
+  the entities or objects they reference have become invalid, and they
+  accumulate across script reloads until explicitly cleared.
+</Warning>
+
+---
+
+## console
+
+Standard console output. All three methods accept any number of arguments
+and format them automatically.
+
+```ts
+console.log(...args: any[]): void    // general output
+console.warn(...args: any[]): void   // yellow warning
+console.error(...args: any[]): void  // red error
+```
+
+```ts
+console.log("Player HP:", player.m_iHealth);
+console.warn("Entity not found for index", idx);
+console.error("Critical failure:", err);
+
+// Multiple values are space-joined
+console.log("pos:", pos.x, pos.y, pos.z);
+```
+
+---
+
+## time & game
+
+### time
+
+A global `number` that holds the **elapsed time in seconds** since the script
+started. Updated every frame.
+
+```ts
+declare var time: number;
+```
+
+```ts
+// Animate opacity using a sine wave
+const alpha = Math.sin(time * 2) * 127 + 128;
+const color = Color.fromRGBA(255, 255, 255, alpha);
+render.text(pos, "Hello", color);
+```
+
+---
+
+### game
+
+The `game` object exposes engine globals that are updated each frame.
+All fields are **readonly**.
+
+```ts
+declare var game: GameGlobals;
+```
+
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `serverTime` | `number` | Current server-side time in seconds |
+| `curTime` | `number` | Client-side current time in seconds |
+| `frameTime` | `number` | Time elapsed since the previous frame (seconds) |
+| `absFrameTime` | `number` | Absolute frame time, unaffected by time scaling |
+| `tickFraction` | `number` | Fractional position within the current tick `[0, 1]` |
+| `tickCount` | `number` | Current server tick number |
+| `frameCount` | `number` | Total frames rendered since engine start |
+| `maxClients` | `number` | Maximum number of players on the server |
+| `mapName` | `string` | Full map path, e.g. `"maps/de_dust2.vpk"` |
+| `shortMapName` | `string` | Short map name, e.g. `"de_dust2"` |
+
+```ts
+on("tick", () => {
+    // Frame-rate independent movement speed
+    const speed = 200 * game.frameTime;
+
+    console.log(`Tick #${game.tickCount} — map: ${game.shortMapName}`);
+});
+```
+
+<Tip>
+  Use `game.frameTime` to make any per-frame calculation **frame-rate
+  independent**. Multiply velocities, animation deltas, and lerp factors
+  by `game.frameTime` so they behave the same at 60 FPS and 300 FPS.
+</Tip>
+
+---
+
+## Events
+
+### on()
+
+<br />
+
+```ts
+on(event: string, callback: (...args: any[]) => void): void
+```
+
+Registers a callback for a named event. Multiple callbacks can be registered
+for the same event — they all fire in registration order.
+
+---
+
+### Built-in events
+
+#### `"tick"`
+
+Fires every game frame, before rendering. The most common place for
+per-frame logic — entity reads, render calls, etc.
+
+```ts
+on("tick", () => {
+    const local = Entities.getLocalPlayer();
+    if (!local) return;
+
+    const { success, screen } = Math.worldToScreen(local.m_vecAbsOrigin);
+    if (success) {
+        render.text(screen, `HP: ${local.m_iHealth}`, Color.white());
+    }
+});
+```
+
+---
+
+#### `"onUnload"`
+
+Fires once when the script is about to be unloaded or reloaded. Use it to
+clean up intervals, close watchers, or restore any state you changed.
+
+```ts
+const intervalId = setInterval(() => { /* ... */ }, 100);
+
+on("onUnload", () => {
+    clearInterval(intervalId);
+    console.log("Script unloaded, cleanup done.");
+});
+```
+
+---
+
+#### `"OnMouseMove"`
+
+```ts
+on("OnMouseMove", (absX: number, absY: number, deltaX: number, deltaY: number) => void)
+```
+
+| Param | Type | |
+|:------|:-----|:--|
+| `absX` | `number` | Absolute cursor X position in screen pixels |
+| `absY` | `number` | Absolute cursor Y position in screen pixels |
+| `deltaX` | `number` | Change in X since the last event |
+| `deltaY` | `number` | Change in Y since the last event |
+
+```ts
+let cursorPos = { x: 0, y: 0 };
+
+on("OnMouseMove", (absX, absY) => {
+    cursorPos = { x: absX, y: absY };
+});
+```
+
+---
+
+#### `"OnMouseClick"`
+
+```ts
+on("OnMouseClick", (button: number, isDown: boolean) => void)
+```
+
+| Param | Type | |
+|:------|:-----|:--|
+| `button` | `number` | `1` = left, `2` = right, `3` = middle |
+| `isDown` | `boolean` | `true` on press, `false` on release |
+
+```ts
+on("OnMouseClick", (button, isDown) => {
+    if (button === 1 && isDown) {
+        console.log("Left mouse button pressed");
+    }
+});
+```
+
+---
+
+#### `"OnMouseScroll"`
+
+```ts
+on("OnMouseScroll", (direction: number) => void)
+```
+
+| Param | Type | |
+|:------|:-----|:--|
+| `direction` | `number` | `1` = scroll up, `-1` = scroll down |
+
+```ts
+on("OnMouseScroll", (dir) => {
+    console.log(dir > 0 ? "Scrolled up" : "Scrolled down");
+});
+```
+
+---
+
+#### `"OnKeyDown"` / `"OnKeyUp"`
+
+```ts
+on("OnKeyDown", (vkCode: number) => void)
+on("OnKeyUp",   (vkCode: number) => void)
+```
+
+| Param | Type | |
+|:------|:-----|:--|
+| `vkCode` | `number` | Windows Virtual Key code |
+
+```ts
+const VK_INSERT = 0x2D;
+
+on("OnKeyDown", (vk) => {
+    if (vk === VK_INSERT) {
+        console.log("Insert pressed");
+    }
+});
+
+on("OnKeyUp", (vk) => {
+    if (vk === VK_INSERT) {
+        console.log("Insert released");
+    }
+});
+```
+
+<Tip>
+  Virtual Key codes are listed in the
+  [Microsoft documentation](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes).
+  Common ones: `0x01` LMB · `0x02` RMB · `0x04` MMB · `0x10` Shift ·
+  `0x11` Ctrl · `0x12` Alt · `0x2D` Insert · `0x2E` Delete.
+</Tip>
+
+---
+
+## Recipes
+
+### Feature toggle with a keybind
+
+```ts
+let enabled = false;
+const VK_INSERT = 0x2D;
+
+on("OnKeyDown", (vk) => {
+    if (vk === VK_INSERT) {
+        enabled = !enabled;
+        console.log("Feature:", enabled ? "ON" : "OFF");
+    }
+});
+
+on("tick", () => {
+    if (!enabled) return;
+    // ... render / logic
+});
+```
+
+### Throttle expensive work with setInterval
+
+```ts
+// Run heavy logic at 10 Hz instead of every frame
+let cachedEnemies = [];
+
+setInterval(() => {
+    cachedEnemies = Entities.find("C_CSPlayerPawn")
+        .filter(p => p.m_iHealth > 0)
+        .toArray();
+}, 100);
+
+on("tick", () => {
+    // Use the pre-built list every frame — fast
+    for (const enemy of cachedEnemies) {
+        const { success, screen } = Math.worldToScreen(enemy.m_vecAbsOrigin);
+        if (success) render.circleFilled(screen, 4, Color.red());
+    }
+});
+```
+
+### Frame-time independent animation
+
+```ts
+let alpha = 0;
+let direction = 1;
+
+on("tick", () => {
+    // Fade in/out at 120 units per second, regardless of FPS
+    alpha += direction * 120 * game.frameTime;
+
+    if (alpha >= 255) { alpha = 255; direction = -1; }
+    if (alpha <= 0)   { alpha = 0;   direction =  1; }
+
+    const { x: w, y: h } = render.getScreenSize();
+    render.text(
+        { x: w / 2, y: h / 2 },
+        "Hello World",
+        Color.fromRGBA(255, 255, 255, alpha)
+    );
+});
+```

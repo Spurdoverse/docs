@@ -1,0 +1,216 @@
+---
+title: "Memory"
+sidebarTitle: "Memory"
+description: "Construct pointers, resolve loaded modules, and scan memory for byte patterns."
+icon: "memory"
+---
+
+The `Memory` global gives scripts access to the process address space.
+Use it to find a module's base address, scan for signatures, and create
+[Pointer](/api/types/pointer) values to navigate from there.
+
+<Note>
+  `ptr(addr)` is also available as a **global shorthand** — you don't need
+  to write `Memory.ptr(addr)` everywhere.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="ptr()" icon="arrow-pointer" href="#ptr">
+    Wrap any address in a Pointer.
+  </Card>
+  <Card title="Memory.module()" icon="box" href="#memorymodule">
+    Resolve a loaded module to its base address and size.
+  </Card>
+  <Card title="Memory.scan()" icon="magnifying-glass" href="#memoryscan">
+    Find the first occurrence of a byte pattern in a module.
+  </Card>
+  <Card title="Memory.scanAll()" icon="list" href="#memoryscanall">
+    Collect every occurrence of a pattern across a module.
+  </Card>
+</CardGroup>
+
+---
+
+## ptr
+
+<br />
+
+```ts
+ptr(address: number | BigInt | Pointer): Pointer
+Memory.ptr(address: number | BigInt | Pointer): Pointer
+```
+
+Creates a [Pointer](/api/types/pointer) from a raw address. The two forms
+are identical — `ptr()` is the global shorthand.
+
+```ts
+const p = ptr(0x7FFE0000n);
+console.log(p.address);  // 7FFE0000n
+console.log(p.isNull);   // false
+
+const zero = ptr(0);
+console.log(zero.isNull); // true
+```
+
+---
+
+## Memory.module
+
+<br />
+
+```ts
+Memory.module(name: string): { base: Pointer, size: number }
+```
+
+Looks up a loaded module by name and returns its base address and byte size.
+Throws if the module is not found.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `name` | `string` | Module file name, e.g. `"client.dll"` |
+
+| Returns | Type | |
+|:--------|:-----|:--|
+| `base` | `Pointer` | Start of the module in the process |
+| `size` | `number` | Total byte size of the module |
+
+```ts
+const { base, size } = Memory.module("client.dll");
+console.log(`client.dll → 0x${base.address.toString(16)} (${size} bytes)`);
+```
+
+```ts
+// Store base for repeated offset calculations
+const client = Memory.module("engine2.dll").base;
+const someField = client.add(0x1234AB).read('int32');
+```
+
+<Warning>
+  Throws `"Memory.module: '<name>' not found"` if the module isn't loaded.
+  Make sure the target process has already mapped the DLL before calling this.
+</Warning>
+
+---
+
+## Memory.scan
+
+<br />
+
+```ts
+Memory.scan(moduleName: string, pattern: string): Pointer | null
+```
+
+Scans the entire module for the **first** occurrence of `pattern` and returns
+a [Pointer](/api/types/pointer) to it. Returns `null` if not found.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `moduleName` | `string` | Module to scan, e.g. `"client.dll"` |
+| `pattern` | `string` | IDA-style byte pattern (see [Pattern syntax](#pattern-syntax)) |
+
+```ts
+const result = Memory.scan("client.dll", "48 8B 05 ? ? ? ? 48 85 C0 74");
+
+if (result) {
+    // result points to the first matching byte
+    const offset = result.read('int32', 1)[0];
+    const target = result.add(7).add(offset);
+}
+```
+
+---
+
+## Memory.scanAll
+
+<br />
+
+```ts
+Memory.scanAll(moduleName: string, pattern: string): Pointer[]
+```
+
+Returns an array of [Pointer](/api/types/pointer) values — one for each
+occurrence of `pattern` in the module. Returns an empty array if none found.
+
+```ts
+const hits = Memory.scanAll("server.dll", "FF 25 ? ? ? ? 90");
+console.log(`Found ${hits.length} matches`);
+
+for (const hit of hits) {
+    console.log(hit.address.toString(16));
+}
+```
+
+---
+
+## Pattern syntax
+
+Patterns are space-separated hex bytes. Use `?` or `??` as wildcards to
+match any byte at that position.
+
+```
+48 8B 05 ? ? ? ? 48 85 C0 74 ??
+```
+
+| Token | Matches |
+|:------|:--------|
+| `AB` | Exactly `0xAB` |
+| `?` | Any byte |
+| `??` | Any byte (same as `?`) |
+
+<Tip>
+  Patterns are usually copied from a disassembler (IDA, Ghidra, x64dbg).
+  Wildcard the bytes that change between builds — typically relative offsets,
+  addresses, and immediate values that the linker patches at link time.
+</Tip>
+
+---
+
+## Recipes
+
+### Signature scan + relative offset resolution
+
+A common pattern: scan for a `lea`/`mov` instruction, read the embedded
+relative offset, and resolve the final address.
+
+```ts
+// Find: MOV RAX, [rip+????]   →   48 8B 05 ?? ?? ?? ??
+const sig = Memory.scan("client.dll", "48 8B 05 ? ? ? ? 48 85 C0");
+if (!sig) throw new Error("Signature not found");
+
+// Read the 4-byte signed offset at +3, instruction ends at +7
+const rel = sig.add(3).read('int32');
+const target = sig.add(7).add(rel);
+console.log("Target:", target.address.toString(16));
+```
+
+### Walk a pointer chain from a scanned base
+
+```ts
+const { base } = Memory.module("client.dll");
+
+// Static offset from module base, then walk a pointer chain
+const health = base
+    .add(0x1234AB)    // static offset
+    .deref()          // follow pointer
+    .add(0x100)       // field offset
+    .read('int32');
+
+console.log("Health:", health);
+```
+
+### Collect all occurrences and filter by context
+
+```ts
+const hits = Memory.scanAll("client.dll", "FF 15 ? ? ? ?");
+
+for (const hit of hits) {
+    // Read 2 bytes before the match for context
+    const snap = hit.sub(2).read(8);
+    const prefix = snap.at(0).uint16;
+    if (prefix === 0x4889) {
+        console.log("Interesting hit at", hit.address.toString(16));
+    }
+}
+```

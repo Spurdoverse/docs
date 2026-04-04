@@ -1,0 +1,465 @@
+---
+title: "FileSystem"
+sidebarTitle: "FileSystem"
+description: "Read, write, and manage files inside a sandboxed data directory."
+icon: "folder-open"
+---
+
+The `fs` global gives scripts a sandboxed file system rooted at `scripts/data`.
+No imports required — use `fs.readFile(...)`, `fs.mkdir(...)`, etc. directly.
+
+<Note>
+  All paths are **relative to `scripts/data`**. Absolute paths or anything that
+  escapes the sandbox (e.g. `../../secret`) will throw `"path escapes sandbox"`.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Reading & writing" icon="file-pen" href="#reading--writing">
+    Read, write, and append file contents as UTF-8 strings.
+  </Card>
+  <Card title="Directories" icon="folder" href="#directories">
+    Create, remove, and list directory entries.
+  </Card>
+  <Card title="Metadata & checks" icon="circle-info" href="#metadata--checks">
+    Check existence, read file size, and inspect types.
+  </Card>
+  <Card title="Move, copy & watch" icon="arrows-rotate" href="#move-copy--watch">
+    Rename, copy, truncate, and watch paths for changes.
+  </Card>
+</CardGroup>
+
+---
+
+## Reading & writing
+
+### fs.readFile
+
+<br />
+
+```ts
+fs.readFile(path: string): Promise<string>
+fs.readFileSync(path: string): string
+```
+
+Returns the full UTF-8 contents of a file.
+
+```ts
+const json = await fs.readFile("profiles/player1.json");
+const profile = JSON.parse(json);
+console.log(`Welcome back, ${profile.name}!`);
+```
+
+---
+
+### fs.writeFile
+
+<br />
+
+```ts
+fs.writeFile(path: string, data: string): Promise<true>
+fs.writeFileSync(path: string, data: string): true
+```
+
+Writes `data` to a file, **replacing** it if it already exists.
+
+```ts
+const save = { level: 12, hp: 85, inventory: ["sword", "shield", "potion"] };
+await fs.writeFile("saves/slot1.json", JSON.stringify(save, null, 2));
+```
+
+---
+
+### fs.appendFile
+
+<br />
+
+```ts
+fs.appendFile(path: string, data: string): Promise<true>
+fs.appendFileSync(path: string, data: string): true
+```
+
+Appends `data` to the end of a file. Creates the file if it doesn't exist.
+
+```ts
+async function log(message: string) {
+    const line = `[${new Date().toISOString()}] ${message}\n`;
+    await fs.appendFile("debug.log", line);
+}
+
+await log("Script started");
+await log("Player spawned at (100, 200)");
+```
+
+<Tip>
+  Prefer the async variants (`readFile`, `writeFile`, `appendFile`) in event
+  handlers and loops. Use the `*Sync` variants only during initialization where
+  blocking I/O is acceptable.
+</Tip>
+
+---
+
+## Directories
+
+### fs.mkdir
+
+<br />
+
+```ts
+fs.mkdir(path: string, recursive?: boolean): Promise<void>
+fs.mkdirSync(path: string, recursive?: boolean): void
+```
+
+Creates a directory. Pass `true` as the second argument to create the full
+path at once (like `mkdir -p`).
+
+```ts
+await fs.mkdir("saves/player_42/backups", true);
+```
+
+---
+
+### fs.rmdir
+
+<br />
+
+```ts
+fs.rmdir(path: string, recursive?: boolean): Promise<void>
+```
+
+Removes a directory. Pass `true` to delete it recursively.
+
+```ts
+await fs.rmdir("saves/old_profile", true);
+```
+
+---
+
+### fs.readdir
+
+<br />
+
+```ts
+fs.readdir(path: string): Promise<string[]>
+fs.readdirSync(path: string): string[]
+```
+
+Returns an array of entry names (files and subdirectories) inside `path`.
+
+```ts
+const entries = await fs.readdir("saves");
+// ["slot1.json", "slot2.json", "autosave.json", "backups"]
+
+// Sync — build a script picker
+const files = fs.readdirSync("scripts");
+const jsFiles = files.filter(f => fs.path.extname(f) === ".js");
+```
+
+---
+
+## Metadata & checks
+
+### fs.exists
+
+<br />
+
+```ts
+fs.exists(path: string): Promise<boolean>
+fs.existsSync(path: string): boolean
+```
+
+Returns `true` if the path exists (file or directory), `false` otherwise.
+
+```ts
+if (await fs.exists("saves/autosave.json")) {
+    console.log("Autosave found, loading...");
+} else {
+    console.log("No autosave, starting fresh.");
+}
+```
+
+---
+
+### fs.stat
+
+<br />
+
+```ts
+fs.stat(path: string): Promise<StatResult>
+fs.statSync(path: string): StatResult
+```
+
+Returns a `StatResult` object describing the path.
+
+| Field         | Type      | Description                              |
+|:--------------|:----------|:-----------------------------------------|
+| `size`        | `number`  | File size in bytes (`0` for directories) |
+| `isFile`      | `boolean` | `true` if a regular file                 |
+| `isDirectory` | `boolean` | `true` if a directory                    |
+
+```ts
+const info = await fs.stat("saves/slot1.json");
+
+if (info.isFile) {
+    console.log(`Save file size: ${(info.size / 1024).toFixed(1)} KB`);
+}
+```
+
+---
+
+## Move, copy & watch
+
+### fs.unlink
+
+<br />
+
+```ts
+fs.unlink(path: string): Promise<void>
+fs.unlinkSync(path: string): boolean
+```
+
+Deletes a single file. The async variant rejects if the file doesn't exist;
+the sync variant returns `false` instead of throwing.
+
+```ts
+await fs.writeFile("temp_export.txt", buildExportData());
+await uploadToServer("temp_export.txt");
+await fs.unlink("temp_export.txt");
+```
+
+---
+
+### fs.rename
+
+<br />
+
+```ts
+fs.rename(oldPath: string, newPath: string): Promise<void>
+```
+
+Moves or renames a file/directory within the sandbox.
+
+```ts
+if (await fs.exists("debug.log")) {
+    await fs.rename("debug.log", "debug_prev.log");
+}
+await fs.writeFile("debug.log", "");
+```
+
+---
+
+### fs.copyFile
+
+<br />
+
+```ts
+fs.copyFile(src: string, dst: string): Promise<void>
+```
+
+Copies a file. Overwrites `dst` if it already exists.
+
+```ts
+// Backup before modifying
+await fs.copyFile("config.json", "config.backup.json");
+
+const config = JSON.parse(await fs.readFile("config.json"));
+config.debug = true;
+await fs.writeFile("config.json", JSON.stringify(config, null, 2));
+```
+
+---
+
+### fs.truncate
+
+<br />
+
+```ts
+fs.truncate(path: string, length?: number): Promise<void>
+```
+
+Resizes a file to `length` bytes. Defaults to `0` (clears the file).
+If the file is shorter than `length`, it is padded with null bytes.
+
+```ts
+// Clear a log without deleting it
+await fs.truncate("debug.log");
+
+// Keep only the first 1 KB
+await fs.truncate("large_output.txt", 1024);
+```
+
+---
+
+### fs.watch
+
+<br />
+
+```ts
+fs.watch(
+    path: string,
+    callback: (event: "change" | "rename" | "error", filename: string) => void,
+    options?: { recursive?: boolean }
+): FSWatcher
+```
+
+Watches a file or directory for changes. Returns an `FSWatcher` — call
+`.close()` to stop.
+
+| Event | Trigger |
+|:------|:--------|
+| `"change"` | File content was modified |
+| `"rename"` | File was created, deleted, or renamed |
+| `"error"` | A watcher error occurred |
+
+<CodeGroup>
+```ts Directory watcher
+const watcher = fs.watch("saves", (event, filename) => {
+    if (event === "error") { console.error("Watch error:", filename); return; }
+    console.log(`[${event}] ${filename}`);
+}, { recursive: true });
+
+setTimeout(() => watcher.close(), 60_000);
+```
+
+```ts Hot-reload config
+const configWatcher = fs.watch("config.json", (event) => {
+    if (event === "change") {
+        try {
+            applyConfig(JSON.parse(fs.readFileSync("config.json")));
+            console.log("Config hot-reloaded!");
+        } catch (e) {
+            console.error("Reload failed:", e);
+        }
+    }
+});
+```
+</CodeGroup>
+
+---
+
+## Path utilities — `fs.path`
+
+Pure string helpers — they do **not** touch the file system.
+
+| Function | Returns | Example |
+|:---------|:--------|:--------|
+| `fs.path.join(...segments)` | `string` | `join("saves","p1","data.json")` → `"saves/p1/data.json"` |
+| `fs.path.basename(path)` | `string` | `basename("saves/p1/data.json")` → `"data.json"` |
+| `fs.path.dirname(path)` | `string` | `dirname("saves/p1/data.json")` → `"saves/p1"` |
+| `fs.path.extname(path)` | `string` | `extname("archive.tar.gz")` → `".gz"` |
+| `fs.path.resolve(...segments)` | `string` | Resolves to absolute path from cwd |
+| `fs.path.isAbsolute(path)` | `boolean` | `isAbsolute("/data/f.txt")` → `true` |
+
+---
+
+## Recipes
+
+### JSON key-value store
+
+```ts
+class JsonStore {
+    constructor(private file: string) {}
+
+    async load(fallback = {}) {
+        return (await fs.exists(this.file))
+            ? JSON.parse(await fs.readFile(this.file))
+            : fallback;
+    }
+
+    async save(data: object) {
+        await fs.writeFile(this.file, JSON.stringify(data, null, 2));
+    }
+
+    async update(fn: (d: any) => any) {
+        const result = fn(await this.load());
+        await this.save(result);
+        return result;
+    }
+}
+
+const db = new JsonStore("playerdata.json");
+await db.save({ kills: 0, deaths: 0 });
+await db.update(d => ({ ...d, kills: d.kills + 1 }));
+```
+
+### Save slot manager
+
+```ts
+const SAVE_DIR = "saves";
+
+async function saveGame(slot: number, data: object) {
+    await fs.mkdir(SAVE_DIR, true);
+    const file = fs.path.join(SAVE_DIR, `slot${slot}.json`);
+    if (await fs.exists(file)) await fs.copyFile(file, `${file}.bak`);
+    await fs.writeFile(file, JSON.stringify({ ...data, savedAt: new Date().toISOString() }, null, 2));
+}
+
+async function loadGame(slot: number) {
+    const file = fs.path.join(SAVE_DIR, `slot${slot}.json`);
+    return (await fs.exists(file)) ? JSON.parse(await fs.readFile(file)) : null;
+}
+```
+
+### Log rotation
+
+```ts
+const LOG_FILE = "app.log";
+const MAX_SIZE = 50 * 1024; // 50 KB
+
+async function writeLog(level: string, message: string) {
+    if (await fs.exists(LOG_FILE)) {
+        const { size } = await fs.stat(LOG_FILE);
+        if (size >= MAX_SIZE) {
+            if (await fs.exists("app_prev.log")) await fs.unlink("app_prev.log");
+            await fs.rename(LOG_FILE, "app_prev.log");
+        }
+    }
+    await fs.appendFile(LOG_FILE, `[${new Date().toISOString()}] [${level}] ${message}\n`);
+}
+```
+
+---
+
+## Error handling
+
+All async functions return Promises that reject on failure. Sync functions
+throw directly.
+
+```ts
+// Async
+try {
+    const data = await fs.readFile("might_not_exist.json");
+} catch (err) {
+    console.error("Read failed:", err);
+}
+
+// Sync
+try {
+    fs.writeFileSync("output.txt", "Hello");
+} catch (err) {
+    console.error("Write failed:", err);
+}
+
+// Guard pattern — cleanest when the file is optional
+if (await fs.exists("optional.json")) {
+    const content = await fs.readFile("optional.json");
+}
+```
+
+---
+
+## Security
+
+All paths resolve relative to `scripts/data`. Any path that escapes the
+sandbox throws `"path escapes sandbox"`.
+
+<Warning>
+  The following will **always throw** — absolute paths and directory
+  traversal are blocked at the sandbox boundary:
+  ```ts
+  await fs.readFile("/etc/passwd");          // absolute path
+  await fs.readFile("../../secrets.txt");    // traversal
+  await fs.writeFile("../outside.txt", ""); // traversal
+  ```
+</Warning>

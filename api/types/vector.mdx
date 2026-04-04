@@ -1,0 +1,718 @@
+---
+title: "Vector"
+sidebarTitle: "Vector"
+description: "3D vector for positions, velocities, directions — the most used type in the engine."
+icon: "location-arrow"
+---
+
+`Vector` is a 3D vector with `x`, `y`, `z` components. World positions,
+velocities, normals, trace endpoints — almost everything spatial is a
+Vector. If you're writing game logic, you'll use this type more than
+any other.
+
+<Note>
+  All Vector arithmetic methods return a **new** Vector — the original is
+  never modified. The exceptions are `normalize()` and direct property
+  assignment (`vec.x = 10`), which mutate in place.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Creating vectors" icon="plus" href="#creating-vectors">
+    Constructor and static factories.
+  </Card>
+  <Card title="Arithmetic" icon="calculator" href="#arithmetic">
+    Add, subtract, multiply, scale — all return new instances.
+  </Card>
+  <Card title="Length & distance" icon="ruler" href="#length--distance">
+    Magnitude, squared variants, and distance between points.
+  </Card>
+  <Card title="Products" icon="xmark" href="#products">
+    Dot product, cross product.
+  </Card>
+  <Card title="Normalization" icon="arrows-rotate" href="#normalization">
+    Unit vectors — mutating and non-mutating.
+  </Card>
+  <Card title="Utility" icon="wrench" href="#utility">
+    Clone, validity checks, conversion, string output.
+  </Card>
+</CardGroup>
+
+---
+
+## Properties
+
+| Name | Type | |
+|:-----|:-----|:--|
+| `x` | `number` | Read/write |
+| `y` | `number` | Read/write |
+| `z` | `number` | Read/write |
+
+```ts
+const pos = new Vector(100, 200, 64);
+pos.z += 10;
+log(pos.x, pos.y, pos.z);  // 100, 200, 74
+```
+
+---
+
+## Creating vectors
+
+{/* ------------------------------------------------------------------ */}
+
+### Constructor
+
+<br />
+
+```ts
+new Vector(x: number, y: number, z: number): Vector
+```
+
+Creates a new Vector from three components.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `x` | `number` | Horizontal position |
+| `y` | `number` | Lateral position |
+| `z` | `number` | Vertical position (up) |
+
+```ts
+const origin = new Vector(0, 0, 0);
+const pos = new Vector(1024, -512, 64.5);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector.zero
+
+<br />
+
+```ts
+Vector.zero(): Vector
+```
+
+Returns a new `(0, 0, 0)` vector.
+
+```ts
+const blank = Vector.zero();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector.one
+
+<br />
+
+```ts
+Vector.one(): Vector
+```
+
+Returns a new `(1, 1, 1)` vector. Useful as a default scale or as a
+starting multiplier.
+
+```ts
+const scale = Vector.one();
+```
+
+---
+
+## Arithmetic
+
+All arithmetic methods return a **new** Vector. The original is never
+modified.
+
+{/* ------------------------------------------------------------------ */}
+
+### add
+
+<br />
+
+```ts
+vec.add(other: Vector): Vector
+```
+
+Component-wise addition. Returns a new Vector.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector` | Vector to add |
+
+```ts
+const a = new Vector(1, 2, 3);
+const b = new Vector(10, 20, 30);
+
+const sum = a.add(b);  // Vector(11, 22, 33)
+// a is still Vector(1, 2, 3)
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### sub
+
+<br />
+
+```ts
+vec.sub(other: Vector): Vector
+```
+
+Component-wise subtraction. Returns a new Vector.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector` | Vector to subtract |
+
+```ts
+const delta = enemyPos.sub(myPos);
+// Direction vector from me to the enemy
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### mul
+
+<br />
+
+```ts
+vec.mul(other: Vector): Vector
+```
+
+Component-wise multiplication — `x*x`, `y*y`, `z*z`. Returns a new
+Vector. This is **not** dot or cross product — it's the Hadamard product.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector` | Vector to multiply component-wise |
+
+```ts
+const a = new Vector(2, 3, 4);
+const b = new Vector(10, 10, 10);
+
+const result = a.mul(b);  // Vector(20, 30, 40)
+```
+
+<Tip>
+  Use `mul` for component-wise operations like applying a per-axis
+  scale factor. For scalar multiplication use [scale](#scale), for the
+  geometric product use [dot](#dot) or [cross](#cross).
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### scale
+
+<br />
+
+```ts
+vec.scale(factor: number): Vector
+```
+
+Multiplies all three components by a scalar. Returns a new Vector.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `factor` | `number` | Scale multiplier |
+
+```ts
+const dir = enemyPos.sub(myPos).normalized();
+const offset = dir.scale(100);  // 100 units in that direction
+```
+
+---
+
+## Length & distance
+
+{/* ------------------------------------------------------------------ */}
+
+### length
+
+<br />
+
+```ts
+vec.length(): number
+```
+
+Returns the Euclidean length: `√(x² + y² + z²)`.
+
+```ts
+const vel = entity.getVelocity();
+const speed = vel.length();  // units per second
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### lengthSqr
+
+<br />
+
+```ts
+vec.lengthSqr(): number
+```
+
+Returns the **squared** length: `x² + y² + z²`. Faster than `length()`
+because it skips the square root — use it when you're comparing
+magnitudes, not when you need the actual value.
+
+```ts
+// "Is the player moving faster than 200 u/s?"
+if (vel.lengthSqr() > 200 * 200) {
+    // yes — and we didn't pay for a sqrt
+}
+```
+
+<Tip>
+  **When to use `lengthSqr` vs `length`:**
+
+  | Need | Use |
+  |:-----|:----|
+  | Compare two magnitudes | `lengthSqr()` — both skip sqrt, comparison still valid |
+  | Display speed in HUD | `length()` — you need the actual number |
+  | Threshold check (`> N`) | `lengthSqr()` — compare against `N * N` |
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### length2D
+
+<br />
+
+```ts
+vec.length2D(): number
+```
+
+Returns the length on the **XY plane** only: `√(x² + y²)`. Ignores the
+vertical component. Useful for horizontal speed or ground-plane distance.
+
+```ts
+const horizontalSpeed = entity.getVelocity().length2D();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### distTo
+
+<br />
+
+```ts
+vec.distTo(other: Vector): number
+```
+
+Returns the Euclidean distance to another vector.
+Equivalent to `vec.sub(other).length()` but slightly faster.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector` | Target point |
+
+```ts
+const dist = myPos.distTo(enemyPos);
+if (dist < 1000) {
+    // Within 1000 units
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### distToSqr
+
+<br />
+
+```ts
+vec.distToSqr(other: Vector): number
+```
+
+Returns the **squared** distance to another vector. Same speed advantage
+as `lengthSqr` — no square root.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector` | Target point |
+
+```ts
+// Distance check without sqrt
+const closeRange = myPos.distToSqr(enemyPos) < 500 * 500;
+```
+
+---
+
+## Products
+
+{/* ------------------------------------------------------------------ */}
+
+### dot
+
+<br />
+
+```ts
+vec.dot(other: Vector): number
+```
+
+Returns the dot product: `x*ox + y*oy + z*oz`. Measures how much
+two vectors point in the same direction.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector` | Second vector |
+
+**Returns** `number`:
+- Positive → vectors point roughly the same way
+- `0` → perpendicular
+- Negative → point away from each other
+
+```ts
+const forward = myViewAngle.forward();
+const toEnemy = enemyPos.sub(myEyePos).normalized();
+
+const alignment = forward.dot(toEnemy);
+if (alignment > 0.9) {
+    // Enemy is nearly straight ahead
+}
+```
+
+<Tip>
+  `dot` on two unit vectors gives the cosine of the angle between them.
+  `alignment > 0.9` ≈ within ~25°, `> 0.95` ≈ within ~18°.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### cross
+
+<br />
+
+```ts
+vec.cross(other: Vector): Vector
+```
+
+Returns the cross product — a vector **perpendicular** to both inputs.
+The magnitude equals the area of the parallelogram they span.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector` | Second vector |
+
+```ts
+const a = new Vector(1, 0, 0);
+const b = new Vector(0, 1, 0);
+
+const up = a.cross(b);  // Vector(0, 0, 1) — Z axis
+```
+
+<Warning>
+  Cross product is **not commutative**: `a.cross(b)` and `b.cross(a)`
+  point in opposite directions. Order matters.
+</Warning>
+
+---
+
+## Normalization
+
+{/* ------------------------------------------------------------------ */}
+
+### normalize
+
+<br />
+
+```ts
+vec.normalize(): this   // mutates in place
+```
+
+Scales the vector to length 1 **in place**. Returns `this`.
+
+```ts
+const dir = enemyPos.sub(myPos);
+dir.normalize();
+// dir is now a unit vector — length() ≈ 1.0
+```
+
+<Warning>
+  Mutates the original. If you need the raw vector preserved, use
+  [normalized()](#normalized) instead.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### normalized
+
+<br />
+
+```ts
+vec.normalized(): Vector
+```
+
+Returns a **new** unit vector pointing in the same direction. The
+original is untouched.
+
+```ts
+const toTarget = enemyPos.sub(myPos);
+const dir = toTarget.normalized();
+const dist = toTarget.length();
+// toTarget still has the original magnitude
+```
+
+<Tip>
+  **normalize() vs normalized()** — same pattern as QAngle:
+
+  | Method | Mutates? | Returns |
+  |:-------|:---------|:--------|
+  | `normalize()` | **Yes** | `this` (same object, now length 1) |
+  | `normalized()` | No | New Vector (original untouched) |
+
+  Use `normalized()` when you still need the original (e.g. to get
+  distance from its length). Use `normalize()` when you're done with the
+  magnitude and just want the direction.
+</Tip>
+
+---
+
+## Utility
+
+{/* ------------------------------------------------------------------ */}
+
+### isZero
+
+<br />
+
+```ts
+vec.isZero(epsilon?: number): boolean
+```
+
+Returns `true` if all components are within `epsilon` of zero. Default
+epsilon is `1e-6`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `epsilon` | `number` | Tolerance (optional, default `1e-6`) |
+
+```ts
+const vel = entity.getVelocity();
+if (vel.isZero()) {
+    // Entity is standing still
+}
+
+// Looser check
+if (vel.isZero(1.0)) {
+    // Effectively stationary (< 1 u/s per axis)
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### isFinite
+
+<br />
+
+```ts
+vec.isFinite(): boolean
+```
+
+Returns `true` if all three components are finite numbers (not `NaN`,
+not `±Infinity`).
+
+```ts
+if (!result.isFinite()) {
+    // Something went wrong — don't use this vector
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### clone
+
+<br />
+
+```ts
+vec.clone(): Vector
+```
+
+Returns an independent deep copy. Modifying the clone does not affect
+the original.
+
+```ts
+const original = new Vector(1, 2, 3);
+const copy = original.clone();
+copy.x = 999;
+// original.x is still 1
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toArray
+
+<br />
+
+```ts
+vec.toArray(): [number, number, number]
+```
+
+Returns `[x, y, z]` as a plain array.
+
+```ts
+const [x, y, z] = entity.getOrigin().toArray();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toString
+
+<br />
+
+```ts
+vec.toString(): string
+```
+
+Returns a human-readable string.
+
+```ts
+const pos = new Vector(100.5, 200, 64);
+pos.toString();
+// "Vector(100.5, 200, 64)"
+```
+
+---
+
+## Static methods
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector.lerp
+
+<br />
+
+```ts
+Vector.lerp(a: Vector, b: Vector, t: number): Vector
+```
+
+Linear interpolation between two vectors. `t=0` returns `a`, `t=1`
+returns `b`, `t=0.5` returns the midpoint. Not clamped — `t` outside
+`[0, 1]` extrapolates.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `a` | `Vector` | Start |
+| `b` | `Vector` | End |
+| `t` | `number` | Interpolation factor |
+
+<Tabs>
+  <Tab title="Smooth follow">
+    ```ts
+    // Ease a visual indicator toward the target each frame
+    displayPos = Vector.lerp(displayPos, targetPos, 0.2);
+    ```
+  </Tab>
+  <Tab title="Midpoint">
+    ```ts
+    // Center point between two players
+    const mid = Vector.lerp(player1.origin, player2.origin, 0.5);
+    ```
+  </Tab>
+  <Tab title="Predictive">
+    ```ts
+    // Extrapolate 200ms ahead based on current velocity
+    const futurePos = Vector.lerp(
+        currentPos,
+        currentPos.add(velocity),
+        0.2
+    );
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  `Vector.lerp` with a constant `t` each frame gives **exponential
+  decay** — the same smooth-follow behavior as `Math.lerp`. Values
+  around `0.1–0.3` feel smooth, `0.5+` feels snappy.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector.min
+
+<br />
+
+```ts
+Vector.min(a: Vector, b: Vector): Vector
+```
+
+Returns a vector with the **minimum** of each component pair:
+`(min(a.x, b.x), min(a.y, b.y), min(a.z, b.z))`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `a` | `Vector` | First vector |
+| `b` | `Vector` | Second vector |
+
+```ts
+// Build an axis-aligned bounding box from two corners
+const mins = Vector.min(corner1, corner2);
+const maxs = Vector.max(corner1, corner2);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector.max
+
+<br />
+
+```ts
+Vector.max(a: Vector, b: Vector): Vector
+```
+
+Returns a vector with the **maximum** of each component pair:
+`(max(a.x, b.x), max(a.y, b.y), max(a.z, b.z))`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `a` | `Vector` | First vector |
+| `b` | `Vector` | Second vector |
+
+```ts
+const maxs = Vector.max(corner1, corner2);
+```
+
+---
+
+## Common patterns
+
+Real-world patterns that combine Vector methods with the
+[Math](/api/math) API.
+
+<Tabs>
+  <Tab title="Direction + distance">
+    ```ts
+    // Get direction and distance in one pass
+    const delta = enemyPos.sub(myPos);
+    const dist = delta.length();
+    const dir = delta.normalized();
+    // delta is preserved — dir is a new unit vector
+    ```
+  </Tab>
+  <Tab title="Is enemy behind me?">
+    ```ts
+    const forward = myViewAngle.forward();
+    const toEnemy = enemyPos.sub(myEyePos).normalized();
+
+    if (forward.dot(toEnemy) < 0) {
+        // Negative dot = enemy is behind us
+    }
+    ```
+  </Tab>
+  <Tab title="Project onto plane">
+    ```ts
+    // Remove the vertical component to get ground-plane direction
+    const vel = entity.getVelocity();
+    const groundVel = new Vector(vel.x, vel.y, 0);
+    const groundSpeed = groundVel.length();
+    ```
+  </Tab>
+  <Tab title="Bounding box check">
+    ```ts
+    const mins = Vector.min(corner1, corner2);
+    const maxs = Vector.max(corner1, corner2);
+
+    const inside = pos.x >= mins.x && pos.x <= maxs.x
+                && pos.y >= mins.y && pos.y <= maxs.y
+                && pos.z >= mins.z && pos.z <= maxs.z;
+    ```
+  </Tab>
+</Tabs>

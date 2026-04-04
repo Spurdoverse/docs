@@ -1,0 +1,252 @@
+---
+title: "Texture"
+sidebarTitle: "Texture"
+description: "Load images from disk or memory for drawing on the overlay."
+icon: "image"
+---
+
+`Texture` loads an image file (`.png`, `.jpg`, etc.) or raw pixel data
+into GPU memory so you can draw it with [render.image](/api/render#image)
+and [render.imageRounded](/api/render#imagerounded).
+
+<Note>
+  Textures load **asynchronously** — they may not be ready on the same
+  frame they're created. Always check `isReady` before drawing.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Loading" icon="upload" href="#loading">
+    From file path or raw RGBA pixel data.
+  </Card>
+  <Card title="Properties" icon="circle-info" href="#properties">
+    Width, height, readiness, and file path.
+  </Card>
+  <Card title="Drawing" icon="paintbrush" href="#drawing">
+    How to render loaded textures on screen.
+  </Card>
+</CardGroup>
+
+---
+
+## Loading
+
+{/* ------------------------------------------------------------------ */}
+
+### Constructor
+
+<br />
+
+```ts
+new Texture(path: string): Texture
+```
+
+Loads an image from a file path. The texture starts loading immediately
+but may not be ready until a later frame.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `path` | `string` | Path to the image file |
+
+```ts
+const icon = new Texture("assets/icon.png");
+```
+
+<Warning>
+  Create textures **once** outside your render callback — not every
+  frame. Repeated construction causes repeated disk reads and GPU
+  uploads.
+</Warning>
+
+<Tabs>
+  <Tab title="Correct">
+    ```ts
+    // Create once at script start
+    const icon = new Texture("assets/icon.png");
+
+    // Draw every frame
+    onRender(() => {
+        if (icon.isReady) {
+            render.image(icon, pos, size, Color.white());
+        }
+    });
+    ```
+  </Tab>
+  <Tab title="Wrong">
+    ```ts
+    onRender(() => {
+        // BAD: loads from disk every frame!
+        const icon = new Texture("assets/icon.png");
+        render.image(icon, pos, size, Color.white());
+    });
+    ```
+  </Tab>
+</Tabs>
+
+{/* ------------------------------------------------------------------ */}
+
+### Texture.fromMemory
+
+<br />
+
+```ts
+Texture.fromMemory(data: Uint8Array, width: number, height: number): Texture
+```
+
+Creates a texture from raw **RGBA** pixel data in memory. Each pixel
+is 4 bytes (R, G, B, A). The buffer must contain exactly
+`width × height × 4` bytes.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `data` | `Uint8Array` | Raw RGBA pixel buffer |
+| `width` | `number` | Image width in pixels |
+| `height` | `number` | Image height in pixels |
+
+```ts
+// Create a 2×2 checkerboard
+const pixels = new Uint8Array([
+    255, 0, 0, 255,    0, 0, 0, 255,     // row 1: red, black
+      0, 0, 0, 255,  255, 0, 0, 255,     // row 2: black, red
+]);
+
+const checker = Texture.fromMemory(pixels, 2, 2);
+```
+
+<Tip>
+  `fromMemory` is useful for procedurally generated textures — gradients,
+  noise patterns, or dynamically composited images.
+</Tip>
+
+---
+
+## Properties
+
+All properties are **read-only**.
+
+| Property | Type | |
+|:---------|:-----|:--|
+| `width` | `number` | Image width in pixels. `0` if not yet loaded |
+| `height` | `number` | Image height in pixels. `0` if not yet loaded |
+| `isReady` | `boolean` | `true` once the texture is uploaded to the GPU |
+| `path` | `string` | File path (empty for `fromMemory` textures) |
+
+```ts
+const tex = new Texture("assets/logo.png");
+
+// Later:
+if (tex.isReady) {
+    log(tex.width, tex.height);  // e.g. 256, 256
+    log(tex.path);               // "assets/logo.png"
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### getSize
+
+<br />
+
+```ts
+texture.getSize(): { width: number, height: number }
+```
+
+Returns both dimensions as a plain object. Convenience method when you
+need both at once.
+
+```ts
+const { width, height } = tex.getSize();
+const aspect = width / height;
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toString
+
+<br />
+
+```ts
+texture.toString(): string
+```
+
+Returns a debug string with dimensions, path, and ready state.
+
+```ts
+const tex = new Texture("icon.png");
+tex.toString();
+// "Texture(64x64, path='icon.png', ready=true)"
+```
+
+---
+
+## Drawing
+
+Textures are drawn using the [render](/api/render) module:
+
+```ts
+render.image(texture, position, size, tintColor);
+render.imageRounded(texture, position, size, rounding, tintColor);
+```
+
+See [render.image](/api/render#image) and
+[render.imageRounded](/api/render#imagerounded) for full parameter
+documentation.
+
+<Tabs>
+  <Tab title="Basic image">
+    ```ts
+    const icon = new Texture("assets/weapon.png");
+
+    onRender(() => {
+        if (!icon.isReady) return;
+
+        const { success, screen } = Math.worldToScreen(pos);
+        if (success) {
+            render.image(icon, screen, new Vector2(24, 24), Color.white());
+        }
+    });
+    ```
+  </Tab>
+  <Tab title="Circular avatar">
+    ```ts
+    const avatar = new Texture("assets/avatar.png");
+
+    onRender(() => {
+        if (!avatar.isReady) return;
+
+        const size = new Vector2(48, 48);
+        render.imageRounded(avatar, hudPos, size, 24, Color.white());
+        // rounding = half of width → perfect circle
+    });
+    ```
+  </Tab>
+  <Tab title="Tinted icon">
+    ```ts
+    const icon = new Texture("assets/shield.png");
+
+    onRender(() => {
+        if (!icon.isReady) return;
+
+        // Tint with team color
+        const tint = isAlly ? Color.green() : Color.red();
+        render.image(icon, pos, new Vector2(32, 32), tint);
+    });
+    ```
+  </Tab>
+  <Tab title="Preserve aspect ratio">
+    ```ts
+    const logo = new Texture("assets/logo.png");
+
+    onRender(() => {
+        if (!logo.isReady) return;
+
+        const drawHeight = 64;
+        const aspect = logo.width / logo.height;
+        const drawWidth = drawHeight * aspect;
+
+        render.image(logo, pos, new Vector2(drawWidth, drawHeight), Color.white());
+    });
+    ```
+  </Tab>
+</Tabs>

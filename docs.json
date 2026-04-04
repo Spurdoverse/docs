@@ -1,15 +1,38 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
+  "theme": "maple",
   "name": "Mint Starter Kit",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#E4733F",
+    "light": "#E4733F",
+    "dark": "#E4733F"
+  },
+  "appearance": {
+    "default": "dark"
+  },
+  "background": {
+    "color": {
+      "light": "#F3F4F6",
+      "dark": "#0A0A0A"
+    }
+  },
+  "fonts": {
+    "family": "Geist"
   },
   "favicon": "/favicon.svg",
   "navigation": {
     "tabs": [
+      {
+        "tab": "Learn",
+        "groups": [
+          {
+            "group": "Learn",
+            "pages": [
+              "learn/drawing-on-screen"
+            ]
+          }
+        ]
+      },
       {
         "tab": "Guides",
         "groups": [
@@ -48,23 +71,32 @@
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Modules",
             "pages": [
-              "api-reference/introduction"
+              "api/globals",
+              "api/math",
+              "api/render",
+              "api/ffi",
+              "api/fs",
+              "api/memory",
+              "api/entities"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Types",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/types/vector",
+              "api/types/vector2",
+              "api/types/qangle",
+              "api/types/color",
+              "api/types/texture",
+              "api/types/pointer"
             ]
           }
+
         ]
       }
     ],

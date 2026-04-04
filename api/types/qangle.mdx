@@ -1,0 +1,725 @@
+---
+title: "QAngle"
+sidebarTitle: "QAngle"
+description: "Euler angles for view direction, aim, and rotation — pitch, yaw, roll in degrees."
+icon: "compass-drafting"
+---
+
+`QAngle` represents an Euler rotation as three components — **pitch**
+(up/down), **yaw** (left/right), and **roll** (tilt). Every view angle,
+aim calculation, and rotation in the engine uses this type.
+
+<Note>
+  All QAngle components are in **degrees**, not radians. The engine's
+  safe ranges are pitch `[-89, 89]`, yaw `[-180, 180]`, roll `[-50, 50]`.
+  Use [Math.clampAngles](/api/math#clampangles) before sending angles to
+  the engine.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Creating angles" icon="plus" href="#creating-angles">
+    Six constructor forms — numbers, arrays, objects, or zero.
+  </Card>
+  <Card title="Arithmetic" icon="calculator" href="#arithmetic">
+    Add, subtract, scale, divide, negate — all return new instances.
+  </Card>
+  <Card title="Normalization" icon="arrows-rotate" href="#normalization">
+    Wrap overflowed components back into valid ranges.
+  </Card>
+  <Card title="Direction vectors" icon="arrows-split-up-and-left" href="#direction-vectors">
+    Decompose into forward, right, and up vectors.
+  </Card>
+  <Card title="Comparison" icon="code-compare" href="#comparison">
+    FOV distance, equality checks.
+  </Card>
+  <Card title="Utility" icon="wrench" href="#utility">
+    Clone, set, invalidate, convert to array or string.
+  </Card>
+</CardGroup>
+
+---
+
+## Components
+
+| Component | Axis | Engine range | |
+|:----------|:-----|:-------------|:--|
+| `pitch` | Up / down | `[-89, 89]` | Negative = looking up, positive = looking down |
+| `yaw` | Left / right | `[-180, 180]` | 0 = north, 90 = east, ±180 = south |
+| `roll` | Tilt | `[-50, 50]` | Rarely used in practice |
+
+All three are **read/write** `number` properties:
+
+```ts
+const angle = new QAngle(10, 45, 0);
+angle.pitch = -5;
+angle.yaw += 90;
+log(angle.roll);  // 0
+```
+
+---
+
+## Creating angles
+
+Six forms — use whichever reads best in your code.
+
+{/* ------------------------------------------------------------------ */}
+
+### Constructor
+
+<br />
+
+```ts
+new QAngle(): QAngle
+new QAngle(pitch: number): QAngle
+new QAngle(pitch: number, yaw: number): QAngle
+new QAngle(pitch: number, yaw: number, roll: number): QAngle
+new QAngle(arr: [number, number, number]): QAngle
+new QAngle(obj: { pitch?: number, yaw?: number, roll?: number }): QAngle
+```
+
+Creates a new QAngle. Missing components default to `0`.
+
+<Tabs>
+  <Tab title="Numbers">
+    ```ts
+    const a = new QAngle();           // (0, 0, 0)
+    const b = new QAngle(-5, 90);     // pitch=-5, yaw=90, roll=0
+    const c = new QAngle(10, 45, 0);  // all three explicit
+    ```
+  </Tab>
+  <Tab title="Array">
+    ```ts
+    const angle = new QAngle([45, 90, 0]);
+    // pitch=45, yaw=90, roll=0
+
+    // Shorter arrays work — missing elements stay 0
+    const partial = new QAngle([10]);
+    // pitch=10, yaw=0, roll=0
+    ```
+  </Tab>
+  <Tab title="Object">
+    ```ts
+    const angle = new QAngle({ pitch: 45, yaw: 90 });
+    // pitch=45, yaw=90, roll=0
+
+    // Only set what you need — the rest default to 0
+    const yawOnly = new QAngle({ yaw: 180 });
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  The object form is most readable when you only care about one or
+  two components: `new QAngle({ yaw: 90 })` is clearer than
+  `new QAngle(0, 90, 0)`.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### QAngle.zero
+
+<br />
+
+```ts
+QAngle.zero(): QAngle
+```
+
+Returns a new `(0, 0, 0)` angle. Equivalent to `new QAngle()` but reads
+better as a named factory.
+
+```ts
+const origin = QAngle.zero();
+```
+
+---
+
+## Arithmetic
+
+All arithmetic methods return a **new** QAngle — the original is never
+modified. This makes them safe to use in calculations without cloning
+first.
+
+{/* ------------------------------------------------------------------ */}
+
+### add
+
+<br />
+
+```ts
+angle.add(other: QAngle): QAngle
+```
+
+Component-wise addition. Returns a new QAngle.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `QAngle` | Angle to add |
+
+```ts
+const base = new QAngle(10, 90, 0);
+const offset = new QAngle(5, -10, 0);
+
+const result = base.add(offset);
+// result = QAngle(15, 80, 0)
+// base is still QAngle(10, 90, 0)
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### sub
+
+<br />
+
+```ts
+angle.sub(other: QAngle): QAngle
+```
+
+Component-wise subtraction. Returns a new QAngle.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `QAngle` | Angle to subtract |
+
+```ts
+const delta = currentAngle.sub(previousAngle);
+// How much the view rotated since last frame
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### scale
+
+<br />
+
+```ts
+angle.scale(factor: number): QAngle
+```
+
+Multiplies all three components by `factor`. Returns a new QAngle.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `factor` | `number` | Scale multiplier |
+
+```ts
+const halfAngle = aim.scale(0.5);
+const doubled = aim.scale(2);
+```
+
+<Warning>
+  Scaling can push components out of engine-safe ranges. Pipe the
+  result through [Math.clampAngles](/api/math#clampangles) if you're
+  sending it to the engine.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### div
+
+<br />
+
+```ts
+angle.div(divisor: number): QAngle
+```
+
+Divides all three components by `divisor`. Returns a new QAngle.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `divisor` | `number` | Value to divide by |
+
+```ts
+const average = totalAngle.div(sampleCount);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### negate
+
+<br />
+
+```ts
+angle.negate(): QAngle
+```
+
+Flips the sign of all components. Returns a new QAngle.
+
+```ts
+const angle = new QAngle(10, 90, 0);
+const flipped = angle.negate();
+// flipped = QAngle(-10, -90, 0)
+```
+
+---
+
+## Normalization
+
+After math operations, components can overflow past `[-180, 180]`.
+These methods wrap them back.
+
+{/* ------------------------------------------------------------------ */}
+
+### normalize
+
+<br />
+
+```ts
+angle.normalize(): this   // mutates in place
+```
+
+Wraps all components into `[-180, 180]` using modular arithmetic.
+**Mutates the original** and returns `this` for chaining.
+
+```ts
+const angle = new QAngle(0, 270, 0);
+angle.normalize();
+// angle.yaw is now -90
+```
+
+<Warning>
+  This mutates the original. If you need the raw value preserved, use
+  [normalized()](#normalized) instead, or clone first:
+  `const clean = angle.clone().normalize();`
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### normalized
+
+<br />
+
+```ts
+angle.normalized(): QAngle
+```
+
+Returns a **new** QAngle with all components wrapped into `[-180, 180]`.
+The original is untouched.
+
+```ts
+const raw = new QAngle(0, 540, 0);
+const clean = raw.normalized();
+// clean.yaw = 180
+// raw.yaw is still 540
+```
+
+<Tip>
+  **normalize() vs normalized()** — the naming follows a common pattern:
+
+  | Method | Mutates? | Returns |
+  |:-------|:---------|:--------|
+  | `normalize()` | **Yes** | `this` (same object, modified) |
+  | `normalized()` | No | New QAngle (original untouched) |
+
+  Rule of thumb: bare verb mutates, past participle copies.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### QAngle.normalizeAngle
+
+<br />
+
+```ts
+QAngle.normalizeAngle(deg: number): number
+```
+
+Static utility — wraps a **single** angle value to `[-180, 180]`.
+Useful when you need to normalize one component without touching the
+others.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `deg` | `number` | Angle in degrees |
+
+```ts
+QAngle.normalizeAngle(270);   // -90
+QAngle.normalizeAngle(-540);  // 180
+QAngle.normalizeAngle(45);    // 45 (unchanged)
+```
+
+---
+
+## Direction vectors
+
+Decompose the angle into perpendicular direction vectors. These are
+instance-method shortcuts for
+[Math.angleVectors](/api/math#anglevectors) — same math, different
+syntax.
+
+{/* ------------------------------------------------------------------ */}
+
+### forward
+
+<br />
+
+```ts
+angle.forward(): Vector
+```
+
+Returns the **forward** direction vector — where this angle is pointing.
+This is the direction you'd trace a ray along.
+
+```ts
+const dir = myViewAngle.forward();
+
+const traceEnd = {
+    x: eyePos.x + dir.x * 1000,
+    y: eyePos.y + dir.y * 1000,
+    z: eyePos.z + dir.z * 1000,
+};
+```
+
+<Tip>
+  `angle.forward()` is equivalent to
+  `Math.angleVectors(angle).forward` — use whichever reads better.
+  If you need multiple vectors at once, `Math.angleVectors` is more
+  efficient (one decomposition vs three).
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### right
+
+<br />
+
+```ts
+angle.right(): Vector
+```
+
+Returns the **right** direction vector — perpendicular to forward,
+pointing to the right side of the view.
+
+```ts
+const rightDir = myViewAngle.right();
+
+// Offset position 100 units to the right
+const sidePos = {
+    x: myPos.x + rightDir.x * 100,
+    y: myPos.y + rightDir.y * 100,
+    z: myPos.z + rightDir.z * 100,
+};
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### up
+
+<br />
+
+```ts
+angle.up(): Vector
+```
+
+Returns the **up** direction vector — perpendicular to both forward and
+right, pointing above the view.
+
+```ts
+const upDir = myViewAngle.up();
+```
+
+---
+
+## Comparison
+
+{/* ------------------------------------------------------------------ */}
+
+### fovTo
+
+<br />
+
+```ts
+angle.fovTo(other: QAngle): number
+```
+
+Returns the angular distance in degrees between this angle and `other`.
+Equivalent to [Math.calculateFOV](/api/math#calculatefov) but as an
+instance method.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `QAngle` | Target angle to compare against |
+
+**Returns** `number` — `0` = identical direction, `180` = opposite.
+
+```ts
+const aim = Math.calcAngle(myEyePos, enemy.headPos);
+const fov = myViewAngle.fovTo(aim);
+
+if (fov < 5) {
+    // Target is within 5° of crosshair
+}
+```
+
+<CodeGroup>
+```ts Closest target
+let bestFov = Infinity;
+let bestTarget = null;
+
+for (const enemy of enemies) {
+    const aim = Math.calcAngle(myEyePos, enemy.headPos);
+    const fov = myViewAngle.fovTo(aim);
+    if (fov < bestFov) {
+        bestFov = fov;
+        bestTarget = enemy;
+    }
+}
+```
+
+```ts FOV gate with distance
+const aim = Math.calcAngle(myEyePos, enemy.headPos);
+const fov = myViewAngle.fovTo(aim);
+const dist = myPos.distTo(enemy.origin);
+
+// Tighter FOV requirement at long range
+const maxFov = Math.remapVal(dist, 500, 5000, 15, 3);
+if (fov < maxFov) {
+    // Valid target
+}
+```
+</CodeGroup>
+
+{/* ------------------------------------------------------------------ */}
+
+### equals
+
+<br />
+
+```ts
+angle.equals(other: QAngle): boolean
+```
+
+Exact component-wise equality. Returns `false` if `other` is not a
+QAngle.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `QAngle` | Angle to compare |
+
+```ts
+const a = new QAngle(10, 20, 0);
+const b = new QAngle(10, 20, 0);
+
+a.equals(b);  // true
+a.equals(a.clone());  // true
+```
+
+<Warning>
+  This is **exact** float comparison. Two angles that look the same
+  after normalization might not be `equals()` due to floating-point
+  precision. For approximate comparison, use `fovTo()` with a small
+  threshold instead.
+</Warning>
+
+---
+
+## Utility
+
+{/* ------------------------------------------------------------------ */}
+
+### set
+
+<br />
+
+```ts
+angle.set(pitch: number, yaw: number, roll: number): this
+angle.set(arr: [number, number, number]): this
+angle.set(obj: { pitch?: number, yaw?: number, roll?: number }): this
+angle.set(other: QAngle): this
+```
+
+Overwrites all components in place. Accepts the same forms as the
+constructor. **Mutates the original** and returns `this`.
+
+| Form | Example |
+|:-----|:--------|
+| Three numbers | `angle.set(0, 90, 0)` |
+| Array | `angle.set([0, 90, 0])` |
+| Object | `angle.set({ yaw: 90 })` |
+| Another QAngle | `angle.set(otherAngle)` |
+
+```ts
+const angle = new QAngle(10, 20, 30);
+
+angle.set(0, 180, 0);
+// angle is now QAngle(0, 180, 0)
+
+angle.set({ yaw: -90 });
+// angle is now QAngle(0, -90, 0) — pitch and roll reset to 0
+```
+
+<Warning>
+  The **object form** sets missing fields to `0`, not to their previous
+  value. `angle.set({ yaw: 90 })` resets pitch and roll to `0`. If you
+  want to update only yaw, assign the property directly:
+  `angle.yaw = 90;`
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### clone
+
+<br />
+
+```ts
+angle.clone(): QAngle
+```
+
+Returns an independent deep copy. Modifying the clone does not affect
+the original.
+
+```ts
+const original = new QAngle(10, 90, 0);
+const copy = original.clone();
+
+copy.yaw = 0;
+// original.yaw is still 90
+```
+
+<Tip>
+  Use `clone()` before mutating methods when you need to preserve the
+  original: `const safe = rawAngle.clone().normalize();`
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### invalidate
+
+<br />
+
+```ts
+angle.invalidate(): this   // mutates in place
+```
+
+Sets all components to `NaN`. Used as a sentinel value to mark an angle
+as "not yet computed" or "invalid". **Mutates the original** and returns
+`this`.
+
+```ts
+const cached = new QAngle();
+cached.invalidate();
+
+// Later, check with isNaN:
+if (isNaN(cached.pitch)) {
+    // Need to recompute
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### length
+
+<br />
+
+```ts
+angle.length(): number
+```
+
+Returns the Euclidean length of the angle treated as a 3D vector:
+`√(pitch² + yaw² + roll²)`. Occasionally useful for measuring total
+rotation magnitude.
+
+```ts
+const shake = new QAngle(2, -1, 0.5);
+shake.length();  // 2.29...
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### lengthSqr
+
+<br />
+
+```ts
+angle.lengthSqr(): number
+```
+
+Squared length — `pitch² + yaw² + roll²`. Faster than `length()` when
+you only need to compare magnitudes.
+
+```ts
+if (deltaAngle.lengthSqr() < 0.01) {
+    // Almost no rotation change — skip update
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toArray
+
+<br />
+
+```ts
+angle.toArray(): [number, number, number]
+```
+
+Returns `[pitch, yaw, roll]` as a plain array.
+
+```ts
+const [p, y, r] = myViewAngle.toArray();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toString
+
+<br />
+
+```ts
+angle.toString(): string
+```
+
+Returns a human-readable string with 3 decimal places.
+
+```ts
+const angle = new QAngle(10.5, 90, 0);
+angle.toString();
+// "QAngle(10.500, 90.000, 0.000)"
+```
+
+---
+
+## Common patterns
+
+Real-world patterns that combine QAngle methods with the
+[Math](/api/math) API.
+
+<Tabs>
+  <Tab title="Smooth aim">
+    ```ts
+    // Ease current view toward target each frame
+    const target = Math.calcAngle(myEyePos, enemyHeadPos);
+    const delta = target.sub(myViewAngle).normalized();
+    const step = delta.scale(0.3);
+    const newAngle = myViewAngle.add(step);
+    Math.clampAngles(newAngle);
+    ```
+  </Tab>
+  <Tab title="Angle delta">
+    ```ts
+    // How much the view rotated between two frames
+    const delta = currentAngle.sub(previousAngle).normalized();
+    const speed = delta.length();  // degrees per frame
+    ```
+  </Tab>
+  <Tab title="Direction offset">
+    ```ts
+    // Get a position 500 units ahead of where the player looks
+    const dir = myViewAngle.forward();
+    const ahead = new Vector(
+        myPos.x + dir.x * 500,
+        myPos.y + dir.y * 500,
+        myPos.z + dir.z * 500,
+    );
+    ```
+  </Tab>
+  <Tab title="Recoil compensation">
+    ```ts
+    // Subtract punch angle to compensate recoil
+    const punch = localPlayer.getAimPunchAngle();
+    const compensated = myViewAngle.sub(punch.scale(2));
+    Math.clampAngles(compensated);
+    ```
+  </Tab>
+</Tabs>

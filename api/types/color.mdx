@@ -1,0 +1,608 @@
+---
+title: "Color"
+sidebarTitle: "Color"
+description: "RGBA color type with HSV/HSL conversion, blending, and brightness control."
+icon: "palette"
+---
+
+`Color` represents an RGBA color with four `uint8` components — `r`, `g`,
+`b`, `a`, each in the range `0–255`. Every render function, ESP element,
+and visual effect uses this type.
+
+<Note>
+  The default alpha is **255** (fully opaque). A freshly constructed
+  `new Color()` is white `(255, 255, 255, 255)`, not transparent.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Creating colors" icon="plus" href="#creating-colors">
+    RGBA, hex, arrays, objects, HSV, HSL, and float forms.
+  </Card>
+  <Card title="Arithmetic" icon="calculator" href="#arithmetic">
+    Add, subtract, scale — all return new instances.
+  </Card>
+  <Card title="Modification" icon="sliders" href="#modification">
+    Alpha override, brightness, and interpolation.
+  </Card>
+  <Card title="Conversion" icon="arrows-rotate" href="#conversion">
+    HSV, packed integers, arrays, and string output.
+  </Card>
+  <Card title="Presets" icon="swatchbook" href="#presets">
+    Built-in white, black, red, green.
+  </Card>
+</CardGroup>
+
+---
+
+## Properties
+
+| Name | Type | Range | |
+|:-----|:-----|:------|:--|
+| `r` | `number` | `0–255` | Red channel. Read/write |
+| `g` | `number` | `0–255` | Green channel. Read/write |
+| `b` | `number` | `0–255` | Blue channel. Read/write |
+| `a` | `number` | `0–255` | Alpha channel. Read/write. 255 = opaque, 0 = invisible |
+
+```ts
+const col = new Color(255, 128, 0, 200);
+col.a = 100;
+log(col.r, col.g, col.b, col.a);  // 255, 128, 0, 100
+```
+
+---
+
+## Creating colors
+
+Seven forms — pick whatever fits your data source.
+
+{/* ------------------------------------------------------------------ */}
+
+### Constructor
+
+<br />
+
+```ts
+new Color(): Color                                          // white (255, 255, 255, 255)
+new Color(r: number, g: number, b: number): Color           // alpha defaults to 255
+new Color(r: number, g: number, b: number, a: number): Color
+new Color(hex: number): Color                               // 0xRRGGBBAA packed
+new Color(arr: [number, number, number, number?]): Color    // from array
+new Color(obj: { r?, g?, b?, a? }): Color                   // from object
+```
+
+Creates a new Color. Missing components default to `255`.
+
+<Tabs>
+  <Tab title="RGBA numbers">
+    ```ts
+    const white = new Color();               // (255, 255, 255, 255)
+    const red   = new Color(255, 0, 0);      // alpha = 255
+    const fade  = new Color(255, 0, 0, 128); // semi-transparent red
+    ```
+  </Tab>
+  <Tab title="Hex integer">
+    ```ts
+    const col = new Color(0xFF0000FF);  // red, full alpha
+    const col2 = new Color(0x00FF0080); // green, half alpha
+    ```
+  </Tab>
+  <Tab title="Array">
+    ```ts
+    const col = new Color([255, 128, 0, 200]);
+
+    // 3-element arrays work — alpha defaults to 255
+    const opaque = new Color([255, 128, 0]);
+    ```
+  </Tab>
+  <Tab title="Object">
+    ```ts
+    const col = new Color({ r: 255, g: 128, b: 0 });
+    // a defaults to 255
+
+    const faded = new Color({ r: 255, g: 0, b: 0, a: 100 });
+    ```
+  </Tab>
+</Tabs>
+
+{/* ------------------------------------------------------------------ */}
+
+### Color.fromHex
+
+<br />
+
+```ts
+Color.fromHex(hex: string): Color
+Color.fromHex(hex: number): Color
+```
+
+Creates a color from a hex string (e.g. `"#FF0000"`, `"FF0000FF"`) or a
+packed hex integer.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `hex` | `string` or `number` | Hex color value |
+
+```ts
+const red = Color.fromHex("#FF0000");
+const blue = Color.fromHex(0x0000FFFF);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Color.fromHSV
+
+<br />
+
+```ts
+Color.fromHSV(h: number, s: number, v: number, a?: number): Color
+```
+
+Creates a color from **Hue-Saturation-Value**. Alpha defaults to `1.0`.
+
+| Param | Type | Range | |
+|:------|:-----|:------|:--|
+| `h` | `number` | `0–360` | Hue in degrees |
+| `s` | `number` | `0–1` | Saturation |
+| `v` | `number` | `0–1` | Value (brightness) |
+| `a` | `number` | `0–1` | Alpha (optional, default `1.0`) |
+
+```ts
+const red    = Color.fromHSV(0, 1, 1);
+const orange = Color.fromHSV(30, 1, 1);
+const faded  = Color.fromHSV(120, 1, 1, 0.5);  // green, 50% alpha
+```
+
+<Tip>
+  HSV is ideal for cycling through hues — just animate the `h` parameter
+  from `0` to `360` for a rainbow effect.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### Color.fromHSL
+
+<br />
+
+```ts
+Color.fromHSL(h: number, s: number, l: number, a?: number): Color
+```
+
+Creates a color from **Hue-Saturation-Lightness**. Alpha defaults to
+`1.0`.
+
+| Param | Type | Range | |
+|:------|:-----|:------|:--|
+| `h` | `number` | `0–360` | Hue in degrees |
+| `s` | `number` | `0–1` | Saturation |
+| `l` | `number` | `0–1` | Lightness (0 = black, 0.5 = pure, 1 = white) |
+| `a` | `number` | `0–1` | Alpha (optional, default `1.0`) |
+
+```ts
+const pure = Color.fromHSL(0, 1, 0.5);    // pure red
+const pastel = Color.fromHSL(0, 1, 0.75);  // light red / pink
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Color.fromFloat
+
+<br />
+
+```ts
+Color.fromFloat(r: number, g: number, b: number, a?: number): Color
+```
+
+Creates a color from **floating-point** components in the `0–1` range.
+Alpha defaults to `1.0`.
+
+| Param | Type | Range | |
+|:------|:-----|:------|:--|
+| `r` | `number` | `0–1` | Red |
+| `g` | `number` | `0–1` | Green |
+| `b` | `number` | `0–1` | Blue |
+| `a` | `number` | `0–1` | Alpha (optional, default `1.0`) |
+
+```ts
+const half = Color.fromFloat(1.0, 0.5, 0.0);  // orange, r=255 g=128 b=0
+```
+
+---
+
+## Presets
+
+Static factories for common colors. All return a **new** Color instance
+with alpha `255`.
+
+| Method | Color | RGBA |
+|:-------|:------|:-----|
+| `Color.white()` | White | `(255, 255, 255, 255)` |
+| `Color.black()` | Black | `(0, 0, 0, 255)` |
+| `Color.red()` | Red | `(255, 0, 0, 255)` |
+| `Color.green()` | Green | `(0, 255, 0, 255)` |
+
+```ts
+render.text(screen, "Hello", Color.red());
+render.circleFilled(pos, 5, Color.white());
+```
+
+<Tip>
+  Presets create a new instance every call — safe to modify without
+  affecting future calls: `const c = Color.red(); c.a = 128;` is fine.
+</Tip>
+
+---
+
+## Arithmetic
+
+All arithmetic methods return a **new** Color. Components are clamped
+to `0–255` internally.
+
+{/* ------------------------------------------------------------------ */}
+
+### add
+
+<br />
+
+```ts
+color.add(other: Color): Color
+```
+
+Component-wise addition. Each channel is clamped to `0–255`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Color` | Color to add |
+
+```ts
+const warm = new Color(200, 100, 0);
+const tint = new Color(55, 55, 55);
+const result = warm.add(tint);  // (255, 155, 55, 255)
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### sub
+
+<br />
+
+```ts
+color.sub(other: Color): Color
+```
+
+Component-wise subtraction. Each channel is clamped to `0–255`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Color` | Color to subtract |
+
+```ts
+const dimmed = bright.sub(new Color(50, 50, 50, 0));
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### mul
+
+<br />
+
+```ts
+color.mul(factor: number): Color
+```
+
+Multiplies RGB channels by a scalar. Alpha is unchanged. Returns a new
+Color.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `factor` | `number` | Scale multiplier |
+
+```ts
+const half = Color.red().mul(0.5);
+// (128, 0, 0, 255) — half-intensity red
+```
+
+---
+
+## Modification
+
+These methods create variations of a color — adjusting alpha, brightness,
+or blending with another color. All return a **new** Color.
+
+{/* ------------------------------------------------------------------ */}
+
+### withAlpha
+
+<br />
+
+```ts
+color.withAlpha(alpha: number): Color
+```
+
+Returns a copy with a different alpha. Accepts either a `0–255` integer
+or a `0.0–1.0` float.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `alpha` | `number` | New alpha — `0–255` (int) or `0.0–1.0` (float) |
+
+The engine auto-detects: if the value is a float in `[0.0, 1.0]` (and
+not an integer), it's treated as a fraction. Otherwise it's a byte.
+
+```ts
+const solid = Color.red();
+const half = solid.withAlpha(0.5);   // float → a = 128
+const exact = solid.withAlpha(200);  // int   → a = 200
+```
+
+<Warning>
+  The value `1` is ambiguous — it could mean "1 out of 255" or "100%
+  opacity". The engine treats integer `1` as the byte value `1` (nearly
+  invisible). Use `1.0` for full opacity, or `255` to be explicit.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### brightness
+
+<br />
+
+```ts
+color.brightness(factor: number): Color
+```
+
+Scales the RGB brightness by `factor`. A factor of `0.5` halves the
+brightness, `2.0` doubles it. Alpha is unchanged. Returns a new Color.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `factor` | `number` | Brightness multiplier |
+
+```ts
+const bright = baseColor.brightness(1.5);  // 50% brighter
+const dim = baseColor.brightness(0.3);     // 70% dimmer
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### lerp
+
+<br />
+
+```ts
+color.lerp(other: Color, t: number): Color
+```
+
+Linear interpolation between this color and `other`. `t=0` returns this
+color, `t=1` returns `other`, `t=0.5` returns the midpoint. All four
+channels (including alpha) are interpolated.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Color` | Target color |
+| `t` | `number` | Interpolation factor `[0, 1]` |
+
+<Tabs>
+  <Tab title="Health color">
+    ```ts
+    // Red at 0 HP, green at full HP
+    const healthColor = Color.red().lerp(Color.green(), health / maxHealth);
+    ```
+  </Tab>
+  <Tab title="Smooth transition">
+    ```ts
+    // Fade from current color to target each frame
+    displayColor = displayColor.lerp(targetColor, 0.2);
+    ```
+  </Tab>
+  <Tab title="Alert flash">
+    ```ts
+    // Pulse between white and red using a sine wave
+    const t = (Math.sin(Date.now() * 0.005) + 1) / 2;
+    const flash = Color.white().lerp(Color.red(), t);
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Conversion
+
+{/* ------------------------------------------------------------------ */}
+
+### toHSV
+
+<br />
+
+```ts
+color.toHSV(): { h: number, s: number, v: number, a: number }
+```
+
+Converts to Hue-Saturation-Value. Returns a plain object.
+
+| Field | Range | |
+|:------|:------|:--|
+| `h` | `0–360` | Hue in degrees |
+| `s` | `0–1` | Saturation |
+| `v` | `0–1` | Value |
+| `a` | `0–1` | Alpha |
+
+```ts
+const hsv = Color.red().toHSV();
+// { h: 0, s: 1, v: 1, a: 1 }
+```
+
+<Tip>
+  Round-trip works: `Color.fromHSV(c.toHSV().h, c.toHSV().s, c.toHSV().v)`
+  gives back the same color (within rounding). Useful for hue-shifting:
+  modify `h`, then convert back.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### toRGBA
+
+<br />
+
+```ts
+color.toRGBA(): number
+```
+
+Returns a packed 32-bit integer in **RGBA** byte order.
+
+```ts
+const packed = Color.red().toRGBA();
+// 0xFF0000FF
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toARGB
+
+<br />
+
+```ts
+color.toARGB(): number
+```
+
+Returns a packed 32-bit integer in **ARGB** byte order.
+
+```ts
+const packed = Color.red().toARGB();
+// 0xFFFF0000
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toImU32
+
+<br />
+
+```ts
+color.toImU32(): number
+```
+
+Returns the color as an ImGui-compatible packed integer (`ImU32`,
+ABGR byte order). You rarely need this directly — render functions
+accept Color objects natively.
+
+```ts
+const imcol = myColor.toImU32();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### equals
+
+<br />
+
+```ts
+color.equals(other: Color): boolean
+```
+
+Exact equality — all four channels must match. Returns `false` if
+`other` is not a Color.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Color` | Color to compare |
+
+```ts
+Color.red().equals(new Color(255, 0, 0, 255));  // true
+Color.red().equals(Color.red().withAlpha(128));   // false — alpha differs
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### clone
+
+<br />
+
+```ts
+color.clone(): Color
+```
+
+Returns an independent deep copy.
+
+```ts
+const original = Color.red();
+const copy = original.clone();
+copy.a = 0;
+// original.a is still 255
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toArray
+
+<br />
+
+```ts
+color.toArray(): [number, number, number, number]
+```
+
+Returns `[r, g, b, a]` as a plain array.
+
+```ts
+const [r, g, b, a] = myColor.toArray();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toString
+
+<br />
+
+```ts
+color.toString(): string
+```
+
+Returns a human-readable string.
+
+```ts
+Color.red().toString();
+// "Color(255, 0, 0, 255)"
+```
+
+---
+
+## Common patterns
+
+<Tabs>
+  <Tab title="Health bar color">
+    ```ts
+    // Smooth red → yellow → green gradient
+    const t = Math.clamp(health / maxHealth, 0, 1);
+    const r = Math.remapVal(health, 0, 100, 255, 0);
+    const g = Math.remapVal(health, 0, 100, 0, 255);
+    const col = new Color(r, g, 0);
+    ```
+  </Tab>
+  <Tab title="Distance fade">
+    ```ts
+    // Fade alpha based on distance
+    const alpha = Math.clamp(
+        Math.remapVal(distance, 2000, 8000, 255, 30),
+        30, 255
+    );
+    const col = Color.white().withAlpha(alpha);
+    ```
+  </Tab>
+  <Tab title="Rainbow cycle">
+    ```ts
+    // Cycle through hues over time
+    const hue = (Date.now() * 0.1) % 360;
+    const col = Color.fromHSV(hue, 1, 1);
+    ```
+  </Tab>
+  <Tab title="Team colors">
+    ```ts
+    const teamColors = {
+        CT: new Color(150, 200, 255),
+        T:  new Color(255, 200, 100),
+    };
+    const col = teamColors[player.team].withAlpha(200);
+    ```
+  </Tab>
+</Tabs>

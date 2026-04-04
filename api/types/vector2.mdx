@@ -1,0 +1,608 @@
+---
+title: "Vector2"
+sidebarTitle: "Vector2"
+description: "2D vector for screen coordinates, UI layout, and planar math."
+icon: "display"
+---
+
+`Vector2` is a 2D vector with `x`, `y` components. You'll encounter it
+primarily as the return type of
+[Math.worldToScreen](/api/math#worldtoscreen) — screen-space pixel
+coordinates for ESP overlays and HUD elements.
+
+<Note>
+  Unlike [Vector](/api/types/vector), Vector2 has **no z component**.
+  Operations like `mul` and `div` accept both a scalar number and another
+  Vector2 — check the overloads below.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Creating vectors" icon="plus" href="#creating-vectors">
+    Numbers, arrays, objects, or axis presets.
+  </Card>
+  <Card title="Arithmetic" icon="calculator" href="#arithmetic">
+    Add, subtract, multiply, divide — all return new instances.
+  </Card>
+  <Card title="Length & distance" icon="ruler" href="#length--distance">
+    Magnitude and distance on the 2D plane.
+  </Card>
+  <Card title="Products" icon="xmark" href="#products">
+    Dot product, 2D cross product.
+  </Card>
+  <Card title="Transforms" icon="arrows-rotate" href="#transforms">
+    Normalize, rotate, absolute value.
+  </Card>
+  <Card title="Utility" icon="wrench" href="#utility">
+    Clone, convert to array, string output.
+  </Card>
+</CardGroup>
+
+---
+
+## Properties
+
+| Name | Type | |
+|:-----|:-----|:--|
+| `x` | `number` | Read/write |
+| `y` | `number` | Read/write |
+
+```ts
+const screen = new Vector2(640, 360);
+screen.y += 20;
+log(screen.x, screen.y);  // 640, 380
+```
+
+---
+
+## Creating vectors
+
+{/* ------------------------------------------------------------------ */}
+
+### Constructor
+
+<br />
+
+```ts
+new Vector2(): Vector2
+new Vector2(x: number, y: number): Vector2
+new Vector2(x: number): Vector2
+new Vector2(arr: [number, number]): Vector2
+new Vector2(obj: { x?: number, y?: number }): Vector2
+```
+
+Creates a new Vector2. Missing components default to `0`.
+
+<Tabs>
+  <Tab title="Numbers">
+    ```ts
+    const a = new Vector2();         // (0, 0)
+    const b = new Vector2(100, 50);  // explicit
+    const c = new Vector2(10);       // (10, 0)
+    ```
+  </Tab>
+  <Tab title="Array">
+    ```ts
+    const pos = new Vector2([640, 360]);
+    ```
+  </Tab>
+  <Tab title="Object">
+    ```ts
+    const pos = new Vector2({ x: 640, y: 360 });
+
+    // Partial — missing fields default to 0
+    const xOnly = new Vector2({ x: 100 });
+    ```
+  </Tab>
+</Tabs>
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector2.zero
+
+<br />
+
+```ts
+Vector2.zero(): Vector2
+```
+
+Returns a new `(0, 0)` vector.
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector2.one
+
+<br />
+
+```ts
+Vector2.one(): Vector2
+```
+
+Returns a new `(1, 1)` vector.
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector2.xAxis
+
+<br />
+
+```ts
+Vector2.xAxis(): Vector2
+```
+
+Returns `(1, 0)` — the horizontal unit vector.
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector2.yAxis
+
+<br />
+
+```ts
+Vector2.yAxis(): Vector2
+```
+
+Returns `(0, 1)` — the vertical unit vector.
+
+```ts
+// All four presets
+Vector2.zero();   // (0, 0)
+Vector2.one();    // (1, 1)
+Vector2.xAxis();  // (1, 0)
+Vector2.yAxis();  // (0, 1)
+```
+
+---
+
+## Arithmetic
+
+All arithmetic methods return a **new** Vector2.
+
+{/* ------------------------------------------------------------------ */}
+
+### add
+
+<br />
+
+```ts
+vec.add(other: Vector2): Vector2
+```
+
+Component-wise addition.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector2` | Vector to add |
+
+```ts
+const { success, screen } = Math.worldToScreen(headPos);
+if (success) {
+    const labelPos = screen.add(new Vector2(8, -6));
+    render.text(labelPos, "HEAD", Color.red());
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### sub
+
+<br />
+
+```ts
+vec.sub(other: Vector2): Vector2
+```
+
+Component-wise subtraction.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector2` | Vector to subtract |
+
+```ts
+const delta = mousePos.sub(boxCenter);
+// Offset from center of a UI element to cursor
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### mul
+
+<br />
+
+```ts
+vec.mul(factor: number): Vector2
+vec.mul(other: Vector2): Vector2
+```
+
+Overloaded — accepts a **scalar** or a **Vector2** for component-wise
+multiplication.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `factor` | `number` | Scalar multiplier |
+| `other` | `Vector2` | Component-wise multiplier |
+
+```ts
+// Scalar: scale both axes equally
+const doubled = pos.mul(2);
+
+// Vector2: scale axes independently
+const stretched = pos.mul(new Vector2(2, 0.5));
+// x doubled, y halved
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### div
+
+<br />
+
+```ts
+vec.div(divisor: number): Vector2
+vec.div(other: Vector2): Vector2
+```
+
+Overloaded — accepts a **scalar** or a **Vector2** for component-wise
+division.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `divisor` | `number` | Scalar divisor |
+| `other` | `Vector2` | Component-wise divisor |
+
+```ts
+// Scalar: divide both axes
+const half = pos.div(2);
+
+// Vector2: divide axes independently
+const normalized = pixelPos.div(new Vector2(screenWidth, screenHeight));
+// Now in [0, 1] range
+```
+
+---
+
+## Length & distance
+
+{/* ------------------------------------------------------------------ */}
+
+### length
+
+<br />
+
+```ts
+vec.length(): number
+```
+
+Returns the 2D Euclidean length: `√(x² + y²)`.
+
+```ts
+const delta = screenA.sub(screenB);
+const pixelDistance = delta.length();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### lengthSqr
+
+<br />
+
+```ts
+vec.lengthSqr(): number
+```
+
+Returns the **squared** length: `x² + y²`. Faster for comparisons.
+
+```ts
+// "Is cursor within 50px of this element?"
+if (cursor.sub(elementCenter).lengthSqr() < 50 * 50) {
+    // yes
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### distTo
+
+<br />
+
+```ts
+vec.distTo(other: Vector2): number
+```
+
+Returns the distance to another Vector2.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector2` | Target point |
+
+```ts
+const { success: s1, screen: a } = Math.worldToScreen(headPos);
+const { success: s2, screen: b } = Math.worldToScreen(feetPos);
+
+if (s1 && s2) {
+    const boxHeight = a.distTo(b);
+    // Use as ESP box height in pixels
+}
+```
+
+---
+
+## Products
+
+{/* ------------------------------------------------------------------ */}
+
+### dot
+
+<br />
+
+```ts
+vec.dot(other: Vector2): number
+```
+
+Returns the 2D dot product: `x*ox + y*oy`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector2` | Second vector |
+
+```ts
+const alignment = dir.dot(toTarget);
+// > 0 = same general direction
+// = 0 = perpendicular
+// < 0 = opposite direction
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### cross
+
+<br />
+
+```ts
+vec.cross(other: Vector2): number
+```
+
+Returns the 2D cross product — a **scalar**, not a vector. Its sign
+tells you the winding direction: positive = `other` is counter-clockwise
+from `vec`, negative = clockwise.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector2` | Second vector |
+
+```ts
+const a = new Vector2(1, 0);
+const b = new Vector2(0, 1);
+
+a.cross(b);  //  1 (b is CCW from a)
+b.cross(a);  // -1 (a is CW from b)
+```
+
+<Note>
+  In 3D the cross product returns a vector. In 2D it returns a scalar —
+  the z-component of what the 3D cross would be. This is different
+  from [Vector.cross](/api/types/vector#cross).
+</Note>
+
+---
+
+## Transforms
+
+{/* ------------------------------------------------------------------ */}
+
+### normalize
+
+<br />
+
+```ts
+vec.normalize(): this   // mutates in place
+```
+
+Scales to length 1 **in place**. Returns `this`.
+
+```ts
+const dir = target.sub(origin);
+dir.normalize();
+// dir is now a unit vector
+```
+
+<Warning>
+  Mutates the original. Use [normalized()](#normalized) if you need the
+  original preserved.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### normalized
+
+<br />
+
+```ts
+vec.normalized(): Vector2
+```
+
+Returns a **new** unit vector. The original is untouched.
+
+```ts
+const delta = target.sub(origin);
+const dir = delta.normalized();
+const dist = delta.length();
+// delta still has its original magnitude
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### rotate
+
+<br />
+
+```ts
+vec.rotate(degrees: number): Vector2
+```
+
+Rotates the vector by `degrees` around the origin. Returns a **new**
+Vector2. Positive = counter-clockwise.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `degrees` | `number` | Rotation angle in degrees |
+
+```ts
+const right = new Vector2(1, 0);
+
+const up = right.rotate(90);
+// up ≈ Vector2(0, 1)
+
+const left = right.rotate(180);
+// left ≈ Vector2(-1, 0)
+```
+
+<Tabs>
+  <Tab title="Indicator offset">
+    ```ts
+    // Draw 8 indicators in a circle around a screen point
+    const base = new Vector2(30, 0);  // 30px radius
+    for (let i = 0; i < 8; i++) {
+        const offset = base.rotate(i * 45);
+        const pos = center.add(offset);
+        render.circleFilled(pos, 3, Color.white());
+    }
+    ```
+  </Tab>
+  <Tab title="Rotated HUD">
+    ```ts
+    // Arrow pointing in the direction of movement
+    const moveDir2D = new Vector2(vel.x, vel.y).normalized();
+    const angle = Math.toDegrees(Math.atan2(moveDir2D.y, moveDir2D.x));
+    const arrowTip = center.add(new Vector2(20, 0).rotate(angle));
+    ```
+  </Tab>
+</Tabs>
+
+{/* ------------------------------------------------------------------ */}
+
+### abs
+
+<br />
+
+```ts
+vec.abs(): Vector2
+```
+
+Returns a new Vector2 with absolute values of both components.
+
+```ts
+const v = new Vector2(-10, -20);
+const a = v.abs();  // Vector2(10, 20)
+```
+
+---
+
+## Utility
+
+{/* ------------------------------------------------------------------ */}
+
+### clone
+
+<br />
+
+```ts
+vec.clone(): Vector2
+```
+
+Returns an independent deep copy.
+
+```ts
+const original = new Vector2(10, 20);
+const copy = original.clone();
+copy.x = 999;
+// original.x is still 10
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toArray
+
+<br />
+
+```ts
+vec.toArray(): [number, number]
+```
+
+Returns `[x, y]` as a plain array.
+
+```ts
+const [sx, sy] = screenPos.toArray();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toString
+
+<br />
+
+```ts
+vec.toString(): string
+```
+
+Returns a human-readable string with 3 decimal places.
+
+```ts
+const pos = new Vector2(640.5, 360);
+pos.toString();
+// "Vector2(640.500, 360.000)"
+```
+
+---
+
+## Common patterns
+
+<Tabs>
+  <Tab title="ESP label offset">
+    ```ts
+    const { success, screen } = Math.worldToScreen(headPos);
+    if (success) {
+        const namePos = screen.add(new Vector2(0, -14));
+        const hpPos = screen.add(new Vector2(0, 4));
+        render.text(namePos, name, Color.white());
+        render.text(hpPos, `${health} HP`, Color.green());
+    }
+    ```
+  </Tab>
+  <Tab title="Screen-space box">
+    ```ts
+    const { success: s1, screen: head } = Math.worldToScreen(headPos);
+    const { success: s2, screen: feet } = Math.worldToScreen(feetPos);
+
+    if (s1 && s2) {
+        const h = feet.y - head.y;
+        const w = h * 0.5;
+        const topLeft = head.sub(new Vector2(w / 2, 0));
+        render.rect(topLeft, new Vector2(w, h), Color.red());
+    }
+    ```
+  </Tab>
+  <Tab title="Circle indicator">
+    ```ts
+    // Draw a dashed circle around a screen point
+    const radius = 40;
+    const segments = 32;
+    const base = new Vector2(radius, 0);
+
+    for (let i = 0; i < segments; i += 2) {
+        const a = center.add(base.rotate(i * (360 / segments)));
+        const b = center.add(base.rotate((i + 1) * (360 / segments)));
+        render.line(a, b, Color.white());
+    }
+    ```
+  </Tab>
+  <Tab title="Normalized screen coords">
+    ```ts
+    // Convert pixel coords to [0, 1] range
+    const normPos = screenPos.div(
+        new Vector2(screenWidth, screenHeight)
+    );
+    ```
+  </Tab>
+</Tabs>

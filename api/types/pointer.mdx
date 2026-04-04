@@ -1,0 +1,355 @@
+---
+title: "Pointer"
+sidebarTitle: "Pointer"
+description: "A typed wrapper around a memory address with arithmetic, dereference, and structured read operations."
+icon: "arrow-pointer"
+---
+
+`Pointer` wraps a single memory address. You get one from `ptr()`, from
+`Memory.scan()`, or by following another pointer — and then use it to
+navigate and read game memory.
+
+<Note>
+  `.address` is always a **BigInt** (`0n`, `0x12345678n`, etc.).
+  All methods accept `number`, `BigInt`, or another `Pointer` as an address
+  argument — the engine converts automatically.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Arithmetic" icon="calculator" href="#arithmetic">
+    Offset and compare pointers with add, sub, and equals.
+  </Card>
+  <Card title="Dereference" icon="arrow-turn-down" href="#dereference">
+    Follow a pointer to get the value it points to.
+  </Card>
+  <Card title="Resolve" icon="link" href="#resolve">
+    Walk multi-level pointer chains in one call.
+  </Card>
+  <Card title="Read" icon="database" href="#read">
+    Read typed scalars, strings, arrays, or raw byte snapshots.
+  </Card>
+</CardGroup>
+
+---
+
+## Properties
+
+| Name | Type | |
+|:-----|:-----|:--|
+| `address` | `BigInt` | The raw address. Readonly. |
+| `isNull` | `boolean` | `true` when address is `0`. Readonly. |
+
+---
+
+## Creating a pointer
+
+```ts
+new Pointer(address: number | BigInt | Pointer): Pointer
+ptr(address: number | BigInt | Pointer): Pointer   // shorthand
+```
+
+Both forms are equivalent. `ptr()` is the idiomatic shorthand in scripts.
+
+```ts
+const p = ptr(0x12345678n);
+console.log(p.address);  // 12345678n
+console.log(p.isNull);   // false
+```
+
+### Pointer.null
+
+A pre-built null pointer — use it as a sentinel or default value.
+
+```ts
+const empty = Pointer.null;
+console.log(empty.isNull); // true
+```
+
+---
+
+## Arithmetic
+
+### .add
+
+<br />
+
+```ts
+ptr.add(offset: number | BigInt): Pointer
+```
+
+Returns a new `Pointer` shifted forward by `offset` bytes. The original is
+not modified.
+
+```ts
+const base = ptr(moduleBase);
+const field = base.add(0x3C);   // base + 0x3C
+```
+
+---
+
+### .sub
+
+<br />
+
+```ts
+ptr.sub(offset: number | BigInt): Pointer
+```
+
+Returns a new `Pointer` shifted backward by `offset` bytes.
+
+```ts
+const prev = ptr.sub(8);
+```
+
+---
+
+### .equals
+
+<br />
+
+```ts
+ptr.equals(other: number | BigInt | Pointer): boolean
+```
+
+Returns `true` if both pointers point to the same address.
+
+```ts
+if (entityPtr.equals(localPlayerPtr)) {
+    console.log("That's us!");
+}
+```
+
+---
+
+## Dereference
+
+### .deref / .derefRaw
+
+<br />
+
+```ts
+ptr.deref(): Pointer      // uses cache
+ptr.derefRaw(): Pointer   // bypasses cache
+```
+
+Reads a pointer-sized value from this address and returns it as a new
+`Pointer`. Use `deref` in most cases — `derefRaw` forces a live read.
+
+```ts
+const entity = ptr(entityListBase).deref();
+if (!entity.isNull) {
+    // entity now points to the actual entity object
+}
+```
+
+<Tip>
+  **Cached vs raw** — `deref` reads through the SDK cache (fast, data
+  is up-to-date within a frame). `derefRaw` always hits process memory
+  directly. Prefer cached reads in per-frame code.
+</Tip>
+
+---
+
+## Resolve
+
+### .resolve / .resolveRaw
+
+<br />
+
+```ts
+ptr.resolve(...offsets: (number | BigInt)[]): Pointer
+ptr.resolveRaw(...offsets: (number | BigInt)[]): Pointer
+```
+
+Walks a multi-level pointer chain. For each offset except the last, adds the
+offset then dereferences. The final offset is only added — not dereferenced.
+
+Equivalent to writing a chain of `add` + `deref` calls manually.
+
+```ts
+// Read a classic multi-level pointer: base → +0x10 → +0x3C → +0x8
+const value = ptr(moduleBase).resolve(0x10, 0x3C, 0x8);
+```
+
+```ts
+// Base → deref → +0x2F0 → deref → +0x58   (two dereferences)
+const health = ptr(clientBase).resolve(0x2F0, 0x58);
+```
+
+<Warning>
+  If any intermediate pointer in the chain is null, `resolve` throws
+  `"Pointer.resolve: null in chain"`. Check `.isNull` on the result
+  when the chain might not exist yet.
+</Warning>
+
+---
+
+## Read
+
+### .read / .readRaw
+
+<br />
+
+```ts
+// Raw snapshot — read byteCount bytes
+ptr.read(byteCount: number): Snapshot
+
+// Typed scalar
+ptr.read(type: string): number | BigInt | boolean | string | Pointer
+
+// Typed array — returns a TypedArray
+ptr.read(type: string, count: number): TypedArray | Pointer[]
+
+// Struct view (from FFI.struct)
+ptr.read(StructType): StructView
+
+// Array of struct views
+ptr.read(StructType, count: number): StructView[]
+```
+
+`readRaw` mirrors every overload but bypasses the cache.
+
+<Note>
+  Reads that fail (bad address, access denied) throw an error. Check
+  `.isNull` before reading from a pointer you're not sure about.
+</Note>
+
+### Type names
+
+| Name | Returns | Notes |
+|:-----|:--------|:------|
+| `'int8'` | `number` | |
+| `'uint8'`, `'byte'` | `number` | |
+| `'int16'` | `number` | |
+| `'uint16'` | `number` | |
+| `'int32'` | `number` | |
+| `'uint32'` | `number` | |
+| `'int64'` | `BigInt` | |
+| `'uint64'` | `BigInt` | |
+| `'float'` | `number` | |
+| `'double'` | `number` | |
+| `'bool'` | `boolean` | |
+| `'string'` | `string` | Reads up to 4096 bytes; pass `count` to override |
+| `'wstring'` | `string` | Reads up to 2048 UTF-16 chars |
+| `'ptr'`, `'pointer'` | `Pointer` | |
+
+<CodeGroup>
+```ts Scalars
+const hp    = entityPtr.add(0x100).read('int32');
+const speed = entityPtr.add(0x11C).read('float');
+const name  = entityPtr.add(0x344).read('string');
+```
+
+```ts Arrays
+// Read 64 floats starting at this address
+const floats = ptr(addr).read('float', 64);   // Float32Array
+
+// Read 16 pointers
+const ptrs = ptr(addr).read('ptr', 16);       // Pointer[]
+```
+
+```ts Struct
+const PlayerInfo = FFI.struct("PlayerInfo", { ... });
+const player = entityPtr.read(PlayerInfo);
+console.log(player.health, player.name);
+
+// Array of 64 players
+const list = ptr(entityList).read(PlayerInfo, 64);
+```
+</CodeGroup>
+
+---
+
+## Snapshot
+
+`Snapshot` is what `.read(byteCount)` returns — a frozen copy of raw bytes
+together with helpers to interpret them.
+
+```ts
+const snap = ptr(someBase).read(0x200);
+```
+
+| Member | Type | Description |
+|:-------|:-----|:------------|
+| `.buffer` | `ArrayBuffer` | The raw byte backing store |
+| `.at(offset)` | `Accessor` | Returns a typed accessor at `offset` bytes |
+| `.as(StructType, offset?, count?)` | `StructView \| StructView[]` | Interpret bytes as a struct or array |
+
+### Accessor
+
+`.at(offset)` returns an object whose getter properties decode bytes in-place:
+
+| Property | Returns |
+|:---------|:--------|
+| `.int8` | `number` |
+| `.uint8` / `.byte` | `number` |
+| `.int16` | `number` |
+| `.uint16` | `number` |
+| `.int32` | `number` |
+| `.uint32` | `number` |
+| `.int64` | `BigInt` |
+| `.uint64` | `BigInt` |
+| `.float` | `number` |
+| `.double` | `number` |
+| `.bool` | `boolean` |
+| `.string` | `string` |
+| `.wstring` | `string` |
+| `.ptr` | `Pointer` |
+
+```ts
+const snap = ptr(base).read(0x100);
+
+const flags    = snap.at(0x00).int32;
+const velocity = snap.at(0x10).float;
+const namePtr  = snap.at(0x28).ptr;
+const tag      = snap.at(0x50).string;
+```
+
+```ts
+// Struct via .as()
+const WeaponData = FFI.struct("WeaponData", { ... });
+
+const weapon = snap.as(WeaponData);
+const mags   = snap.as(WeaponData, 0x80, 4); // array of 4 starting at offset 0x80
+```
+
+---
+
+## Recipes
+
+### Follow a pointer chain and read a field
+
+```ts
+const hp = ptr(clientBase)
+    .resolve(0x2F0, 0x58)   // two-level chain
+    .read('int32');          // read the int at the end
+
+console.log("Health:", hp);
+```
+
+### Read multiple fields from one snapshot
+
+```ts
+// Read once — avoid hammering the read path per field
+const snap = ptr(entityBase).read(0x400);
+
+const info = {
+    health:  snap.at(0x100).int32,
+    armor:   snap.at(0x104).int32,
+    velocity: snap.at(0x10C).float,
+    name:    snap.at(0x344).string,
+};
+```
+
+### Null-safe pointer walk
+
+```ts
+const entity = ptr(entityListBase).deref();
+
+if (!entity.isNull) {
+    const health = entity.add(0x100).read('int32');
+    console.log("HP:", health);
+}
+```

@@ -1,0 +1,461 @@
+---
+title: "Entities"
+sidebarTitle: "Entities"
+description: "Query, iterate, and read schema fields from any game entity — players, weapons, projectiles, and everything else."
+icon: "users"
+---
+
+The `Entities` global exposes the game's entity list. Every entity is backed
+by a **cached snapshot** that is refreshed each frame — reads are fast and
+safe to call in per-frame callbacks without worrying about memory access.
+
+<Note>
+  Entity objects are **lazy** — they hold an index, not a pointer. The
+  actual data is fetched from the per-frame cache on first property access.
+  Always check `.isValid` before reading fields in contexts where an entity
+  might have just died or despawned.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Fetching entities" icon="magnifying-glass" href="#fetching-entities">
+    Get all entities, look up by index, or grab players.
+  </Card>
+  <Card title="Query builder" icon="filter" href="#query-builder">
+    Chain class filters and iterators — forEach, map, filter, first.
+  </Card>
+  <Card title="Entity object" icon="cube" href="#entity-object">
+    Schema fields, reserved properties, and the raw-buffer API.
+  </Card>
+  <Card title="Supported field types" icon="code" href="#supported-field-types">
+    How the engine maps every C++ type to a JS value.
+  </Card>
+</CardGroup>
+
+---
+
+## Fetching entities
+
+### Entities.getByIndex
+
+<br />
+
+```ts
+Entities.getByIndex(index: number): Entity
+```
+
+Returns an `Entity` handle for a given entity list index. The entity may or
+may not be valid — always check `.isValid`.
+
+```ts
+const ent = Entities.getByIndex(1);
+if (ent.isValid) {
+    console.log(ent.className, ent.m_iHealth);
+}
+```
+
+---
+
+### Entities.getEntities
+
+<br />
+
+```ts
+Entities.getEntities(): Entity[]
+```
+
+Returns every entity currently in the snapshot as a flat array.
+
+```ts
+const all = Entities.getEntities();
+console.log(`${all.length} entities in snapshot`);
+
+for (const ent of all) {
+    console.log(`#${ent.index} ${ent.className}`);
+}
+```
+
+<Tip>
+  Prefer `Entities.find()` when you only need a specific class — it avoids
+  allocating the full array and skips irrelevant entities early.
+</Tip>
+
+---
+
+### Entities.getPlayers
+
+<br />
+
+```ts
+Entities.getPlayers(options?: { skipLocal?: boolean }): Entity[]
+```
+
+Returns all **player pawns** in the game (`C_CSPlayerPawn` and
+`C_CSObserverPawn`). Each element is the pawn entity — use `.controller`
+to reach the `CCSPlayerController`.
+
+| Option | Type | Default | |
+|:-------|:-----|:--------|:--|
+| `skipLocal` | `boolean` | `false` | Exclude the local player's pawn |
+
+```ts
+// All players including self
+for (const player of Entities.getPlayers()) {
+    const hp = player.m_iHealth;
+    console.log(`HP: ${hp}`);
+}
+
+// Enemies only
+for (const player of Entities.getPlayers({ skipLocal: true })) {
+    const pos = player.m_vecAbsOrigin;
+    console.log(`Enemy at ${pos.x}, ${pos.y}, ${pos.z}`);
+}
+```
+
+---
+
+### Entities.getLocalPlayer
+
+<br />
+
+```ts
+Entities.getLocalPlayer(): Entity | null
+```
+
+Returns the local player's **pawn** entity, or `null` if not in-game.
+
+```ts
+const local = Entities.getLocalPlayer();
+if (local) {
+    console.log(`You are alive, HP: ${local.m_iHealth}`);
+}
+```
+
+---
+
+## Query builder
+
+`Entities.find()` returns a **Query** — a lazy, chainable object that filters
+entities from the snapshot. Nothing is read until you call a terminal method
+(`toArray`, `forEach`, `first`, `count`, `map`, `some`, `every`).
+
+### Entities.find
+
+<br />
+
+```ts
+// Exact class name match
+Entities.find(className: string): Query
+
+// Options object — className for exact match, parent for inheritance
+Entities.find(options: { className?: string, parent?: string }): Query
+```
+
+| Option | | |
+|:-------|:--|:--|
+| `className` | Exact match — only entities whose class is exactly this | `"C_CSPlayerPawn"` |
+| `parent` | Inheritance match — any entity whose class inherits from this | `"C_BaseEntity"` |
+
+<CodeGroup>
+```ts Exact class
+Entities.find("CCSPlayerController")
+    .forEach(ctrl => {
+        console.log(ctrl.m_iszPlayerName);
+    });
+```
+
+```ts By parent class
+Entities.find({ parent: "C_BaseFlex" })
+    .forEach(ent => {
+        console.log(ent.className, ent.m_flSimulationTime);
+    });
+```
+
+```ts Chained filters
+const snipers = Entities.find("C_CSPlayerPawn")
+    .filter(p => p.m_iHealth > 0)
+    .filter(p => p.m_iTeamNum === 2)
+    .toArray();
+```
+</CodeGroup>
+
+---
+
+### Query methods
+
+| Method | Returns | Description |
+|:-------|:--------|:------------|
+| `.filter(fn)` | `Query` | Add a JS-side predicate. Chainable. |
+| `.forEach(fn)` | `void` | Call `fn(entity)` for every match. |
+| `.toArray()` | `Entity[]` | Collect all matches into an array. |
+| `.first()` | `Entity \| null` | First match, or `null`. |
+| `.count()` | `number` | Number of matching entities. |
+| `.map(fn)` | `T[]` | Transform each match. |
+| `.some(fn)` | `boolean` | `true` if any entity passes `fn`. |
+| `.every(fn)` | `boolean` | `true` if all entities pass `fn`. |
+
+```ts
+// Is any enemy alive?
+const anyAlive = Entities.find("C_CSPlayerPawn")
+    .filter(p => p.m_iTeamNum !== Entities.getLocalPlayer()?.m_iTeamNum)
+    .some(p => p.m_iHealth > 0);
+
+// Closest enemy
+const enemies = Entities.find("C_CSPlayerPawn")
+    .filter(p => p.m_iHealth > 0)
+    .toArray();
+
+const myPos = Entities.getLocalPlayer()?.m_vecAbsOrigin;
+enemies.sort((a, b) =>
+    a.m_vecAbsOrigin.distTo(myPos) - b.m_vecAbsOrigin.distTo(myPos)
+);
+const nearest = enemies[0];
+```
+
+---
+
+## Entity object
+
+Every value returned by the `Entities` API is an **Entity** — a dynamic
+proxy that reads fields directly from the per-frame entity cache.
+
+### Reserved properties
+
+These are always present regardless of the entity's class:
+
+| Property | Type | |
+|:---------|:-----|:--|
+| `index` | `number` | Entity list index. Readonly. |
+| `isValid` | `boolean` | `true` if entity exists in the current snapshot. Readonly. |
+| `className` | `string` | Class name, e.g. `"C_CSPlayerPawn"`. Readonly. |
+| `address` | `BigInt` | In-process memory address of the entity object. Readonly. |
+
+```ts
+const ent = Entities.getByIndex(42);
+console.log(ent.index);     // 42
+console.log(ent.className); // "C_CSPlayerPawn"
+console.log(ent.isValid);   // true / false
+console.log(ent.address);   // 0x12345678n
+```
+
+---
+
+### Schema fields
+
+Any field in the entity's C++ class hierarchy is accessible by name directly
+on the entity object. The engine resolves the field through the full
+inheritance chain automatically.
+
+```ts
+const player = Entities.getLocalPlayer();
+
+// Primitives
+const hp       = player.m_iHealth;            // number
+const armor    = player.m_ArmorValue;         // number
+const alive    = player.m_bIsAlive;           // boolean
+
+// Vectors and angles
+const pos      = player.m_vecAbsOrigin;       // Vector
+const vel      = player.m_vecVelocity;        // Vector
+const eyeAngle = player.m_angEyeAngles;       // QAngle
+
+// Strings
+const name     = player.m_iszPlayerName;      // string (CUtlString)
+
+// Handles — automatically resolved to Entity | null
+const weapon   = player.m_hActiveWeapon;      // Entity | null
+
+// Inline nested structs — returns a nested object with its own fields
+const collision = player.m_Collision;
+const mins = collision.m_vMinBounds;          // Vector
+```
+
+<Warning>
+  Builtin fields (`bool`, `int32`, `float`, etc.) are **writable** — you can
+  set them directly: `player.m_iHealth = 100`. All other field types (pointers,
+  nested structs, vectors, handles) are read-only.
+</Warning>
+
+---
+
+### `.controller` (player pawns only)
+
+Available on `C_CSPlayerPawn` and `C_CSObserverPawn`. Returns the
+`CCSPlayerController` entity linked to this pawn.
+
+```ts
+for (const pawn of Entities.getPlayers()) {
+    const ctrl = pawn.controller;
+    if (ctrl) {
+        console.log(ctrl.m_iszPlayerName, pawn.m_iHealth);
+    }
+}
+```
+
+---
+
+### CUtlVector fields
+
+Fields of type `CUtlVector` (or `CNetworkUtlVectorBase`) return a
+**UtlVector** object — a lazy wrapper around the native array that
+reads elements on demand.
+
+| Method | Returns | Description |
+|:-------|:--------|:------------|
+| `.length` | `number` | Element count |
+| `.get(index)` | element | Element at index, or `null` |
+| `.toArray()` | element[] | All elements as a JS array |
+| `.forEach(fn)` | `void` | `fn(element, index)` for each element |
+| `.map(fn)` | `T[]` | Transform each element |
+| `.filter(fn)` | element[] | Keep elements where `fn` returns true |
+| `.find(fn)` | element \| `null` | First element where `fn` returns true |
+
+```ts
+const weapons = player.m_hMyWeapons;  // CUtlVector<CHandle>
+
+console.log(`Carrying ${weapons.length} weapons`);
+
+weapons.forEach((weapon, i) => {
+    if (weapon) console.log(`Slot ${i}: ${weapon.className}`);
+});
+
+const activeWpn = weapons.find(w => w?.m_bInReload);
+```
+
+---
+
+### Raw buffer API
+
+Every entity (and nested struct) exposes low-level read methods for
+reading raw bytes at a fixed byte offset from the entity's base address.
+Useful for fields not exposed in the generated schema.
+
+```ts
+obj.readInt8(offset)           // → number
+obj.readUint8(offset)          // → number
+obj.readInt16(offset)          // → number
+obj.readUint16(offset)         // → number
+obj.readInt32(offset)          // → number
+obj.readUint32(offset)         // → number
+obj.readInt64(offset)          // → BigInt
+obj.readUint64(offset)         // → BigInt
+obj.readFloat(offset)          // → number
+obj.readDouble(offset)         // → number
+obj.readBool(offset)           // → boolean
+obj.readPointer(offset)        // → BigInt  (raw address)
+obj.readString(offset, max?)   // → string  (null-terminated, max 4096 by default)
+obj.readVector(offset)         // → Vector
+obj.readAngle(offset)          // → QAngle
+obj.buffer(offset?, length?)   // → Uint8Array
+obj.size()                     // → number  (cached byte size of this object)
+```
+
+```ts
+// Read an undocumented field at a known offset
+const rawFlags = player.readUint32(0x3AC);
+
+// Grab a raw slice for manual parsing
+const chunk = player.buffer(0x100, 64); // 64 bytes starting at +0x100
+```
+
+---
+
+### `.toString()`
+
+```ts
+const ent = Entities.getByIndex(5);
+console.log(ent.toString()); // "[Entity #5] (C_CSPlayerPawn)"
+```
+
+---
+
+## Supported field types
+
+The engine maps every C++ schema type to a JavaScript value automatically.
+
+| C++ type | JS value | Notes |
+|:---------|:---------|:------|
+| `bool` | `boolean` | |
+| `int8`, `int16`, `int32` | `number` | Signed |
+| `uint8`, `uint16`, `uint32` | `number` | Unsigned |
+| `int64` | `BigInt` | |
+| `uint64` | `BigInt` | |
+| `float`, `float32` | `number` | |
+| `double`, `float64` | `number` | |
+| `Vector`, `VectorWS` | [`Vector`](/api/types/vector) | |
+| `QAngle`, `QAngle_t` | [`QAngle`](/api/types/qangle) | |
+| `Quaternion`, `Quaternion_t` | `{ x, y, z, w }` | |
+| `GameTick_t` | `number` | Stored as float |
+| `CUtlString`, `CUtlSymbolLarge` | `string` | |
+| `CUtlVector`, `CNetworkUtlVectorBase` | `UtlVector` | See [CUtlVector fields](#cutlvector-fields) |
+| `C_EntityHandle`, `CHandle<T>` | `Entity \| null` | Resolved to entity |
+| Pointer to known class | nested object \| `null` | Cache-backed |
+| Inline nested struct | nested object | Same buffer as parent |
+| Unknown / unrecognized | `Uint8Array` | Raw bytes |
+
+---
+
+## Recipes
+
+### Find the closest visible enemy
+
+```ts
+const local = Entities.getLocalPlayer();
+if (!local) return;
+
+const myPos = local.m_vecAbsOrigin;
+const myTeam = local.m_iTeamNum;
+
+let closest = null;
+let bestDist = Infinity;
+
+Entities.find("C_CSPlayerPawn")
+    .filter(p => p.m_iHealth > 0)
+    .filter(p => p.m_iTeamNum !== myTeam)
+    .forEach(enemy => {
+        const dist = enemy.m_vecAbsOrigin.distTo(myPos);
+        if (dist < bestDist) {
+            bestDist = dist;
+            closest = enemy;
+        }
+    });
+```
+
+### Iterate all controllers and their pawns
+
+```ts
+Entities.find("CCSPlayerController").forEach(ctrl => {
+    const pawn = ctrl.m_hPawn;
+    if (!pawn || !pawn.isValid) return;
+
+    console.log(
+        ctrl.m_iszPlayerName,
+        "HP:", pawn.m_iHealth,
+        "Team:", pawn.m_iTeamNum
+    );
+});
+```
+
+### List all weapons on the map
+
+```ts
+Entities.find({ parent: "C_BaseFlex" })
+    .filter(e => e.className.includes("Weapon") || e.className.includes("weapon"))
+    .forEach(w => {
+        const pos = w.m_vecAbsOrigin;
+        console.log(`${w.className} at (${pos.x.toFixed(0)}, ${pos.y.toFixed(0)})`);
+    });
+```
+
+### Read schema field + raw fallback
+
+```ts
+const player = Entities.getLocalPlayer();
+
+// Prefer schema field
+const hp = player.m_iHealth;
+
+// Fall back to raw offset if field isn't in schema
+const shotsFired = player.readInt32(0x9B4);
+```

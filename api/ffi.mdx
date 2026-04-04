@@ -1,0 +1,872 @@
+---
+title: "FFI"
+sidebarTitle: "FFI"
+description: "Call native libraries, define C structs, and bridge JavaScript to any DLL or shared object."
+icon: "microchip"
+---
+
+The `FFI` global lets you load native libraries (`.dll`, `.so`) and call their
+functions directly from JavaScript — no bindings, no wrappers.
+
+<Note>
+  Pointers are represented as **BigInt** values. A `0n` BigInt is a null
+  pointer. The engine never uses raw `number` for addresses.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Libraries & functions" icon="book" href="#libraries--functions">
+    Load a DLL/SO, resolve symbols, call native functions.
+  </Card>
+  <Card title="Structs & unions" icon="layer-group" href="#structs--unions">
+    Define C-compatible data layouts and access fields directly.
+  </Card>
+  <Card title="Memory" icon="memory" href="#memory">
+    Allocate, read, write, and convert pointers.
+  </Card>
+  <Card title="Callbacks" icon="arrow-turn-up" href="#callbacks">
+    Pass JavaScript functions where native code expects a function pointer.
+  </Card>
+  <Card title="Types" icon="code" href="#type-system">
+    Supported type names and how to define aliases.
+  </Card>
+  <Card title="Resource management" icon="shield" href="#resource-management">
+    Auto-cleanup scopes and disposable handles.
+  </Card>
+</CardGroup>
+
+---
+
+## Libraries & functions
+
+Load a native library, then pull functions out of it. Two styles: quick
+`proc` calls for simple signatures, or C-style `func` declarations when
+you want readable code.
+
+{/* ------------------------------------------------------------------ */}
+
+### open
+
+<br />
+
+```ts
+FFI.open(path: string): FFILibrary
+```
+
+Loads a dynamic library and returns a library handle. On Windows this
+calls `LoadLibraryA`, on Linux/macOS `dlopen`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `path` | `string` | Path to the `.dll` or `.so` file |
+
+```ts
+const user32 = FFI.open("user32.dll");
+const libc   = FFI.open("libc.so.6");
+```
+
+<Warning>
+  The library stays loaded until you call `close()` or the script ends.
+  Forgetting to close can leak handles across reloads.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### close
+
+<br />
+
+```ts
+lib.close(): void
+```
+
+Unloads the library. Any functions resolved from it become invalid —
+calling them after `close()` will crash.
+
+```ts
+const lib = FFI.open("mylib.dll");
+// ... use it ...
+lib.close();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### proc
+
+<br />
+
+```ts
+lib.proc(name: string, retType: string, argTypes?: string[]): Function
+```
+
+Resolves a symbol by name and wraps it as a callable function.
+The quick-and-dirty way — pass types as separate arguments.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `name` | `string` | Exported symbol name |
+| `retType` | `string` | Return [type name](#type-system) |
+| `argTypes` | `string[]` | Parameter [type names](#type-system) |
+
+```ts
+const msgBox = user32.proc("MessageBoxA", "int", ["pointer", "string", "string", "uint32"]);
+msgBox(FFI.nullptr, "Hello from JS!", "FFI", 0);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### func
+
+<br />
+
+```ts
+lib.func(signature: string): Function
+```
+
+Resolves a function using a **C-style signature string**. More readable
+than `proc` for complex declarations.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `signature` | `string` | Full C-style signature |
+
+The signature format is `returnType [abi] functionName(paramTypes...)`:
+
+```ts
+const msgBox = user32.func("int MessageBoxA(pointer, string, string, uint32)");
+msgBox(FFI.nullptr, "Hello from JS!", "FFI", 0);
+```
+
+<Tabs>
+  <Tab title="Basic">
+    ```ts
+    const getTickCount = kernel32.func("uint32 GetTickCount()");
+    const ticks = getTickCount();
+    ```
+  </Tab>
+  <Tab title="Calling convention">
+    ```ts
+    // Explicit stdcall (default on most WinAPI)
+    const wndProc = user32.func(
+        "int __stdcall DefWindowProcA(pointer, uint32, pointer, pointer)"
+    );
+    ```
+  </Tab>
+  <Tab title="Variadic">
+    ```ts
+    const printf = libc.func("int printf(string, ...)");
+    // Pass variadic args as type/value pairs after the fixed args:
+    printf("count: %d, name: %s\n", "int", 42, "string", "hello");
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  Supported calling conventions: `__cdecl` (default), `__stdcall`,
+  `__fastcall`, `__thiscall`. Prefix the function name with the keyword.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### funcs
+
+<br />
+
+```ts
+lib.funcs(definitions: { [alias: string]: string }): { [alias: string]: Function }
+```
+
+Batch-declare multiple functions at once. Returns an object with
+a callable for each key.
+
+```ts
+const k32 = FFI.open("kernel32.dll");
+
+const { sleep, getTickCount } = k32.funcs({
+    sleep:        "void Sleep(uint32)",
+    getTickCount: "uint32 GetTickCount()",
+});
+
+sleep(100);
+log(getTickCount());
+```
+
+<Tip>
+  If the signature already contains a function name, the symbol is resolved
+  by that name. The object key just becomes the JS alias. So `sleep` in
+  the example above resolves `Sleep` from the DLL.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### funcAsync / funcsAsync
+
+<br />
+
+```ts
+lib.funcAsync(signature: string): (...args) => Promise
+lib.funcsAsync(definitions: { [alias: string]: string }): { [alias: string]: (...args) => Promise }
+```
+
+Async variants of `func` and `funcs`. The native call runs on a worker
+thread and returns a `Promise` that resolves with the result.
+
+```ts
+const readFile = kernel32.funcAsync(
+    "bool ReadFile(pointer, pointer, uint32, _Out_ uint32*, pointer)"
+);
+
+const ok = await readFile(hFile, buf, bufSize, bytesRead, FFI.nullptr);
+```
+
+<Warning>
+  Variadic functions are not supported in async mode.
+  Only use `funcAsync` for non-variadic signatures.
+</Warning>
+
+---
+
+## Structs & unions
+
+Define C-compatible memory layouts. Struct instances are backed by an
+`ArrayBuffer` — fields are live accessors into the buffer, not copies.
+Write a field and the native memory updates immediately.
+
+{/* ------------------------------------------------------------------ */}
+
+### struct
+
+<br />
+
+```ts
+FFI.struct(name?: string, fields: { [name: string]: string }): StructType
+```
+
+Defines a struct layout. Field order matches property insertion order.
+Returns a **type object** with factory methods.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `name` | `string` | Optional name (registers globally for nesting) |
+| `fields` | `object` | Field names → [type names](#type-system) |
+
+```ts
+const Vec3 = FFI.struct("Vec3", {
+    x: "float",
+    y: "float",
+    z: "float",
+});
+```
+
+**Array fields** use bracket notation:
+
+```ts
+const Matrix = FFI.struct("Matrix", {
+    m: "float[16]",
+});
+```
+
+**Nested structs** reference by name:
+
+```ts
+const Player = FFI.struct("Player", {
+    position: "Vec3",
+    health:   "int32",
+    name:     "char[64]",
+});
+```
+
+<Note>
+  `char[N]` fields are treated as C strings — they read/write as JS
+  strings, auto null-terminated at `N-1`.
+</Note>
+
+The returned type object has these methods:
+
+| Method | Returns | |
+|:-------|:--------|:--|
+| `alloc()` | Instance | Allocates zeroed memory |
+| `from(obj)` | Instance | Allocates and copies fields from a JS object |
+| `view(ptr)` | Instance | Wraps existing memory (no copy, no ownership) |
+| `decode(buf, offset?)` | Plain object | Reads into a plain JS object (snapshot) |
+| `array(count)` | Instance[] | Allocates a contiguous array of structs |
+| `offsetOf(field)` | `number` | Returns the byte offset of a field |
+
+<Tabs>
+  <Tab title="alloc + write">
+    ```ts
+    const pos = Vec3.alloc();
+    pos.x = 100.0;
+    pos.y = 200.0;
+    pos.z = 0.0;
+    ```
+  </Tab>
+  <Tab title="from">
+    ```ts
+    const pos = Vec3.from({ x: 100, y: 200, z: 0 });
+    ```
+  </Tab>
+  <Tab title="view">
+    ```ts
+    // Read a Vec3 directly from a pointer
+    const pos = Vec3.view(entityBaseAddr + 0x138);
+    log(pos.x, pos.y, pos.z);
+    ```
+  </Tab>
+  <Tab title="decode">
+    ```ts
+    // Snapshot into a plain object (no live backing)
+    const snap = Vec3.decode(buffer, 0);
+    // snap = { x: 100, y: 200, z: 0 }
+    ```
+  </Tab>
+  <Tab title="array">
+    ```ts
+    const bones = Vec3.array(128);
+    bones[0].x = 10.0;
+    // All 128 structs share one contiguous ArrayBuffer
+    ```
+  </Tab>
+  <Tab title="offsetOf">
+    ```ts
+    Vec3.offsetOf("y"); // 4
+    Vec3.offsetOf("z"); // 8
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  `view()` wraps raw memory with no bounds checking beyond the struct's
+  own size. A bad pointer will read garbage or crash. Always validate
+  addresses before calling `view`.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### union
+
+<br />
+
+```ts
+FFI.union(name?: string, fields: { [name: string]: string }): UnionType
+```
+
+Like `struct`, but all fields share the same memory (offset 0). The
+total size equals the largest field.
+
+```ts
+const Value = FFI.union("Value", {
+    asInt:   "int32",
+    asFloat: "float",
+    asPtr:   "pointer",
+});
+
+const v = Value.alloc();
+v.asInt = 0x42280000;
+log(v.asFloat); // 42.0 — same bits, different interpretation
+```
+
+The returned type has `alloc()`, `from()`, and `view()` — same as struct.
+
+---
+
+## Memory
+
+Raw memory operations. Use these when you need to go below struct-level —
+reading strings from pointers, allocating scratch buffers, or converting
+between pointer representations.
+
+{/* ------------------------------------------------------------------ */}
+
+### alloc
+
+<br />
+
+```ts
+FFI.alloc(size: number): ArrayBuffer
+```
+
+Allocates a zeroed `ArrayBuffer` of `size` bytes. Maximum 256 MB.
+
+```ts
+const buf = FFI.alloc(1024);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### free
+
+<br />
+
+```ts
+FFI.free(ptr: BigInt | External): void
+```
+
+Frees memory previously allocated by native code (via the C runtime's
+`free`). Silent no-op on `null` / `undefined`.
+
+```ts
+const pStr = someDll.func("string! GetName()")();
+// The `!` suffix means the return value must be freed
+// But with disposable() this is handled automatically — see below
+```
+
+<Warning>
+  Only use `FFI.free` on pointers returned by native allocators (e.g.
+  `malloc`). **Never** free an `ArrayBuffer` pointer — the JS garbage
+  collector owns those.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### toPointer
+
+<br />
+
+```ts
+FFI.toPointer(value: any): BigInt
+```
+
+Converts any pointer-like value to a BigInt address.
+
+| Input type | Behavior |
+|:-----------|:---------|
+| `BigInt` | Returned as-is |
+| `ArrayBuffer` | Returns backing store address |
+| `ArrayBufferView` | Returns data pointer (with byte offset) |
+| `External` | Unwraps the external pointer |
+| Struct instance | Returns the struct's buffer address |
+
+```ts
+const buf = FFI.alloc(64);
+const addr = FFI.toPointer(buf); // BigInt address
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### readString
+
+<br />
+
+```ts
+FFI.readString(ptr: BigInt | External | ArrayBuffer, maxLen?: number): string | null
+```
+
+Reads a null-terminated C string from a pointer. Returns `null` if the
+pointer is null. Default `maxLen` is 4096, capped at 64 MB.
+
+```ts
+const name = FFI.readString(pName);
+const longStr = FFI.readString(pData, 65536);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### writeString
+
+<br />
+
+```ts
+FFI.writeString(buffer: ArrayBuffer | ArrayBufferView, str: string): number
+```
+
+Writes a UTF-8 string into a buffer, null-terminated. Returns the
+number of bytes written (excluding the null terminator).
+
+```ts
+const buf = FFI.alloc(256);
+FFI.writeString(buf, "Hello, world!");
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### sizeOf
+
+<br />
+
+```ts
+FFI.sizeOf(typeName: string): number
+```
+
+Returns the byte size of any [type name](#type-system), including
+registered structs and unions.
+
+```ts
+FFI.sizeOf("int32");   // 4
+FFI.sizeOf("pointer"); // 8 (on x64)
+FFI.sizeOf("Vec3");    // 12 (if Vec3 is 3 floats)
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### errno
+
+<br />
+
+```ts
+FFI.errno(): number
+```
+
+Returns the current C `errno` value. Check it right after a native call.
+
+```ts
+const fd = openFunc(path, flags);
+if (fd < 0) {
+    log("error:", FFI.errno());
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### nullptr
+
+<br />
+
+```ts
+FFI.nullptr  // External (null)
+```
+
+A null pointer constant. Pass it wherever a native function expects a
+`NULL`.
+
+```ts
+msgBox(FFI.nullptr, "text", "title", 0);
+```
+
+---
+
+## Callbacks
+
+Pass a JavaScript function where native code expects a **function pointer**.
+The engine creates a native trampoline that invokes your JS function when
+the native side calls through the pointer.
+
+{/* ------------------------------------------------------------------ */}
+
+### callback
+
+<br />
+
+```ts
+FFI.callback(signature: string, fn: Function): BigInt
+FFI.callback(retType: string, argTypes: string[], fn: Function): BigInt
+```
+
+Returns a BigInt pointer to a native-callable trampoline. Two forms —
+signature string or explicit types.
+
+<Tabs>
+  <Tab title="Signature style">
+    ```ts
+    const cb = FFI.callback("int (int, int)", (a, b) => {
+        return a + b;
+    });
+    // cb is a BigInt you can pass to any native function expecting
+    // a function pointer with that signature
+    ```
+  </Tab>
+  <Tab title="Explicit types">
+    ```ts
+    const cb = FFI.callback("bool", ["pointer", "uint32"], (hwnd, msg) => {
+        log("window message:", msg);
+        return true;
+    });
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  Callbacks are **not garbage collected**. You must call
+  [freeCallback](#freecallback) when done, or they leak. The only
+  exception is if the callback lives for the entire script lifetime.
+</Warning>
+
+<Note>
+  Callbacks have a re-entry depth limit of 16. If native code calls
+  your callback recursively beyond that, the engine returns zero/null
+  instead of calling JS.
+</Note>
+
+{/* ------------------------------------------------------------------ */}
+
+### freeCallback
+
+<br />
+
+```ts
+FFI.freeCallback(ptr: BigInt): void
+```
+
+Frees a previously created callback. Throws if the callback is currently
+executing (mid-call).
+
+```ts
+FFI.freeCallback(cb);
+```
+
+---
+
+## Type system
+
+Type names are strings used throughout the FFI API — in signatures,
+struct fields, `proc` calls, and `sizeOf`. The engine recognizes
+C-style names, Rust-style names, and Windows typedefs.
+
+### Primitive types
+
+| Type name(s) | Size | JS representation |
+|:-------------|:-----|:------------------|
+| `void` | 0 | `undefined` |
+| `bool`, `BOOL` | 4 | `boolean` |
+| `uint8`, `uint8_t`, `BYTE`, `byte` | 1 | `number` |
+| `int8`, `int8_t`, `char` | 1 | `number` |
+| `uint16`, `uint16_t`, `WORD`, `word` | 2 | `number` |
+| `int16`, `int16_t`, `short` | 2 | `number` |
+| `uint32`, `uint32_t`, `uint`, `unsigned`, `DWORD` | 4 | `number` |
+| `int32`, `int32_t`, `int`, `long` | 4 | `number` |
+| `uint64`, `uint64_t`, `uintptr_t` | 8 | `BigInt` |
+| `int64`, `int64_t` | 8 | `BigInt` |
+| `float`, `float32` | 4 | `number` |
+| `double`, `float64` | 8 | `number` |
+| `size_t` | 4 or 8 | `number` or `BigInt` |
+
+### Pointer types
+
+| Type name(s) | JS representation |
+|:-------------|:------------------|
+| `pointer`, `ptr`, `void*` | `BigInt` (address) |
+| `string`, `str`, `char*`, `const char*` | `string` (auto UTF-8 conversion) |
+| `wstring`, `wchar_t*`, `LPCWSTR`, `LPWSTR` | `string` (auto wide conversion) |
+| Any type ending with `*` | `BigInt` (pointer to that type) |
+
+<Note>
+  When a function **returns** `string` or `wstring`, the engine reads
+  the C string and gives you a JS string. When you **pass** a JS string
+  as a `pointer` argument, the engine auto-converts it to a temporary
+  null-terminated C string for the duration of the call.
+</Note>
+
+### Composite types
+
+Struct and union names become valid type names after definition:
+
+```ts
+FFI.struct("POINT", { x: "int32", y: "int32" });
+
+// Now "POINT" works as a type name
+FFI.sizeOf("POINT"); // 8
+
+// And "POINT*" works as a pointer-to-struct
+const fn = lib.func("bool GetCursorPos(POINT*)");
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### typedef
+
+<br />
+
+```ts
+FFI.typedef(alias: string, realType: string): void
+```
+
+Creates a type alias. Resolved recursively (up to 32 levels).
+
+```ts
+FFI.typedef("HANDLE", "pointer");
+FFI.typedef("HWND", "HANDLE");
+
+// Now HWND resolves to pointer
+const findWindow = user32.func("HWND FindWindowA(string, string)");
+```
+
+---
+
+## Resource management
+
+Native resources (allocated memory, file handles, callbacks) don't get
+garbage collected. These helpers prevent leaks.
+
+{/* ------------------------------------------------------------------ */}
+
+### disposable
+
+<br />
+
+```ts
+fn.disposable(cleanupFn: (returnValue) => void): Function
+```
+
+Every function returned by `func` / `proc` has a `.disposable()` method.
+It returns a new function that wraps return values in a **managed handle**
+which auto-closes inside `FFI.using()` scopes.
+
+```ts
+const allocName = lib.func("string! AllocName(int)");
+const safeName = allocName.disposable((ptr) => FFI.free(ptr));
+```
+
+The managed handle has:
+
+| Property | |
+|:---------|:--|
+| `.$val` | The raw return value |
+| `.close()` | Calls the cleanup function (idempotent) |
+
+<Tip>
+  The `!` suffix on a return type (e.g. `string!`) signals that the
+  return value is heap-allocated and should be freed. It's a convention,
+  not enforced — pair it with `.disposable()` for safety.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### using
+
+<br />
+
+```ts
+FFI.using(fn: () => any): any
+```
+
+Runs `fn` in a managed scope. Any managed handles (from `.disposable()`)
+created during the scope are automatically closed when `fn` returns or
+throws.
+
+```ts
+FFI.using(() => {
+    const name = safeName(playerId);
+    // name.$val is the string
+    log(name.$val);
+    // name.close() is called automatically when this block exits
+});
+```
+
+<Tabs>
+  <Tab title="Memory safety">
+    ```ts
+    const allocBuf = lib.func("pointer! CreateBuffer(uint32)")
+        .disposable((ptr) => FFI.free(ptr));
+
+    FFI.using(() => {
+        const buf = allocBuf(4096);
+        // Use buf.$val as a pointer...
+        doSomething(buf);
+        // buf is freed automatically here
+    });
+    ```
+  </Tab>
+  <Tab title="Nested scopes">
+    ```ts
+    FFI.using(() => {
+        const outer = allocBuf(1024);
+
+        FFI.using(() => {
+            const inner = allocBuf(512);
+            // inner freed here
+        });
+
+        // outer still alive, freed here
+    });
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  `FFI.using` is synchronous. Don't `await` inside it — the scope
+  closes on function return, not on promise resolution.
+</Warning>
+
+---
+
+## Out parameters
+
+Some native APIs write results through pointer parameters (like
+`GetCursorPos(POINT*)`). The FFI supports this with `_Out_` and
+`_Inout_` annotations in signatures.
+
+```ts
+const POINT = FFI.struct("POINT", { x: "int32", y: "int32" });
+
+const getCursorPos = lib.func("bool GetCursorPos(_Out_ POINT*)");
+
+const pos = { x: 0, y: 0 };
+getCursorPos(pos);
+// pos.x and pos.y now contain the cursor position
+```
+
+For primitive out params, pass an array or `{ $: initialValue }`:
+
+```ts
+const getExitCode = lib.func("bool GetExitCodeProcess(pointer, _Out_ uint32*)");
+
+const code = [0];
+getExitCode(hProcess, code);
+log(code[0]); // the exit code
+
+// Or with object style:
+const code2 = { $: 0 };
+getExitCode(hProcess, code2);
+log(code2.$); // same result
+```
+
+| Annotation | Behavior |
+|:-----------|:---------|
+| `_Out_` | Native writes through the pointer, JS object updated after call |
+| `_Inout_` | JS values copied in before the call, native result copied back after |
+
+---
+
+## Signature cheat sheet
+
+A quick reference for the `func` signature format:
+
+```
+returnType [callingConvention] functionName([_Out_|_Inout_] paramType, ..., ...)
+```
+
+| Element | Examples | |
+|:--------|:---------|:--|
+| Return type | `void`, `int`, `string`, `POINT` | Any [type name](#type-system) |
+| Return type + `!` | `string!`, `pointer!` | Signals the caller owns (should free) the return value |
+| Calling convention | `__stdcall`, `__cdecl`, `__fastcall`, `__thiscall` | Optional, defaults to `__cdecl` |
+| Param annotation | `_Out_`, `_Inout_` | Optional, for write-back params |
+| Variadic | `...` or `___` | Must be last, marks the start of variadic args |
+
+```ts
+// All valid signatures:
+"void Sleep(uint32)"
+"int __stdcall MessageBoxA(pointer, string, string, uint32)"
+"bool GetCursorPos(_Out_ POINT*)"
+"int printf(string, ...)"
+"string! AllocGreeting(string)"
+```
+
+---
+
+## Complete example
+
+Putting it all together — calling the Windows API to show a message box
+and read the cursor position:
+
+```ts
+const user32  = FFI.open("user32.dll");
+
+const POINT = FFI.struct("POINT", {
+    x: "int32",
+    y: "int32",
+});
+
+const { msgBox, getCursorPos } = user32.funcs({
+    msgBox:       "int MessageBoxA(pointer, string, string, uint32)",
+    getCursorPos: "bool GetCursorPos(_Out_ POINT*)",
+});
+
+const pos = { x: 0, y: 0 };
+getCursorPos(pos);
+
+msgBox(FFI.nullptr, `Cursor at ${pos.x}, ${pos.y}`, "FFI Demo", 0);
+
+user32.close();
+```

@@ -1,0 +1,320 @@
+---
+title: "Render"
+sidebarTitle: "Render"
+description: "Draw lines, shapes, text, and images on the screen overlay."
+icon: "paintbrush"
+---
+
+The `render` global draws primitives on the screen overlay. Everything is drawn on top of the game in screen-space pixel coordinates.
+
+<Note>
+  **Pro tip:** All position arguments accept both [Vector2](/api/types/vector2) instances and plain `{ x, y }` objects. 
+  All color arguments accept [Color](/api/types/color) instances and packed hex integers (e.g. `0xFF0000FF`). If a color is omitted, white is used.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Screen size" icon="display" href="#screen-size">
+    Get the current overlay dimensions.
+  </Card>
+  <Card title="Rectangles & Circles" icon="shapes" href="#rectangles--circles">
+    Draw bounding boxes, health bars, and FOV rings.
+  </Card>
+  <Card title="Lines & Polygons" icon="draw-polygon" href="#lines--polygons">
+    Connect points, draw custom radar shapes and crosshairs.
+  </Card>
+  <Card title="Text" icon="font" href="#text">
+    Render custom strings and player names.
+  </Card>
+  <Card title="Images" icon="image" href="#images">
+    Draw loaded textures with optional rounding.
+  </Card>
+</CardGroup>
+
+---
+
+## Screen size
+
+### render.getScreenSize
+
+<br />
+
+```ts
+render.getScreenSize(): Vector2
+```
+
+Returns the current overlay dimensions in pixels as a
+[Vector2](/api/types/vector2) (`x` = width, `y` = height).
+
+Call this once per frame — the size can change if the user resizes the window
+or switches resolution.
+
+```ts
+const { x: screenWidth, y: screenHeight } = render.getScreenSize();
+
+const center = { x: screenWidth / 2, y: screenHeight / 2 };
+render.circleFilled(center, 3, Color.white());
+```
+
+---
+
+## Rectangles & Circles
+
+Instead of listing separate functions for outlines and filled shapes, we group them here. The parameters are nearly identical, with the exception of `thickness`.
+
+### Rectangles
+
+```ts
+render.rect(min: Vector2, size: Vector2, color?: Color, thickness?: number, rounding?: number): void
+render.rectFilled(min: Vector2, size: Vector2, color?: Color, rounding?: number): void
+```
+
+<ParamField path="min" type="Vector2" required>
+  The top-left corner of the rectangle in screen coordinates.
+</ParamField>
+<ParamField path="size" type="Vector2" required>
+  The width and height of the rectangle.
+</ParamField>
+<ParamField path="color" type="Color" default="Color.white()">
+  Outline or fill color.
+</ParamField>
+<ParamField path="thickness" type="number" default="1.0">
+  Border width in pixels. **(Ignored in `rectFilled`)**
+</ParamField>
+<ParamField path="rounding" type="number" default="0.0">
+  Corner radius in pixels. Use for UI backgrounds or modern-looking ESP boxes.
+</ParamField>
+
+<Tabs>
+  <Tab title="Box ESP (Outline)">
+    ```ts
+    const { success: s1, screen: head } = Math.worldToScreen(headPos);
+    const { success: s2, screen: feet } = Math.worldToScreen(feetPos);
+
+    if (s1 && s2) {
+        const height = feet.y - head.y;
+        const width = height * 0.5;
+        const topLeft = { x: head.x - width / 2, y: head.y };
+
+        // Draw a basic bounding box
+        render.rect(topLeft, { x: width, y: height }, Color.red(), 1.5);
+    }
+    ```
+  </Tab>
+  <Tab title="Health Bar (Filled)">
+    ```ts
+    const barWidth = 60;
+    const barHeight = 4;
+    const fillWidth = (health / maxHealth) * barWidth;
+
+    // 1. Draw dark background
+    render.rectFilled(barPos, { x: barWidth, y: barHeight }, new Color(0, 0, 0, 150));
+
+    // 2. Draw green fill on top
+    render.rectFilled(barPos, { x: fillWidth, y: barHeight }, Color.green());
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+### Circles
+
+```ts
+render.circle(center: Vector2, radius: number, color?: Color, thickness?: number): void
+render.circleFilled(center: Vector2, radius: number, color?: Color): void
+```
+
+<ParamField path="center" type="Vector2" required>
+  The center point of the circle on the screen.
+</ParamField>
+<ParamField path="radius" type="number" required>
+  The radius in pixels.
+</ParamField>
+<ParamField path="color" type="Color" default="Color.white()">
+  Outline or fill color.
+</ParamField>
+<ParamField path="thickness" type="number" default="1.0">
+  Line width for the outline. **(Ignored in `circleFilled`)**
+</ParamField>
+
+<CodeGroup>
+```ts FOV Ring (Outline)
+const { x: screenWidth, y: screenHeight } = render.getScreenSize();
+const center = { x: screenWidth / 2, y: screenHeight / 2 };
+const fovRadius = 150;
+
+// Draw a semi-transparent white ring in the center of the screen
+render.circle(center, fovRadius, Color.white().withAlpha(100), 1);
+```
+
+```ts Head Dot (Filled)
+const { success, screen } = Math.worldToScreen(enemyHeadPos);
+if (success) {
+    render.circleFilled(screen, 4, Color.red());
+}
+```
+</CodeGroup>
+
+---
+
+## Lines & Polygons
+
+<AccordionGroup>
+  <Accordion title="render.line" icon="minus">
+    Draws a single straight line between two points.
+
+    ```ts
+    render.line(start: Vector2, end: Vector2, color?: Color, thickness?: number): void
+    ```
+    
+    <ParamField path="start" type="Vector2" required>Starting point.</ParamField>
+    <ParamField path="end" type="Vector2" required>Ending point.</ParamField>
+    
+    **Example:** Draw a snapline from the bottom center of the screen to an enemy.
+    ```ts
+    const { x: screenWidth, y: screenHeight } = render.getScreenSize();
+    const bottomCenter = { x: screenWidth / 2, y: screenHeight };
+    render.line(bottomCenter, enemyScreenPos, Color.yellow(), 1);
+    ```
+  </Accordion>
+
+  <Accordion title="render.triangle" icon="play">
+    Draws a triangle outline using three specific vertices.
+
+    ```ts
+    render.triangle(p1: Vector2, p2: Vector2, p3: Vector2, color?: Color, thickness?: number): void
+    ```
+
+    **Example:** Draw a directional arrow indicating where an off-screen enemy is.
+    ```ts
+    const tip = center.add({ x: 0, y: -15 });
+    const left = center.add({ x: -8, y: 5 });
+    const right = center.add({ x: 8, y: 5 });
+
+    render.triangle(tip, left, right, Color.white(), 1.5);
+    ```
+  </Accordion>
+
+  <Accordion title="render.polyline" icon="draw-polygon">
+    Draws a series of connected line segments through an array of points. Best used for custom complex shapes like radar blips or star polygons.
+
+    ```ts
+    render.polyline(points: Vector2[], color?: Color, thickness?: number, closed?: boolean): void
+    ```
+
+    <ParamField path="points" type="Vector2[]" required>Array of vertices.</ParamField>
+    <ParamField path="closed" type="boolean" default="false">If true, automatically draws a line from the last point back to the first point.</ParamField>
+
+    **Example:** Draw a diamond shape.
+    ```ts
+    const points = [
+        center.add({ x: 0, y: -20 }),
+        center.add({ x: 15, y: 0 }),
+        center.add({ x: 0, y: 20 }),
+        center.add({ x: -15, y: 0 }),
+    ];
+    // 'closed: true' completes the diamond automatically
+    render.polyline(points, Color.white(), 1, true);
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Text
+
+```ts
+render.text(pos: Vector2, text: string, color?: Color): void
+```
+
+Draws a text string on the screen. The position defines the **top-left** corner of the rendered text block.
+
+<ParamField path="pos" type="Vector2" required>
+  Top-left coordinate for the text.
+</ParamField>
+<ParamField path="text" type="string" required>
+  The actual string to render.
+</ParamField>
+<ParamField path="color" type="Color" default="Color.white()">
+  Text color.
+</ParamField>
+
+```ts
+const { success, screen } = Math.worldToScreen(headPos);
+
+if (success) {
+    // Offset Y by -14 pixels to place text slightly above the head
+    render.text({ x: screen.x, y: screen.y - 14 }, playerName, Color.white());
+}
+```
+
+---
+
+## Images
+
+Draw loaded [Texture](/api/types/texture) objects. 
+
+<Warning>
+  Always check `texture.isReady` before drawing. Textures load asynchronously from the disk. Attempting to draw a texture that hasn't finished loading is a silent no-op.
+</Warning>
+
+```ts
+render.image(texture: Texture, min: Vector2, size: Vector2, color?: Color): void
+render.imageRounded(texture: Texture, min: Vector2, size: Vector2, rounding: number, color?: Color): void
+```
+
+<ParamField path="texture" type="Texture" required>
+  A previously loaded texture instance.
+</ParamField>
+<ParamField path="min" type="Vector2" required>
+  Top-left corner where the image will be drawn.
+</ParamField>
+<ParamField path="size" type="Vector2" required>
+  Width and height to scale the image to.
+</ParamField>
+<ParamField path="rounding" type="number" required>
+  Corner radius in pixels. *(Only available in `imageRounded`)*
+</ParamField>
+<ParamField path="color" type="Color" default="Color.white()">
+  Acts as a tint mask. Using `Color.white()` draws the image in its original colors.
+</ParamField>
+
+```ts
+// Do this ONCE outside your render loop
+const avatar = new Texture("path/to/avatar.png");
+
+// Inside your render callback:
+if (avatar.isReady) {
+    // Rounding it by half its size (24) creates a perfect circle!
+    render.imageRounded(avatar, screenPos, { x: 48, y: 48 }, 24, Color.white());
+}
+```
+
+---
+
+## Cookbook: Custom Crosshairs
+
+A quick example showing how to combine basic primitives to build custom UI elements.
+
+<Frame>
+  <img src="/images/crosshair-example.png" alt="A custom drawn crosshair" />
+</Frame>
+
+```ts
+const { x: screenWidth, y: screenHeight } = render.getScreenSize();
+const cx = screenWidth / 2;
+const cy = screenHeight / 2;
+const gap = 4;
+const size = 10;
+const col = Color.green();
+
+// Center dot
+render.circleFilled({ x: cx, y: cy }, 1, col);
+
+// 4 radiating lines
+render.line({ x: cx - gap - size, y: cy }, { x: cx - gap, y: cy }, col);
+render.line({ x: cx + gap, y: cy }, { x: cx + gap + size, y: cy }, col);
+render.line({ x: cx, y: cy - gap - size }, { x: cx, y: cy - gap }, col);
+render.line({ x: cx, y: cy + gap }, { x: cx, y: cy + gap + size }, col);
