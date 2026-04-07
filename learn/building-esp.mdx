@@ -359,11 +359,14 @@ accent drawing with `boxColor`.
 
 ### Name tags with shadow
 
-A text shadow makes names readable against any background:
+Use `Render.calcTextSize` to measure the text and center it above
+the box. A text shadow (same text drawn 1px offset in black) makes
+names readable against any background:
 
 ```ts
-const centerX = (box.mins.x + box.maxs.x) / 2;
 const name = enemy.controller?.m_iszPlayerName ?? "unknown";
+const textSize = Render.calcTextSize(name);
+const centerX = (box.mins.x + box.maxs.x) / 2 - textSize.x / 2;
 
 // shadow (offset by 1px)
 Render.text(new Vector2(centerX + 1, box.mins.y - 15), name, new Color(0, 0, 0, 200));
@@ -550,8 +553,9 @@ on("tick", () => {
         }
 
         // name tag centered above the box, with a dark shadow for readability
-        const centerX = (box.mins.x + box.maxs.x) / 2;
         const name = enemy.controller?.m_iszPlayerName ?? "unknown";
+        const textSize = Render.calcTextSize(name);
+        const centerX = (box.mins.x + box.maxs.x) / 2 - textSize.x / 2;
 
         Render.text(new Vector2(centerX + 1, box.mins.y - 15), name, new Color(0, 0, 0, 200)); // shadow
         Render.text(new Vector2(centerX, box.mins.y - 16), name, Color.white());

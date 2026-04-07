@@ -37,9 +37,14 @@
         "tab": "API",
         "groups": [
           {
+            "group": "Overview",
+            "pages": [
+              "api/globals"
+            ]
+          },
+          {
             "group": "Modules",
             "pages": [
-              "api/globals",
               "api/math",
               "api/render",
               "api/game",

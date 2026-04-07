@@ -288,8 +288,12 @@ on("tick", () => {
 
 ## Text
 
+### Render.text
+
+<br />
+
 ```ts
-Render.text(pos: Vector2, text: string, color?: Color): void
+Render.text(pos: Vector2, text: string, color?: Color, fontSize?: number): void
 ```
 
 Draws a text string on the screen. The position defines the **top-left** corner of the rendered text block.
@@ -298,10 +302,13 @@ Draws a text string on the screen. The position defines the **top-left** corner 
   Top-left coordinate for the text.
 </ParamField>
 <ParamField path="text" type="string" required>
-  The actual string to Render.
+  The string to render.
 </ParamField>
 <ParamField path="color" type="Color" default="Color.white()">
   Text color.
+</ParamField>
+<ParamField path="fontSize" type="number" default="14">
+  Font size in pixels.
 </ParamField>
 
 ```ts
@@ -316,10 +323,49 @@ on("tick", () => {
         const box = getBoundingBox(enemy);
         if (!box) continue;
 
-        // Draw name above the bounding box
+        // center the name above the bounding box
         const name = enemy.controller?.m_iszPlayerName ?? "unknown";
-        Render.text({ x: box.mins.x, y: box.mins.y - 14 }, name, Color.white());
+        const textSize = Render.calcTextSize(name);
+        const centerX = (box.mins.x + box.maxs.x) / 2 - textSize.x / 2;
+        Render.text(new Vector2(centerX, box.mins.y - 16), name, Color.white());
     }
+});
+```
+
+---
+
+### Render.calcTextSize
+
+<br />
+
+```ts
+Render.calcTextSize(text: string, fontSize?: number): Vector2
+```
+
+Returns the pixel dimensions of a text string without drawing it.
+Use this to center or align text precisely.
+
+<ParamField path="text" type="string" required>
+  The string to measure.
+</ParamField>
+<ParamField path="fontSize" type="number" default="14">
+  Font size in pixels. Must match the size you pass to `Render.text`.
+</ParamField>
+
+```ts
+const text = "Hello World";
+const size = Render.calcTextSize(text, 18);
+console.log(`Text is ${size.x}px wide, ${size.y}px tall`);
+
+// center text on screen
+on("tick", () => {
+    const screen = Render.getScreenSize();
+    const textSize = Render.calcTextSize(text, 18);
+    const pos = new Vector2(
+        screen.x / 2 - textSize.x / 2,
+        screen.y / 2 - textSize.y / 2
+    );
+    Render.text(pos, text, Color.white(), 18);
 });
 ```
 
