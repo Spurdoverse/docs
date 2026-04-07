@@ -1,3 +1,92 @@
 ---
-title: "Introduction"
+title: "Getting Started"
+description: "Install the CLI, create your first script, and start building."
 ---
+
+## Install VS Code
+
+We recommend [Visual Studio Code](https://code.visualstudio.com/) — the
+CLI configures the debugger, linter, and type definitions specifically
+for it. You'll get autocompletion, inline errors, and one-click
+debugging out of the box. Also works great with
+[Claude Code](https://claude.ai/claude-code) and other AI assistants —
+type definitions are set up automatically so vibe coding just works.
+
+## Install Node.js
+
+If you want to write scripts in **TypeScript** (recommended), you'll
+need [Node.js](https://nodejs.org/) installed. Download the LTS version
+and run the installer.
+
+<Note>
+  If you only plan to write plain JavaScript, Node.js is not required —
+  but you'll miss out on type checking, autocompletion, and the build
+  pipeline.
+</Note>
+
+## Install SPD CLI
+
+Open PowerShell and run:
+
+```powershell
+irm https://cdn.spurdoverse.app/cli/install.ps1 | iex
+```
+
+Verify the installation:
+
+```bash
+spd --version
+```
+
+## Create a project
+
+```bash
+spd new
+```
+
+The CLI will ask you for:
+- **Project name**
+- **Language** — TypeScript or JavaScript
+- **Linter** — Biome, ESLint, or None
+
+It automatically finds your `C:\Spurdo\scripts\` folder, sets up type
+definitions, installs dependencies, and configures the debugger and
+linter.
+
+## Build & watch
+
+<Tabs>
+  <Tab title="Build once">
+    ```bash
+    spd build
+    ```
+    Compiles your TypeScript project. Shows errors with file, line, and
+    error code.
+  </Tab>
+  <Tab title="Watch mode">
+    ```bash
+    spd watch
+    ```
+    Recompiles automatically on file changes. Shows which files changed
+    and the result.
+  </Tab>
+</Tabs>
+
+## Lint
+
+```bash
+spd lint
+```
+
+Runs the configured linter with auto-fix on `src/`.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Build an ESP" icon="eye" href="/learn/building-esp">
+    Step-by-step tutorial: bounding boxes, health bars, visibility checks.
+  </Card>
+  <Card title="API Reference" icon="book" href="/api/globals">
+    Globals, modules, types — everything available to your scripts.
+  </Card>
+</CardGroup>
