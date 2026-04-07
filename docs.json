@@ -45,7 +45,8 @@
               "api/ffi",
               "api/fs",
               "api/memory",
-              "api/entities"
+              "api/entities",
+              "api/trace"
             ]
           },
           {
