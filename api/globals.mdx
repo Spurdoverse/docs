@@ -1,7 +1,7 @@
 ---
 title: "Globals"
 sidebarTitle: "Globals"
-description: "Timers, console output, frame time, game state, and the event system — available everywhere without imports."
+description: "Timers, console output, event system, and the script object — available everywhere without imports."
 icon: "globe"
 ---
 
@@ -16,13 +16,13 @@ reacting to game events, and reading per-frame state.
     Schedule one-shot or repeating callbacks with setTimeout and setInterval.
   </Card>
   <Card title="console" icon="terminal" href="#console">
-    Log, warn, and error output to the script console.
+    Log, warn, error, and assert output to the script console.
   </Card>
-  <Card title="time & game" icon="gauge-high" href="#time--game">
-    Per-frame timestamps, tick counters, and map info.
+  <Card title="Events — on / once / off" icon="bolt" href="#events">
+    React to ticks, input, and engine events. Returns IDs for cleanup.
   </Card>
-  <Card title="Events — on()" icon="bolt" href="#events">
-    React to ticks, input, and engine events with on().
+  <Card title="script" icon="file-code" href="#script">
+    Metadata about the running script — name, version, author.
   </Card>
 </CardGroup>
 
@@ -44,7 +44,6 @@ setTimeout(callback: () => void, ms: number): number
 Calls `callback` once after `ms` milliseconds. Returns a timer ID.
 
 ```ts
-// Log a message 3 seconds after the script loads
 setTimeout(() => {
     console.log("3 seconds have passed");
 }, 3000);
@@ -63,9 +62,8 @@ setInterval(callback: () => void, ms: number): number
 Calls `callback` repeatedly every `ms` milliseconds. Returns a timer ID.
 
 ```ts
-// Print game time every second
 const id = setInterval(() => {
-    console.log("Server time:", game.serverTime.toFixed(2));
+    console.log("tick");
 }, 1000);
 ```
 
@@ -102,19 +100,21 @@ setTimeout(() => clearInterval(id), 5000);
 
 ## console
 
-Standard console output. All three methods accept any number of arguments
+Standard console output. All methods accept any number of arguments
 and format them automatically.
 
 ```ts
-console.log(...args: any[]): void    // general output
-console.warn(...args: any[]): void   // yellow warning
-console.error(...args: any[]): void  // red error
+console.log(...args: any[]): void      // general output
+console.warn(...args: any[]): void     // yellow warning
+console.error(...args: any[]): void    // red error
+console.assert(cond: any, ...args: any[]): void  // logs if cond is falsy
 ```
 
 ```ts
 console.log("Player HP:", player.m_iHealth);
 console.warn("Entity not found for index", idx);
 console.error("Critical failure:", err);
+console.assert(player.isValid, "Player should be valid");
 
 // Multiple values are space-joined
 console.log("pos:", pos.x, pos.y, pos.z);
@@ -122,77 +122,68 @@ console.log("pos:", pos.x, pos.y, pos.z);
 
 ---
 
-## time & game
-
-### time
-
-A global `number` that holds the **elapsed time in seconds** since the script
-started. Updated every frame.
-
-```ts
-declare var time: number;
-```
-
-```ts
-// Animate opacity using a sine wave
-const alpha = Math.sin(time * 2) * 127 + 128;
-const color = Color.fromRGBA(255, 255, 255, alpha);
-render.text(pos, "Hello", color);
-```
-
----
-
-### game
-
-The `game` object exposes engine globals that are updated each frame.
-All fields are **readonly**.
-
-```ts
-declare var game: GameGlobals;
-```
-
-| Field | Type | Description |
-|:------|:-----|:------------|
-| `serverTime` | `number` | Current server-side time in seconds |
-| `curTime` | `number` | Client-side current time in seconds |
-| `frameTime` | `number` | Time elapsed since the previous frame (seconds) |
-| `absFrameTime` | `number` | Absolute frame time, unaffected by time scaling |
-| `tickFraction` | `number` | Fractional position within the current tick `[0, 1]` |
-| `tickCount` | `number` | Current server tick number |
-| `frameCount` | `number` | Total frames rendered since engine start |
-| `maxClients` | `number` | Maximum number of players on the server |
-| `mapName` | `string` | Full map path, e.g. `"maps/de_dust2.vpk"` |
-| `shortMapName` | `string` | Short map name, e.g. `"de_dust2"` |
-
-```ts
-on("tick", () => {
-    // Frame-rate independent movement speed
-    const speed = 200 * game.frameTime;
-
-    console.log(`Tick #${game.tickCount} — map: ${game.shortMapName}`);
-});
-```
-
-<Tip>
-  Use `game.frameTime` to make any per-frame calculation **frame-rate
-  independent**. Multiply velocities, animation deltas, and lerp factors
-  by `game.frameTime` so they behave the same at 60 FPS and 300 FPS.
-</Tip>
-
----
-
 ## Events
 
-### on()
+### on
 
 <br />
 
 ```ts
-on(event: string, callback: (...args: any[]) => void): void
+on(event: string, callback: (...args: any[]) => void): number
 ```
 
-Registers a callback for a named event. Multiple callbacks can be registered
-for the same event — they all fire in registration order.
+Registers a callback for a named event. Returns a numeric **ID** that
+can be passed to [`off`](#off) to unregister.
+
+```ts
+const id = on("tick", () => {
+    // called every tick (128 Hz)
+});
+```
+
+---
+
+### once
+
+<br />
+
+```ts
+once(event: string, callback: (...args: any[]) => void): number
+```
+
+Like `on`, but the callback fires **once** and is automatically removed.
+
+```ts
+once("tick", () => {
+    console.log("only the first tick");
+});
+```
+
+---
+
+### off
+
+<br />
+
+```ts
+off(id: number): boolean
+```
+
+Removes a callback by its ID. Returns `true` if found and removed,
+`false` if already removed or invalid.
+
+```ts
+const id = on("tick", () => { /* ... */ });
+
+off(id);   // true  — removed
+off(id);   // false — already gone
+```
+
+<Tip>
+  Always store the ID returned by `on()` if you plan to clean up later.
+  Use `once()` when you only need a single invocation — it handles
+  cleanup for you.
+</Tip>
 
 ---
 
@@ -200,34 +191,21 @@ for the same event — they all fire in registration order.
 
 #### `"tick"`
 
-Fires every game frame, before rendering. The most common place for
-per-frame logic — entity reads, render calls, etc.
+Fires every game tick (128 Hz). The primary place for per-frame logic —
+entity reads, render calls, state machines.
 
 ```ts
+import Entities from "@native/entities";
+import Render   from "@native/render";
+
 on("tick", () => {
     const local = Entities.getLocalPlayer();
     if (!local) return;
 
-    const { success, screen } = Math.worldToScreen(local.m_vecAbsOrigin);
+    const { success, screen } = Math.worldToScreen(local.m_pGameSceneNode.m_vecAbsOrigin);
     if (success) {
-        render.text(screen, `HP: ${local.m_iHealth}`, Color.white());
+        Render.text(screen, `HP: ${local.m_iHealth}`, Color.white());
     }
-});
-```
-
----
-
-#### `"onUnload"`
-
-Fires once when the script is about to be unloaded or reloaded. Use it to
-clean up intervals, close watchers, or restore any state you changed.
-
-```ts
-const intervalId = setInterval(() => { /* ... */ }, 100);
-
-on("onUnload", () => {
-    clearInterval(intervalId);
-    console.log("Script unloaded, cleanup done.");
 });
 ```
 
@@ -264,12 +242,12 @@ on("OnMouseClick", (button: number, isDown: boolean) => void)
 
 | Param | Type | |
 |:------|:-----|:--|
-| `button` | `number` | `1` = left, `2` = right, `3` = middle |
+| `button` | `number` | `0` = left, `1` = right, `2` = middle, `3` = X1, `4` = X2 |
 | `isDown` | `boolean` | `true` on press, `false` on release |
 
 ```ts
 on("OnMouseClick", (button, isDown) => {
-    if (button === 1 && isDown) {
+    if (button === 0 && isDown) {
         console.log("Left mouse button pressed");
     }
 });
@@ -314,12 +292,6 @@ on("OnKeyDown", (vk) => {
         console.log("Insert pressed");
     }
 });
-
-on("OnKeyUp", (vk) => {
-    if (vk === VK_INSERT) {
-        console.log("Insert released");
-    }
-});
 ```
 
 <Tip>
@@ -328,6 +300,70 @@ on("OnKeyUp", (vk) => {
   Common ones: `0x01` LMB · `0x02` RMB · `0x04` MMB · `0x10` Shift ·
   `0x11` Ctrl · `0x12` Alt · `0x2D` Insert · `0x2E` Delete.
 </Tip>
+
+---
+
+### onUnload
+
+Script cleanup is handled by exporting a function named `onUnload`.
+It is called once when the script is about to be unloaded or reloaded.
+
+```ts
+export function onUnload() {
+    console.log("script unloaded");
+}
+```
+
+<CodeGroup>
+```ts Cleanup intervals
+const intervalId = setInterval(() => { /* ... */ }, 100);
+
+export function onUnload() {
+    clearInterval(intervalId);
+    console.log("Cleaned up.");
+}
+```
+
+```ts Cleanup event listeners
+const tickId = on("tick", () => { /* ... */ });
+const keyId  = on("OnKeyDown", () => { /* ... */ });
+
+export function onUnload() {
+    off(tickId);
+    off(keyId);
+}
+```
+</CodeGroup>
+
+<Warning>
+  `onUnload` must be a **named export** at the module level. It will not
+  fire if declared as a local variable or inside a nested function.
+</Warning>
+
+---
+
+## script
+
+The `script` object exposes metadata about the currently running script.
+All fields are **readonly**.
+
+```ts
+declare var script: {
+    name: string;
+    version: string;
+    author: string;
+};
+```
+
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `name` | `string` | Script display name |
+| `version` | `string` | Version string |
+| `author` | `string` | Author name |
+
+```ts
+console.log(`${script.name} v${script.version} by ${script.author}`);
+```
 
 ---
 
@@ -355,7 +391,9 @@ on("tick", () => {
 ### Throttle expensive work with setInterval
 
 ```ts
-// Run heavy logic at 10 Hz instead of every frame
+import Entities from "@native/entities";
+import Render   from "@native/render";
+
 let cachedEnemies = [];
 
 setInterval(() => {
@@ -365,10 +403,9 @@ setInterval(() => {
 }, 100);
 
 on("tick", () => {
-    // Use the pre-built list every frame — fast
     for (const enemy of cachedEnemies) {
-        const { success, screen } = Math.worldToScreen(enemy.m_vecAbsOrigin);
-        if (success) render.circleFilled(screen, 4, Color.red());
+        const { success, screen } = Math.worldToScreen(enemy.m_pGameSceneNode.m_vecAbsOrigin);
+        if (success) Render.circleFilled(screen, 4, Color.red());
     }
 });
 ```
@@ -376,21 +413,23 @@ on("tick", () => {
 ### Frame-time independent animation
 
 ```ts
+import Game   from "@native/game";
+import Render from "@native/render";
+
 let alpha = 0;
 let direction = 1;
 
 on("tick", () => {
-    // Fade in/out at 120 units per second, regardless of FPS
-    alpha += direction * 120 * game.frameTime;
+    alpha += direction * 120 * Game.frameTime;
 
     if (alpha >= 255) { alpha = 255; direction = -1; }
     if (alpha <= 0)   { alpha = 0;   direction =  1; }
 
-    const { x: w, y: h } = render.getScreenSize();
-    render.text(
+    const { x: w, y: h } = Render.getScreenSize();
+    Render.text(
         { x: w / 2, y: h / 2 },
         "Hello World",
-        Color.fromRGBA(255, 255, 255, alpha)
+        new Color(255, 255, 255, alpha)
     );
 });
 ```

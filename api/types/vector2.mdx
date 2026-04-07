@@ -179,7 +179,7 @@ Component-wise addition.
 const { success, screen } = Math.worldToScreen(headPos);
 if (success) {
     const labelPos = screen.add(new Vector2(8, -6));
-    render.text(labelPos, "HEAD", Color.red());
+    Render.text(labelPos, "HEAD", Color.red());
 }
 ```
 
@@ -466,7 +466,7 @@ const left = right.rotate(180);
     for (let i = 0; i < 8; i++) {
         const offset = base.rotate(i * 45);
         const pos = center.add(offset);
-        render.circleFilled(pos, 3, Color.white());
+        Render.circleFilled(pos, 3, Color.white());
     }
     ```
   </Tab>
@@ -565,8 +565,8 @@ pos.toString();
     if (success) {
         const namePos = screen.add(new Vector2(0, -14));
         const hpPos = screen.add(new Vector2(0, 4));
-        render.text(namePos, name, Color.white());
-        render.text(hpPos, `${health} HP`, Color.green());
+        Render.text(namePos, name, Color.white());
+        Render.text(hpPos, `${health} HP`, Color.green());
     }
     ```
   </Tab>
@@ -579,7 +579,7 @@ pos.toString();
         const h = feet.y - head.y;
         const w = h * 0.5;
         const topLeft = head.sub(new Vector2(w / 2, 0));
-        render.rect(topLeft, new Vector2(w, h), Color.red());
+        Render.rect(topLeft, new Vector2(w, h), Color.red());
     }
     ```
   </Tab>
@@ -593,7 +593,7 @@ pos.toString();
     for (let i = 0; i < segments; i += 2) {
         const a = center.add(base.rotate(i * (360 / segments)));
         const b = center.add(base.rotate((i + 1) * (360 / segments)));
-        render.line(a, b, Color.white());
+        Render.line(a, b, Color.white());
     }
     ```
   </Tab>

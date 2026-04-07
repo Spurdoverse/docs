@@ -5,7 +5,11 @@ description: "Query, iterate, and read schema fields from any game entity — pl
 icon: "users"
 ---
 
-The `Entities` global exposes the game's entity list. Every entity is backed
+```ts
+import Entities from "@native/entities";
+```
+
+The `Entities` module exposes the game's entity list. Every entity is backed
 by a **cached snapshot** that is refreshed each frame — reads are fast and
 safe to call in per-frame callbacks without worrying about memory access.
 
@@ -108,7 +112,7 @@ for (const player of Entities.getPlayers()) {
 
 // Enemies only
 for (const player of Entities.getPlayers({ skipLocal: true })) {
-    const pos = player.m_vecAbsOrigin;
+    const pos = player.m_pGameSceneNode.m_vecAbsOrigin;
     console.log(`Enemy at ${pos.x}, ${pos.y}, ${pos.z}`);
 }
 ```
@@ -206,9 +210,9 @@ const enemies = Entities.find("C_CSPlayerPawn")
     .filter(p => p.m_iHealth > 0)
     .toArray();
 
-const myPos = Entities.getLocalPlayer()?.m_vecAbsOrigin;
+const myPos = Entities.getLocalPlayer()?.m_pGameSceneNode.m_vecAbsOrigin;
 enemies.sort((a, b) =>
-    a.m_vecAbsOrigin.distTo(myPos) - b.m_vecAbsOrigin.distTo(myPos)
+    a.m_pGameSceneNode.m_vecAbsOrigin.distTo(myPos) - b.m_pGameSceneNode.m_vecAbsOrigin.distTo(myPos)
 );
 const nearest = enemies[0];
 ```
@@ -256,7 +260,7 @@ const armor    = player.m_ArmorValue;         // number
 const alive    = player.m_bIsAlive;           // boolean
 
 // Vectors and angles
-const pos      = player.m_vecAbsOrigin;       // Vector
+const pos      = player.m_pGameSceneNode.m_vecAbsOrigin;       // Vector
 const vel      = player.m_vecVelocity;        // Vector
 const eyeAngle = player.m_angEyeAngles;       // QAngle
 
@@ -404,7 +408,7 @@ The engine maps every C++ schema type to a JavaScript value automatically.
 const local = Entities.getLocalPlayer();
 if (!local) return;
 
-const myPos = local.m_vecAbsOrigin;
+const myPos = local.m_pGameSceneNode.m_vecAbsOrigin;
 const myTeam = local.m_iTeamNum;
 
 let closest = null;
@@ -414,7 +418,7 @@ Entities.find("C_CSPlayerPawn")
     .filter(p => p.m_iHealth > 0)
     .filter(p => p.m_iTeamNum !== myTeam)
     .forEach(enemy => {
-        const dist = enemy.m_vecAbsOrigin.distTo(myPos);
+        const dist = enemy.m_pGameSceneNode.m_vecAbsOrigin.distTo(myPos);
         if (dist < bestDist) {
             bestDist = dist;
             closest = enemy;
@@ -443,7 +447,7 @@ Entities.find("CCSPlayerController").forEach(ctrl => {
 Entities.find({ parent: "C_BaseFlex" })
     .filter(e => e.className.includes("Weapon") || e.className.includes("weapon"))
     .forEach(w => {
-        const pos = w.m_vecAbsOrigin;
+        const pos = w.m_pGameSceneNode.m_vecAbsOrigin;
         console.log(`${w.className} at (${pos.x.toFixed(0)}, ${pos.y.toFixed(0)})`);
     });
 ```

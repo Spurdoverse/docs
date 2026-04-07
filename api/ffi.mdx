@@ -5,7 +5,11 @@ description: "Call native libraries, define C structs, and bridge JavaScript to 
 icon: "microchip"
 ---
 
-The `FFI` global lets you load native libraries (`.dll`, `.so`) and call their
+```ts
+import FFI from "@native/ffi";
+```
+
+The `FFI` module lets you load native libraries (`.dll`, `.so`) and call their
 functions directly from JavaScript — no bindings, no wrappers.
 
 <Note>

@@ -6,8 +6,8 @@ icon: "image"
 ---
 
 `Texture` loads an image file (`.png`, `.jpg`, etc.) or raw pixel data
-into GPU memory so you can draw it with [render.image](/api/render#image)
-and [render.imageRounded](/api/render#imagerounded).
+into GPU memory so you can draw it with [Render.image](/api/render#image)
+and [Render.imageRounded](/api/render#imagerounded).
 
 <Note>
   Textures load **asynchronously** — they may not be ready on the same
@@ -68,7 +68,7 @@ const icon = new Texture("assets/icon.png");
     // Draw every frame
     onRender(() => {
         if (icon.isReady) {
-            render.image(icon, pos, size, Color.white());
+            Render.image(icon, pos, size, Color.white());
         }
     });
     ```
@@ -78,7 +78,7 @@ const icon = new Texture("assets/icon.png");
     onRender(() => {
         // BAD: loads from disk every frame!
         const icon = new Texture("assets/icon.png");
-        render.image(icon, pos, size, Color.white());
+        Render.image(icon, pos, size, Color.white());
     });
     ```
   </Tab>
@@ -185,12 +185,12 @@ tex.toString();
 Textures are drawn using the [render](/api/render) module:
 
 ```ts
-render.image(texture, position, size, tintColor);
-render.imageRounded(texture, position, size, rounding, tintColor);
+Render.image(texture, position, size, tintColor);
+Render.imageRounded(texture, position, size, rounding, tintColor);
 ```
 
-See [render.image](/api/render#image) and
-[render.imageRounded](/api/render#imagerounded) for full parameter
+See [Render.image](/api/render#image) and
+[Render.imageRounded](/api/render#imagerounded) for full parameter
 documentation.
 
 <Tabs>
@@ -203,7 +203,7 @@ documentation.
 
         const { success, screen } = Math.worldToScreen(pos);
         if (success) {
-            render.image(icon, screen, new Vector2(24, 24), Color.white());
+            Render.image(icon, screen, new Vector2(24, 24), Color.white());
         }
     });
     ```
@@ -216,7 +216,7 @@ documentation.
         if (!avatar.isReady) return;
 
         const size = new Vector2(48, 48);
-        render.imageRounded(avatar, hudPos, size, 24, Color.white());
+        Render.imageRounded(avatar, hudPos, size, 24, Color.white());
         // rounding = half of width → perfect circle
     });
     ```
@@ -230,7 +230,7 @@ documentation.
 
         // Tint with team color
         const tint = isAlly ? Color.green() : Color.red();
-        render.image(icon, pos, new Vector2(32, 32), tint);
+        Render.image(icon, pos, new Vector2(32, 32), tint);
     });
     ```
   </Tab>
@@ -245,7 +245,7 @@ documentation.
         const aspect = logo.width / logo.height;
         const drawWidth = drawHeight * aspect;
 
-        render.image(logo, pos, new Vector2(drawWidth, drawHeight), Color.white());
+        Render.image(logo, pos, new Vector2(drawWidth, drawHeight), Color.white());
     });
     ```
   </Tab>

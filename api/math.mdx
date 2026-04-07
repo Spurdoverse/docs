@@ -58,15 +58,31 @@ This is the function you reach for first in any aim-related code.
 
 <CodeGroup>
 ```ts Basic aim angle
-const aim = Math.calcAngle(myEyePos, enemyHeadPos);
+import Entities from "@native/entities";
+
+const local = Entities.getLocalPlayer();
+const enemy = Entities.getPlayers({ skipLocal: true })[0];
+
+const aim = Math.calcAngle(
+    local.m_pGameSceneNode.m_vecAbsOrigin,
+    enemy.m_pGameSceneNode.m_vecAbsOrigin
+);
 ```
 
 ```ts Closest target by FOV
+import Entities from "@native/entities";
+
+const local = Entities.getLocalPlayer();
+const myEyePos = local.m_pGameSceneNode.m_vecAbsOrigin;
+const myViewAngle = local.m_angEyeAngles;
+
 let bestFov = Infinity;
 let bestTarget = null;
 
-for (const enemy of enemies) {
-    const aim = Math.calcAngle(myEyePos, enemy.headPos);
+for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+    if (enemy.m_iHealth <= 0) continue;
+
+    const aim = Math.calcAngle(myEyePos, enemy.m_pGameSceneNode.m_vecAbsOrigin);
     const fov = Math.calculateFOV(myViewAngle, aim);
     if (fov < bestFov) {
         bestFov = fov;
@@ -102,14 +118,15 @@ Decomposes an Euler angle into three perpendicular direction vectors.
 | `angle` | [QAngle](/api/types#qangle) | Euler angle to decompose |
 
 ```ts
-const { forward } = Math.angleVectors(myViewAngle);
+import Entities from "@native/entities";
+
+const local = Entities.getLocalPlayer();
+const eyePos = local.m_pGameSceneNode.m_vecAbsOrigin;
+
+const { forward } = Math.angleVectors(local.m_angEyeAngles);
 
 // Project 1000 units ahead of the player's view
-const traceEnd = {
-    x: eyePos.x + forward.x * 1000,
-    y: eyePos.y + forward.y * 1000,
-    z: eyePos.z + forward.z * 1000,
-};
+const traceEnd = eyePos.add(forward.scale(1000));
 ```
 
 <Tip>
@@ -177,12 +194,22 @@ This is the function you'll use 99% of the time for ESP and overlays.
 | `screen` | [Vector2](/api/types#vector2) | Pixel coords, top-left origin |
 
 ```ts
-const { success, screen } = Math.worldToScreen(enemyHeadPos);
+import Entities from "@native/entities";
+import Render   from "@native/render";
 
-if (success) {
-    render.circleFilled(screen, 4, Color.red());
-    render.text({ x: screen.x + 8, y: screen.y - 6 }, "HEAD", Color.red());
-}
+on("tick", () => {
+    for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+        if (enemy.m_iHealth <= 0) continue;
+
+        const pos = enemy.m_pGameSceneNode.m_vecAbsOrigin;
+        const { success, screen } = Math.worldToScreen(pos);
+
+        if (success) {
+            Render.circleFilled(screen, 4, Color.red());
+            Render.text({ x: screen.x + 8, y: screen.y - 6 }, enemy.controller?.m_iszPlayerName, Color.red());
+        }
+    }
+});
 ```
 
 <Warning>
@@ -218,9 +245,14 @@ to `1`) instead of pixel values. For custom projection math only.
 | `screen` | [Vector2](/api/types#vector2) | NDC coords, `(-1, -1)` to `(1, 1)` |
 
 ```ts
-const { success, screen } = Math.screenTransform(worldPos);
+import Entities from "@native/entities";
+import Render   from "@native/render";
+
+const enemy = Entities.getPlayers({ skipLocal: true })[0];
+const { success, screen } = Math.screenTransform(enemy.m_pGameSceneNode.m_vecAbsOrigin);
 
 if (success) {
+    const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
     const px = (1 + screen.x) / 2 * screenWidth;
     const py = (1 - screen.y) / 2 * screenHeight;
 }
@@ -252,7 +284,7 @@ Hard-clamps each component to engine-safe bounds and returns the same object.
 | Roll | `[-50, 50]` |
 
 ```ts
-const aim = Math.calcAngle(myPos, targetPos);
+const aim = Math.calcAngle(localPos, enemyPos);
 Math.clampAngles(aim);
 // Safe to send to engine now
 ```
@@ -308,8 +340,14 @@ Think of it as "how many degrees would I move my crosshair to reach this?"
 **Returns** `number` — `0` = perfectly aligned, `180` = opposite direction.
 
 ```ts
-const aim = Math.calcAngle(myEyePos, enemy.headPos);
-const fov = Math.calculateFOV(myViewAngle, aim);
+import Entities from "@native/entities";
+
+const local = Entities.getLocalPlayer();
+const myEyePos = local.m_pGameSceneNode.m_vecAbsOrigin;
+
+const enemy = Entities.getPlayers({ skipLocal: true })[0];
+const aim = Math.calcAngle(myEyePos, enemy.m_pGameSceneNode.m_vecAbsOrigin);
+const fov = Math.calculateFOV(local.m_angEyeAngles, aim);
 
 if (fov < 5) {
     // Target is within 5° of crosshair
@@ -432,7 +470,7 @@ Math.smoothStep(0, 1, 1.0);  // 1.0     — end
   <Tab title="Opacity fade">
     ```ts
     const alpha = Math.smoothStep(0, 255, animProgress);
-    const color = Color.fromRGBA(255, 255, 255, alpha);
+    const color = new Color(255, 255, 255, alpha);
     ```
   </Tab>
   <Tab title="Position ease">
@@ -474,7 +512,7 @@ Does **not** clamp — wrap in [clamp](#clamp) if you need bounded output.
     // Green at full HP, red at zero
     const r = Math.remapVal(health, 0, 100, 255, 0);
     const g = Math.remapVal(health, 0, 100, 0, 255);
-    const color = Color.fromRGBA(r, g, 0, 255);
+    const color = new Color(r, g, 0, 255);
     ```
   </Tab>
   <Tab title="Distance → opacity">
@@ -523,18 +561,37 @@ Here's a complete example — an ESP name tag that fades and shrinks
 with distance:
 
 ```ts
-// 1. Figure out where we are in the distance range (0–1)
-const t = Math.clamp(Math.inverseLerp(500, 6000, distance), 0, 1);
+import Entities from "@native/entities";
+import Render   from "@native/render";
 
-// 2. Ease the factor so transitions feel smooth, not linear
-const eased = Math.smoothStep(0, 1, t);
+on("tick", () => {
+    const local = Entities.getLocalPlayer();
+    if (!local) return;
 
-// 3. Map to visual properties
-const alpha = Math.lerp(255, 30, eased);
-const fontSize = Math.lerp(14, 8, eased);
+    const localPos = local.m_pGameSceneNode.m_vecAbsOrigin;
 
-const color = Color.fromRGBA(255, 255, 255, alpha);
-render.text(screenPos, name, color, fontSize);
+    for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+        if (enemy.m_iHealth <= 0) continue;
+
+        const enemyPos = enemy.m_pGameSceneNode.m_vecAbsOrigin;
+        const { success, screen } = Math.worldToScreen(enemyPos);
+        if (!success) continue;
+
+        const distance = localPos.distTo(enemyPos);
+
+        // 1. Figure out where we are in the distance range (0–1)
+        const t = Math.clamp(Math.inverseLerp(500, 6000, distance), 0, 1);
+
+        // 2. Ease the factor so transitions feel smooth, not linear
+        const eased = Math.smoothStep(0, 1, t);
+
+        // 3. Map to visual properties
+        const alpha = Math.lerp(255, 30, eased);
+
+        const color = new Color(255, 255, 255, alpha);
+        Render.text(screen, enemy.controller?.m_iszPlayerName, color);
+    }
+});
 ```
 
 ---
@@ -552,20 +609,3 @@ const fovRad = Math.toRadians(90);
 const halfWidth = Math.sin(fovRad / 2) * distance;
 ```
 
----
-
-## Standard overrides
-
-The engine re-binds `sin`, `cos`, `abs`, `sqrt`, and `atan2` through its
-C++ implementations. Identical behavior and precision to the JS originals —
-you can use them interchangeably.
-
-| Function | Note |
-|:---------|:-----|
-| `Math.sin(rad)` | Sine, returns `[-1, 1]` |
-| `Math.cos(rad)` | Cosine, returns `[-1, 1]` |
-| `Math.abs(val)` | Absolute value |
-| `Math.sqrt(val)` | Square root, `NaN` for negatives |
-| `Math.atan2(y, x)` | Angle to point `[-π, π]`. **y first, then x** |
-
-`Math.PI` = `3.14159265358979323846`

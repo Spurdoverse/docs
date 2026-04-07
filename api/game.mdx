@@ -1,0 +1,41 @@
+---
+title: "Game"
+sidebarTitle: "Game"
+description: "Per-frame timestamps, tick counters, map info, and frame timing — engine state updated every tick."
+icon: "gauge-high"
+---
+
+```ts
+import Game from "@native/game";
+```
+
+The `Game` module exposes engine globals that are updated each tick.
+All fields are **readonly**.
+
+## Fields
+
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `serverTime` | `number` | Current server-side time in seconds |
+| `curTime` | `number` | Client-side current time in seconds |
+| `frameTime` | `number` | Time elapsed since the previous frame (seconds) |
+| `absFrameTime` | `number` | Absolute frame time, unaffected by time scaling |
+| `tickFraction` | `number` | Fractional position within the current tick `[0, 1]` |
+| `tickCount` | `number` | Current server tick number |
+| `frameCount` | `number` | Total frames rendered since engine start |
+| `maxClients` | `number` | Maximum number of players on the server |
+| `mapName` | `string` | Full map path, e.g. `"maps/de_dust2.vpk"` |
+| `shortMapName` | `string` | Short map name, e.g. `"de_dust2"` |
+
+```ts
+on("tick", () => {
+    const speed = 200 * Game.frameTime;
+    console.log(`Tick #${Game.tickCount} — map: ${Game.shortMapName}`);
+});
+```
+
+<Tip>
+  Use `Game.frameTime` to make any per-frame calculation **frame-rate
+  independent**. Multiply velocities, animation deltas, and lerp factors
+  by `Game.frameTime` so they behave the same at 60 FPS and 300 FPS.
+</Tip>

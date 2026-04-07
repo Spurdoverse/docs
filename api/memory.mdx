@@ -5,7 +5,11 @@ description: "Construct pointers, resolve loaded modules, and scan memory for by
 icon: "memory"
 ---
 
-The `Memory` global gives scripts access to the process address space.
+```ts
+import Memory from "@native/memory";
+```
+
+The `Memory` module gives scripts access to the process address space.
 Use it to find a module's base address, scan for signatures, and create
 [Pointer](/api/types/pointer) values to navigate from there.
 

@@ -5,8 +5,11 @@ description: "Read, write, and manage files inside a sandboxed data directory."
 icon: "folder-open"
 ---
 
-The `fs` global gives scripts a sandboxed file system rooted at `scripts/data`.
-No imports required — use `fs.readFile(...)`, `fs.mkdir(...)`, etc. directly.
+```ts
+import fs from "@native/fs";  // requires "filesystem" permission
+```
+
+The `fs` module gives scripts a sandboxed file system rooted at `scripts/data`.
 
 <Note>
   All paths are **relative to `scripts/data`**. Absolute paths or anything that

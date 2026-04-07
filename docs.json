@@ -28,7 +28,7 @@
           {
             "group": "Learn",
             "pages": [
-              "learn/drawing-on-screen"
+              "learn/building-esp"
             ]
           }
         ]
@@ -42,6 +42,7 @@
               "api/globals",
               "api/math",
               "api/render",
+              "api/game",
               "api/ffi",
               "api/fs",
               "api/memory",

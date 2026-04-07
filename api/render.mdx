@@ -5,7 +5,11 @@ description: "Draw lines, shapes, text, and images on the screen overlay."
 icon: "paintbrush"
 ---
 
-The `render` global draws primitives on the screen overlay. Everything is drawn on top of the game in screen-space pixel coordinates.
+```ts
+import Render from "@native/render";
+```
+
+The `Render` module draws primitives on the screen overlay. Everything is drawn on top of the game in screen-space pixel coordinates.
 
 <Note>
   **Pro tip:** All position arguments accept both [Vector2](/api/types/vector2) instances and plain `{ x, y }` objects. 
@@ -36,12 +40,12 @@ The `render` global draws primitives on the screen overlay. Everything is drawn 
 
 ## Screen size
 
-### render.getScreenSize
+### Render.getScreenSize
 
 <br />
 
 ```ts
-render.getScreenSize(): Vector2
+Render.getScreenSize(): Vector2
 ```
 
 Returns the current overlay dimensions in pixels as a
@@ -51,10 +55,11 @@ Call this once per frame — the size can change if the user resizes the window
 or switches resolution.
 
 ```ts
-const { x: screenWidth, y: screenHeight } = render.getScreenSize();
-
-const center = { x: screenWidth / 2, y: screenHeight / 2 };
-render.circleFilled(center, 3, Color.white());
+on("tick", () => {
+    const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
+    const center = { x: screenWidth / 2, y: screenHeight / 2 };
+    Render.circleFilled(center, 3, Color.white());
+});
 ```
 
 ---
@@ -66,15 +71,15 @@ Instead of listing separate functions for outlines and filled shapes, we group t
 ### Rectangles
 
 ```ts
-render.rect(min: Vector2, size: Vector2, color?: Color, thickness?: number, rounding?: number): void
-render.rectFilled(min: Vector2, size: Vector2, color?: Color, rounding?: number): void
+Render.rect(min: Vector2, max: Vector2, color?: Color, thickness?: number, rounding?: number): void
+Render.rectFilled(min: Vector2, max: Vector2, color?: Color, rounding?: number): void
 ```
 
 <ParamField path="min" type="Vector2" required>
-  The top-left corner of the rectangle in screen coordinates.
+  Top-left corner of the rectangle in screen coordinates.
 </ParamField>
-<ParamField path="size" type="Vector2" required>
-  The width and height of the rectangle.
+<ParamField path="max" type="Vector2" required>
+  Bottom-right corner of the rectangle in screen coordinates.
 </ParamField>
 <ParamField path="color" type="Color" default="Color.white()">
   Outline or fill color.
@@ -89,30 +94,65 @@ render.rectFilled(min: Vector2, size: Vector2, color?: Color, rounding?: number)
 <Tabs>
   <Tab title="Box ESP (Outline)">
     ```ts
-    const { success: s1, screen: head } = Math.worldToScreen(headPos);
-    const { success: s2, screen: feet } = Math.worldToScreen(feetPos);
+    import Entities from "@native/entities";
 
-    if (s1 && s2) {
-        const height = feet.y - head.y;
-        const width = height * 0.5;
-        const topLeft = { x: head.x - width / 2, y: head.y };
+    function getBoundingBox(entity) {
+        const origin = entity.m_pGameSceneNode.m_vecAbsOrigin;
+        const collision = entity.m_pCollision;
+        if (!collision) return null;
 
-        // Draw a basic bounding box
-        render.rect(topLeft, { x: width, y: height }, Color.red(), 1.5);
+        const mins = collision.m_vecMins;
+        const maxs = collision.m_vecMaxs;
+
+        let screenMins = new Vector2(Infinity, Infinity);
+        let screenMaxs = new Vector2(-Infinity, -Infinity);
+
+        for (let i = 0; i < 8; i++) {
+            const world = new Vector(
+                origin.x + (i & 1 ? maxs.x : mins.x),
+                origin.y + (i & 2 ? maxs.y : mins.y),
+                origin.z + (i & 4 ? maxs.z : mins.z),
+            );
+            const { success, screen } = Math.worldToScreen(world);
+            if (!success) return null;
+
+            screenMins.x = Math.min(screenMins.x, screen.x);
+            screenMins.y = Math.min(screenMins.y, screen.y);
+            screenMaxs.x = Math.max(screenMaxs.x, screen.x);
+            screenMaxs.y = Math.max(screenMaxs.y, screen.y);
+        }
+
+        return { mins: screenMins, maxs: screenMaxs };
     }
+
+    on("tick", () => {
+        for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+            if (enemy.m_iHealth <= 0) continue;
+
+            const box = getBoundingBox(enemy);
+            if (!box) continue;
+
+            Render.rect(box.mins, box.maxs, Color.red(), 1.5);
+        }
+    });
     ```
   </Tab>
   <Tab title="Health Bar (Filled)">
     ```ts
+    // Assuming screen position (top-left of the bar) is already calculated
     const barWidth = 60;
     const barHeight = 4;
-    const fillWidth = (health / maxHealth) * barWidth;
+    const fillWidth = (enemy.m_iHealth / 100) * barWidth;
+
+    const barMin = screen;
+    const barMax = new Vector2(screen.x + barWidth, screen.y + barHeight);
 
     // 1. Draw dark background
-    render.rectFilled(barPos, { x: barWidth, y: barHeight }, new Color(0, 0, 0, 150));
+    Render.rectFilled(barMin, barMax, new Color(0, 0, 0, 150));
 
     // 2. Draw green fill on top
-    render.rectFilled(barPos, { x: fillWidth, y: barHeight }, Color.green());
+    const fillMax = new Vector2(screen.x + fillWidth, screen.y + barHeight);
+    Render.rectFilled(barMin, fillMax, Color.green());
     ```
   </Tab>
 </Tabs>
@@ -122,8 +162,8 @@ render.rectFilled(min: Vector2, size: Vector2, color?: Color, rounding?: number)
 ### Circles
 
 ```ts
-render.circle(center: Vector2, radius: number, color?: Color, thickness?: number): void
-render.circleFilled(center: Vector2, radius: number, color?: Color): void
+Render.circle(center: Vector2, radius: number, color?: Color, thickness?: number): void
+Render.circleFilled(center: Vector2, radius: number, color?: Color): void
 ```
 
 <ParamField path="center" type="Vector2" required>
@@ -141,19 +181,30 @@ render.circleFilled(center: Vector2, radius: number, color?: Color): void
 
 <CodeGroup>
 ```ts FOV Ring (Outline)
-const { x: screenWidth, y: screenHeight } = render.getScreenSize();
-const center = { x: screenWidth / 2, y: screenHeight / 2 };
-const fovRadius = 150;
+on("tick", () => {
+    const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
+    const center = { x: screenWidth / 2, y: screenHeight / 2 };
+    const fovRadius = 150;
 
-// Draw a semi-transparent white ring in the center of the screen
-render.circle(center, fovRadius, Color.white().withAlpha(100), 1);
+    Render.circle(center, fovRadius, Color.white().withAlpha(100), 1);
+});
 ```
 
 ```ts Head Dot (Filled)
-const { success, screen } = Math.worldToScreen(enemyHeadPos);
-if (success) {
-    render.circleFilled(screen, 4, Color.red());
-}
+import Entities from "@native/entities";
+
+on("tick", () => {
+    for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+        if (enemy.m_iHealth <= 0) continue;
+
+        const pos = enemy.m_pGameSceneNode.m_vecAbsOrigin;
+        const head = new Vector(pos.x, pos.y, pos.z + 72);
+        const { success, screen } = Math.worldToScreen(head);
+        if (success) {
+            Render.circleFilled(screen, 4, Color.red());
+        }
+    }
+});
 ```
 </CodeGroup>
 
@@ -162,11 +213,11 @@ if (success) {
 ## Lines & Polygons
 
 <AccordionGroup>
-  <Accordion title="render.line" icon="minus">
+  <Accordion title="Render.line" icon="minus">
     Draws a single straight line between two points.
 
     ```ts
-    render.line(start: Vector2, end: Vector2, color?: Color, thickness?: number): void
+    Render.line(start: Vector2, end: Vector2, color?: Color, thickness?: number): void
     ```
     
     <ParamField path="start" type="Vector2" required>Starting point.</ParamField>
@@ -174,17 +225,29 @@ if (success) {
     
     **Example:** Draw a snapline from the bottom center of the screen to an enemy.
     ```ts
-    const { x: screenWidth, y: screenHeight } = render.getScreenSize();
-    const bottomCenter = { x: screenWidth / 2, y: screenHeight };
-    render.line(bottomCenter, enemyScreenPos, Color.yellow(), 1);
+    import Entities from "@native/entities";
+
+    on("tick", () => {
+        const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
+        const bottomCenter = { x: screenWidth / 2, y: screenHeight };
+
+        for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+            if (enemy.m_iHealth <= 0) continue;
+
+            const { success, screen } = Math.worldToScreen(enemy.m_pGameSceneNode.m_vecAbsOrigin);
+            if (success) {
+                Render.line(bottomCenter, screen, Color.yellow(), 1);
+            }
+        }
+    });
     ```
   </Accordion>
 
-  <Accordion title="render.triangle" icon="play">
+  <Accordion title="Render.triangle" icon="play">
     Draws a triangle outline using three specific vertices.
 
     ```ts
-    render.triangle(p1: Vector2, p2: Vector2, p3: Vector2, color?: Color, thickness?: number): void
+    Render.triangle(p1: Vector2, p2: Vector2, p3: Vector2, color?: Color, thickness?: number): void
     ```
 
     **Example:** Draw a directional arrow indicating where an off-screen enemy is.
@@ -193,15 +256,15 @@ if (success) {
     const left = center.add({ x: -8, y: 5 });
     const right = center.add({ x: 8, y: 5 });
 
-    render.triangle(tip, left, right, Color.white(), 1.5);
+    Render.triangle(tip, left, right, Color.white(), 1.5);
     ```
   </Accordion>
 
-  <Accordion title="render.polyline" icon="draw-polygon">
+  <Accordion title="Render.polyline" icon="draw-polygon">
     Draws a series of connected line segments through an array of points. Best used for custom complex shapes like radar blips or star polygons.
 
     ```ts
-    render.polyline(points: Vector2[], color?: Color, thickness?: number, closed?: boolean): void
+    Render.polyline(points: Vector2[], color?: Color, thickness?: number, closed?: boolean): void
     ```
 
     <ParamField path="points" type="Vector2[]" required>Array of vertices.</ParamField>
@@ -216,7 +279,7 @@ if (success) {
         center.add({ x: -15, y: 0 }),
     ];
     // 'closed: true' completes the diamond automatically
-    render.polyline(points, Color.white(), 1, true);
+    Render.polyline(points, Color.white(), 1, true);
     ```
   </Accordion>
 </AccordionGroup>
@@ -226,7 +289,7 @@ if (success) {
 ## Text
 
 ```ts
-render.text(pos: Vector2, text: string, color?: Color): void
+Render.text(pos: Vector2, text: string, color?: Color): void
 ```
 
 Draws a text string on the screen. The position defines the **top-left** corner of the rendered text block.
@@ -235,19 +298,29 @@ Draws a text string on the screen. The position defines the **top-left** corner 
   Top-left coordinate for the text.
 </ParamField>
 <ParamField path="text" type="string" required>
-  The actual string to render.
+  The actual string to Render.
 </ParamField>
 <ParamField path="color" type="Color" default="Color.white()">
   Text color.
 </ParamField>
 
 ```ts
-const { success, screen } = Math.worldToScreen(headPos);
+import Entities from "@native/entities";
 
-if (success) {
-    // Offset Y by -14 pixels to place text slightly above the head
-    render.text({ x: screen.x, y: screen.y - 14 }, playerName, Color.white());
-}
+// getBoundingBox defined above — see Box ESP example
+
+on("tick", () => {
+    for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+        if (enemy.m_iHealth <= 0) continue;
+
+        const box = getBoundingBox(enemy);
+        if (!box) continue;
+
+        // Draw name above the bounding box
+        const name = enemy.controller?.m_iszPlayerName ?? "unknown";
+        Render.text({ x: box.mins.x, y: box.mins.y - 14 }, name, Color.white());
+    }
+});
 ```
 
 ---
@@ -261,20 +334,20 @@ Draw loaded [Texture](/api/types/texture) objects.
 </Warning>
 
 ```ts
-render.image(texture: Texture, min: Vector2, size: Vector2, color?: Color): void
-render.imageRounded(texture: Texture, min: Vector2, size: Vector2, rounding: number, color?: Color): void
+Render.image(texture: Texture, min: Vector2, max: Vector2, color?: Color): void
+Render.imageRounded(texture: Texture, min: Vector2, max: Vector2, rounding?: number, color?: Color): void
 ```
 
 <ParamField path="texture" type="Texture" required>
   A previously loaded texture instance.
 </ParamField>
 <ParamField path="min" type="Vector2" required>
-  Top-left corner where the image will be drawn.
+  Top-left corner of the image rectangle.
 </ParamField>
-<ParamField path="size" type="Vector2" required>
-  Width and height to scale the image to.
+<ParamField path="max" type="Vector2" required>
+  Bottom-right corner of the image rectangle.
 </ParamField>
-<ParamField path="rounding" type="number" required>
+<ParamField path="rounding" type="number" default="0.0">
   Corner radius in pixels. *(Only available in `imageRounded`)*
 </ParamField>
 <ParamField path="color" type="Color" default="Color.white()">
@@ -285,11 +358,13 @@ render.imageRounded(texture: Texture, min: Vector2, size: Vector2, rounding: num
 // Do this ONCE outside your render loop
 const avatar = new Texture("path/to/avatar.png");
 
-// Inside your render callback:
-if (avatar.isReady) {
-    // Rounding it by half its size (24) creates a perfect circle!
-    render.imageRounded(avatar, screenPos, { x: 48, y: 48 }, 24, Color.white());
-}
+// Inside your tick callback:
+on("tick", () => {
+    if (!avatar.isReady) return;
+
+    // Draw a 48x48 avatar in the top-left corner as a circle
+    Render.imageRounded(avatar, new Vector2(10, 10), new Vector2(58, 58), 24, Color.white());
+});
 ```
 
 ---
@@ -303,18 +378,20 @@ A quick example showing how to combine basic primitives to build custom UI eleme
 </Frame>
 
 ```ts
-const { x: screenWidth, y: screenHeight } = render.getScreenSize();
-const cx = screenWidth / 2;
-const cy = screenHeight / 2;
-const gap = 4;
-const size = 10;
-const col = Color.green();
+on("tick", () => {
+    const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
+    const cx = screenWidth / 2;
+    const cy = screenHeight / 2;
+    const gap = 4;
+    const size = 10;
+    const col = Color.green();
 
-// Center dot
-render.circleFilled({ x: cx, y: cy }, 1, col);
+    // Center dot
+    Render.circleFilled({ x: cx, y: cy }, 1, col);
 
-// 4 radiating lines
-render.line({ x: cx - gap - size, y: cy }, { x: cx - gap, y: cy }, col);
-render.line({ x: cx + gap, y: cy }, { x: cx + gap + size, y: cy }, col);
-render.line({ x: cx, y: cy - gap - size }, { x: cx, y: cy - gap }, col);
-render.line({ x: cx, y: cy + gap }, { x: cx, y: cy + gap + size }, col);
+    // 4 radiating lines
+    Render.line({ x: cx - gap - size, y: cy }, { x: cx - gap, y: cy }, col);
+    Render.line({ x: cx + gap, y: cy }, { x: cx + gap + size, y: cy }, col);
+    Render.line({ x: cx, y: cy - gap - size }, { x: cx, y: cy - gap }, col);
+    Render.line({ x: cx, y: cy + gap }, { x: cx, y: cy + gap + size }, col);
+});
