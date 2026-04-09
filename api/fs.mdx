@@ -20,7 +20,7 @@ The `fs` module gives scripts a sandboxed file system rooted at `scripts/data`.
 
 <CardGroup cols={2}>
   <Card title="Reading & writing" icon="file-pen" href="#reading--writing">
-    Read, write, and append file contents as UTF-8 strings.
+    Read, write, and append file contents — binary by default, UTF-8 with an encoding option.
   </Card>
   <Card title="Directories" icon="folder" href="#directories">
     Create, remove, and list directory entries.
@@ -42,16 +42,30 @@ The `fs` module gives scripts a sandboxed file system rooted at `scripts/data`.
 <br />
 
 ```ts
-fs.readFile(path: string): Promise<string>
-fs.readFileSync(path: string): string
+fs.readFile(path: string): Promise<Uint8Array>
+fs.readFile(path: string, encoding: "utf8"): Promise<string>
+
+fs.readFileSync(path: string): Uint8Array
+fs.readFileSync(path: string, encoding: "utf8"): string
 ```
 
-Returns the full UTF-8 contents of a file.
+Reads the full contents of a file. By default returns raw bytes as a
+`Uint8Array`. Pass `"utf8"` as the second argument to decode the file
+and get a `string` instead.
 
 ```ts
-const json = await fs.readFile("profiles/player1.json");
+// Binary (default) — returns Uint8Array
+const raw = await fs.readFile("assets/icon.png");
+console.log(`${raw.byteLength} bytes`);
+
+// UTF-8 — returns string
+const json = await fs.readFile("profiles/player1.json", "utf8");
 const profile = JSON.parse(json);
 console.log(`Welcome back, ${profile.name}!`);
+
+// Sync variants work the same way
+const data = fs.readFileSync("data.bin");           // Uint8Array
+const text = fs.readFileSync("config.json", "utf8"); // string
 ```
 
 ---
@@ -61,15 +75,21 @@ console.log(`Welcome back, ${profile.name}!`);
 <br />
 
 ```ts
-fs.writeFile(path: string, data: string): Promise<true>
-fs.writeFileSync(path: string, data: string): true
+fs.writeFile(path: string, data: string | Uint8Array | ArrayBuffer): Promise<true>
+fs.writeFileSync(path: string, data: string | Uint8Array | ArrayBuffer): true
 ```
 
 Writes `data` to a file, **replacing** it if it already exists.
+Accepts a UTF-8 string, a `Uint8Array`, or an `ArrayBuffer`.
 
 ```ts
+// String
 const save = { level: 12, hp: 85, inventory: ["sword", "shield", "potion"] };
 await fs.writeFile("saves/slot1.json", JSON.stringify(save, null, 2));
+
+// Binary
+const bytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47]);
+await fs.writeFile("output.bin", bytes);
 ```
 
 ---
@@ -79,11 +99,12 @@ await fs.writeFile("saves/slot1.json", JSON.stringify(save, null, 2));
 <br />
 
 ```ts
-fs.appendFile(path: string, data: string): Promise<true>
-fs.appendFileSync(path: string, data: string): true
+fs.appendFile(path: string, data: string | Uint8Array | ArrayBuffer): Promise<true>
+fs.appendFileSync(path: string, data: string | Uint8Array | ArrayBuffer): true
 ```
 
 Appends `data` to the end of a file. Creates the file if it doesn't exist.
+Accepts a UTF-8 string, a `Uint8Array`, or an `ArrayBuffer`.
 
 ```ts
 async function log(message: string) {

@@ -1,0 +1,7430 @@
+---
+title: "Entities"
+sidebarTitle: "Entities"
+description: "Query, iterate, and read schema fields from any game entity — players, weapons, projectiles, and everything else."
+icon: "users"
+---
+
+```ts
+import Entities from "@native/entities";
+```
+
+The `Entities` module exposes the game's entity list. Every entity is backed
+by a **cached snapshot** that is refreshed each frame — reads are fast and
+safe to call in per-frame callbacks without worrying about memory access.
+
+<Note>
+  Entity objects are **lazy** — they hold an index, not a pointer. The
+  actual data is fetched from the per-frame cache on first property access.
+  Always check `.isValid` before reading fields in contexts where an entity
+  might have just died or despawned.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Fetching entities" icon="magnifying-glass" href="#fetching-entities">
+    Get all entities, look up by index, or grab players.
+  </Card>
+  <Card title="Query builder" icon="filter" href="#query-builder">
+    Chain class filters and iterators — forEach, map, filter, first.
+  </Card>
+  <Card title="Entity object" icon="cube" href="#entity-object">
+    Schema fields, reserved properties, and the raw-buffer API.
+  </Card>
+  <Card title="Supported field types" icon="code" href="#supported-field-types">
+    How the engine maps every C++ type to a JS value.
+  </Card>
+</CardGroup>
+
+---
+
+## Fetching entities
+
+### Entities.getByIndex
+
+<br />
+
+```ts
+Entities.getByIndex(index: number): Entity
+```
+
+Returns an `Entity` handle for a given entity list index. The entity may or
+may not be valid — always check `.isValid`.
+
+```ts
+const ent = Entities.getByIndex(1);
+if (ent.isValid) {
+    console.log(ent.className, ent.m_iHealth);
+}
+```
+
+---
+
+### Entities.getEntities
+
+<br />
+
+```ts
+Entities.getEntities(): Entity[]
+```
+
+Returns every entity currently in the snapshot as a flat array.
+
+```ts
+const all = Entities.getEntities();
+console.log(`${all.length} entities in snapshot`);
+
+for (const ent of all) {
+    console.log(`#${ent.index} ${ent.className}`);
+}
+```
+
+<Tip>
+  Prefer `Entities.find()` when you only need a specific class — it avoids
+  allocating the full array and skips irrelevant entities early.
+</Tip>
+
+---
+
+### Entities.getPlayers
+
+<br />
+
+```ts
+Entities.getPlayers(options?: { skipLocal?: boolean }): Entity[]
+```
+
+Returns all **player pawns** in the game (`C_CSPlayerPawn` and
+`C_CSObserverPawn`). Each element is the pawn entity — use `.controller`
+to reach the `CCSPlayerController`.
+
+| Option | Type | Default | |
+|:-------|:-----|:--------|:--|
+| `skipLocal` | `boolean` | `false` | Exclude the local player's pawn |
+
+```ts
+// All players including self
+for (const player of Entities.getPlayers()) {
+    const hp = player.m_iHealth;
+    console.log(`HP: ${hp}`);
+}
+
+// Enemies only
+for (const player of Entities.getPlayers({ skipLocal: true })) {
+    const pos = player.m_pGameSceneNode.m_vecAbsOrigin;
+    console.log(`Enemy at ${pos.x}, ${pos.y}, ${pos.z}`);
+}
+```
+
+---
+
+### Entities.getLocalPlayer
+
+<br />
+
+```ts
+Entities.getLocalPlayer(): Entity | null
+```
+
+Returns the local player's **pawn** entity, or `null` if not in-game.
+
+```ts
+const local = Entities.getLocalPlayer();
+if (local) {
+    console.log(`You are alive, HP: ${local.m_iHealth}`);
+}
+```
+
+---
+
+## Query builder
+
+`Entities.find()` returns a **Query** — a lazy, chainable object that filters
+entities from the snapshot. Nothing is read until you call a terminal method
+(`toArray`, `forEach`, `first`, `count`, `map`, `some`, `every`).
+
+### Entities.find
+
+<br />
+
+```ts
+// Exact class name match
+Entities.find(className: string): Query
+
+// Options object — className for exact match, parent for inheritance
+Entities.find(options: { className?: string, parent?: string }): Query
+```
+
+| Option | | |
+|:-------|:--|:--|
+| `className` | Exact match — only entities whose class is exactly this | `"C_CSPlayerPawn"` |
+| `parent` | Inheritance match — any entity whose class inherits from this | `"C_BaseEntity"` |
+
+<CodeGroup>
+```ts Exact class
+Entities.find("CCSPlayerController")
+    .forEach(ctrl => {
+        console.log(ctrl.m_iszPlayerName);
+    });
+```
+
+```ts By parent class
+Entities.find({ parent: "C_BaseFlex" })
+    .forEach(ent => {
+        console.log(ent.className, ent.m_flSimulationTime);
+    });
+```
+
+```ts Chained filters
+const snipers = Entities.find("C_CSPlayerPawn")
+    .filter(p => p.m_iHealth > 0)
+    .filter(p => p.m_iTeamNum === 2)
+    .toArray();
+```
+</CodeGroup>
+
+---
+
+### Query methods
+
+| Method | Returns | Description |
+|:-------|:--------|:------------|
+| `.filter(fn)` | `Query` | Add a JS-side predicate. Chainable. |
+| `.forEach(fn)` | `void` | Call `fn(entity)` for every match. |
+| `.toArray()` | `Entity[]` | Collect all matches into an array. |
+| `.first()` | `Entity \| null` | First match, or `null`. |
+| `.count()` | `number` | Number of matching entities. |
+| `.map(fn)` | `T[]` | Transform each match. |
+| `.some(fn)` | `boolean` | `true` if any entity passes `fn`. |
+| `.every(fn)` | `boolean` | `true` if all entities pass `fn`. |
+
+```ts
+// Is any enemy alive?
+const anyAlive = Entities.find("C_CSPlayerPawn")
+    .filter(p => p.m_iTeamNum !== Entities.getLocalPlayer()?.m_iTeamNum)
+    .some(p => p.m_iHealth > 0);
+
+// Closest enemy
+const enemies = Entities.find("C_CSPlayerPawn")
+    .filter(p => p.m_iHealth > 0)
+    .toArray();
+
+const myPos = Entities.getLocalPlayer()?.m_pGameSceneNode.m_vecAbsOrigin;
+enemies.sort((a, b) =>
+    a.m_pGameSceneNode.m_vecAbsOrigin.distTo(myPos) - b.m_pGameSceneNode.m_vecAbsOrigin.distTo(myPos)
+);
+const nearest = enemies[0];
+```
+
+---
+
+## Entity object
+
+Every value returned by the `Entities` API is an **Entity** — a dynamic
+proxy that reads fields directly from the per-frame entity cache.
+
+### Reserved properties
+
+These are always present regardless of the entity's class:
+
+| Property | Type | |
+|:---------|:-----|:--|
+| `index` | `number` | Entity list index. Readonly. |
+| `isValid` | `boolean` | `true` if entity exists in the current snapshot. Readonly. |
+| `className` | `string` | Class name, e.g. `"C_CSPlayerPawn"`. Readonly. |
+| `address` | `BigInt` | In-process memory address of the entity object. Readonly. |
+
+```ts
+const ent = Entities.getByIndex(42);
+console.log(ent.index);     // 42
+console.log(ent.className); // "C_CSPlayerPawn"
+console.log(ent.isValid);   // true / false
+console.log(ent.address);   // 0x12345678n
+```
+
+---
+
+### Schema fields
+
+Any field in the entity's C++ class hierarchy is accessible by name directly
+on the entity object. The engine resolves the field through the full
+inheritance chain automatically.
+
+```ts
+const player = Entities.getLocalPlayer();
+
+// Primitives
+const hp       = player.m_iHealth;            // number
+const armor    = player.m_ArmorValue;         // number
+const alive    = player.m_bIsAlive;           // boolean
+
+// Vectors and angles
+const pos      = player.m_pGameSceneNode.m_vecAbsOrigin;       // Vector
+const vel      = player.m_vecVelocity;        // Vector
+const eyeAngle = player.m_angEyeAngles;       // QAngle
+
+// Strings
+const name     = player.m_iszPlayerName;      // string (CUtlString)
+
+// Handles — automatically resolved to Entity | null
+const weapon   = player.m_hActiveWeapon;      // Entity | null
+
+// Inline nested structs — returns a nested object with its own fields
+const collision = player.m_Collision;
+const mins = collision.m_vMinBounds;          // Vector
+```
+
+<Warning>
+  Builtin fields (`bool`, `int32`, `float`, etc.) are **writable** — you can
+  set them directly: `player.m_iHealth = 100`. All other field types (pointers,
+  nested structs, vectors, handles) are read-only.
+</Warning>
+
+---
+
+### `.controller` (player pawns only)
+
+Available on `C_CSPlayerPawn` and `C_CSObserverPawn`. Returns the
+`CCSPlayerController` entity linked to this pawn.
+
+```ts
+for (const pawn of Entities.getPlayers()) {
+    const ctrl = pawn.controller;
+    if (ctrl) {
+        console.log(ctrl.m_iszPlayerName, pawn.m_iHealth);
+    }
+}
+```
+
+---
+
+### CUtlVector fields
+
+Fields of type `CUtlVector` (or `CNetworkUtlVectorBase`) return a
+**UtlVector** object — a lazy wrapper around the native array that
+reads elements on demand.
+
+| Method | Returns | Description |
+|:-------|:--------|:------------|
+| `.length` | `number` | Element count |
+| `.get(index)` | element | Element at index, or `null` |
+| `.toArray()` | element[] | All elements as a JS array |
+| `.forEach(fn)` | `void` | `fn(element, index)` for each element |
+| `.map(fn)` | `T[]` | Transform each element |
+| `.filter(fn)` | element[] | Keep elements where `fn` returns true |
+| `.find(fn)` | element \| `null` | First element where `fn` returns true |
+
+```ts
+const weapons = player.m_hMyWeapons;  // CUtlVector<CHandle>
+
+console.log(`Carrying ${weapons.length} weapons`);
+
+weapons.forEach((weapon, i) => {
+    if (weapon) console.log(`Slot ${i}: ${weapon.className}`);
+});
+
+const activeWpn = weapons.find(w => w?.m_bInReload);
+```
+
+---
+
+### Raw buffer API
+
+Every entity (and nested struct) exposes low-level read methods for
+reading raw bytes at a fixed byte offset from the entity's base address.
+Useful for fields not exposed in the generated schema.
+
+```ts
+obj.readInt8(offset)           // → number
+obj.readUint8(offset)          // → number
+obj.readInt16(offset)          // → number
+obj.readUint16(offset)         // → number
+obj.readInt32(offset)          // → number
+obj.readUint32(offset)         // → number
+obj.readInt64(offset)          // → BigInt
+obj.readUint64(offset)         // → BigInt
+obj.readFloat(offset)          // → number
+obj.readDouble(offset)         // → number
+obj.readBool(offset)           // → boolean
+obj.readPointer(offset)        // → BigInt  (raw address)
+obj.readString(offset, max?)   // → string  (null-terminated, max 4096 by default)
+obj.readVector(offset)         // → Vector
+obj.readAngle(offset)          // → QAngle
+obj.buffer(offset?, length?)   // → Uint8Array
+obj.size()                     // → number  (cached byte size of this object)
+```
+
+```ts
+// Read an undocumented field at a known offset
+const rawFlags = player.readUint32(0x3AC);
+
+// Grab a raw slice for manual parsing
+const chunk = player.buffer(0x100, 64); // 64 bytes starting at +0x100
+```
+
+---
+
+### `.toString()`
+
+```ts
+const ent = Entities.getByIndex(5);
+console.log(ent.toString()); // "[Entity #5] (C_CSPlayerPawn)"
+```
+
+---
+
+## Supported field types
+
+The engine maps every C++ schema type to a JavaScript value automatically.
+
+| C++ type | JS value | Notes |
+|:---------|:---------|:------|
+| `bool` | `boolean` | |
+| `int8`, `int16`, `int32` | `number` | Signed |
+| `uint8`, `uint16`, `uint32` | `number` | Unsigned |
+| `int64` | `BigInt` | |
+| `uint64` | `BigInt` | |
+| `float`, `float32` | `number` | |
+| `double`, `float64` | `number` | |
+| `Vector`, `VectorWS` | [`Vector`](/api/types/vector) | |
+| `QAngle`, `QAngle_t` | [`QAngle`](/api/types/qangle) | |
+| `Quaternion`, `Quaternion_t` | `{ x, y, z, w }` | |
+| `GameTick_t` | `number` | Stored as float |
+| `CUtlString`, `CUtlSymbolLarge` | `string` | |
+| `CUtlVector`, `CNetworkUtlVectorBase` | `UtlVector` | See [CUtlVector fields](#cutlvector-fields) |
+| `C_EntityHandle`, `CHandle<T>` | `Entity \| null` | Resolved to entity |
+| Pointer to known class | nested object \| `null` | Cache-backed |
+| Inline nested struct | nested object | Same buffer as parent |
+| Unknown / unrecognized | `Uint8Array` | Raw bytes |
+
+---
+
+## Recipes
+
+### Find the closest visible enemy
+
+```ts
+const local = Entities.getLocalPlayer();
+if (!local) return;
+
+const myPos = local.m_pGameSceneNode.m_vecAbsOrigin;
+const myTeam = local.m_iTeamNum;
+
+let closest = null;
+let bestDist = Infinity;
+
+Entities.find("C_CSPlayerPawn")
+    .filter(p => p.m_iHealth > 0)
+    .filter(p => p.m_iTeamNum !== myTeam)
+    .forEach(enemy => {
+        const dist = enemy.m_pGameSceneNode.m_vecAbsOrigin.distTo(myPos);
+        if (dist < bestDist) {
+            bestDist = dist;
+            closest = enemy;
+        }
+    });
+```
+
+### Iterate all controllers and their pawns
+
+```ts
+Entities.find("CCSPlayerController").forEach(ctrl => {
+    const pawn = ctrl.m_hPawn;
+    if (!pawn || !pawn.isValid) return;
+
+    console.log(
+        ctrl.m_iszPlayerName,
+        "HP:", pawn.m_iHealth,
+        "Team:", pawn.m_iTeamNum
+    );
+});
+```
+
+### List all weapons on the map
+
+```ts
+Entities.find({ parent: "C_BaseFlex" })
+    .filter(e => e.className.includes("Weapon") || e.className.includes("weapon"))
+    .forEach(w => {
+        const pos = w.m_pGameSceneNode.m_vecAbsOrigin;
+        console.log(`${w.className} at (${pos.x.toFixed(0)}, ${pos.y.toFixed(0)})`);
+    });
+```
+
+### Read schema field + raw fallback
+
+```ts
+const player = Entities.getLocalPlayer();
+
+// Prefer schema field
+const hp = player.m_iHealth;
+
+// Fall back to raw offset if field isn't in schema
+const shotsFired = player.readInt32(0x9B4);
+```
+---
+title: "FFI"
+sidebarTitle: "FFI"
+description: "Call native libraries, define C structs, and bridge JavaScript to any DLL or shared object."
+icon: "microchip"
+---
+
+```ts
+import FFI from "@native/ffi";
+```
+
+The `FFI` module lets you load native libraries (`.dll`, `.so`) and call their
+functions directly from JavaScript — no bindings, no wrappers.
+
+<Note>
+  Pointers are represented as **BigInt** values. A `0n` BigInt is a null
+  pointer. The engine never uses raw `number` for addresses.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Libraries & functions" icon="book" href="#libraries--functions">
+    Load a DLL/SO, resolve symbols, call native functions.
+  </Card>
+  <Card title="Structs & unions" icon="layer-group" href="#structs--unions">
+    Define C-compatible data layouts and access fields directly.
+  </Card>
+  <Card title="Memory" icon="memory" href="#memory">
+    Allocate, read, write, and convert pointers.
+  </Card>
+  <Card title="Callbacks" icon="arrow-turn-up" href="#callbacks">
+    Pass JavaScript functions where native code expects a function pointer.
+  </Card>
+  <Card title="Types" icon="code" href="#type-system">
+    Supported type names and how to define aliases.
+  </Card>
+  <Card title="Resource management" icon="shield" href="#resource-management">
+    Auto-cleanup scopes and disposable handles.
+  </Card>
+</CardGroup>
+
+---
+
+## Libraries & functions
+
+Load a native library, then pull functions out of it. Two styles: quick
+`proc` calls for simple signatures, or C-style `func` declarations when
+you want readable code.
+
+{/* ------------------------------------------------------------------ */}
+
+### open
+
+<br />
+
+```ts
+FFI.open(path: string): FFILibrary
+```
+
+Loads a dynamic library and returns a library handle. On Windows this
+calls `LoadLibraryA`, on Linux/macOS `dlopen`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `path` | `string` | Path to the `.dll` or `.so` file |
+
+```ts
+const user32 = FFI.open("user32.dll");
+const libc   = FFI.open("libc.so.6");
+```
+
+<Warning>
+  The library stays loaded until you call `close()` or the script ends.
+  Forgetting to close can leak handles across reloads.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### close
+
+<br />
+
+```ts
+lib.close(): void
+```
+
+Unloads the library. Any functions resolved from it become invalid —
+calling them after `close()` will crash.
+
+```ts
+const lib = FFI.open("mylib.dll");
+// ... use it ...
+lib.close();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### proc
+
+<br />
+
+```ts
+lib.proc(name: string, retType: string, argTypes?: string[]): Function
+```
+
+Resolves a symbol by name and wraps it as a callable function.
+The quick-and-dirty way — pass types as separate arguments.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `name` | `string` | Exported symbol name |
+| `retType` | `string` | Return [type name](#type-system) |
+| `argTypes` | `string[]` | Parameter [type names](#type-system) |
+
+```ts
+const msgBox = user32.proc("MessageBoxA", "int", ["pointer", "string", "string", "uint32"]);
+msgBox(FFI.nullptr, "Hello from JS!", "FFI", 0);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### func
+
+<br />
+
+```ts
+lib.func(signature: string): Function
+```
+
+Resolves a function using a **C-style signature string**. More readable
+than `proc` for complex declarations.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `signature` | `string` | Full C-style signature |
+
+The signature format is `returnType [abi] functionName(paramTypes...)`:
+
+```ts
+const msgBox = user32.func("int MessageBoxA(pointer, string, string, uint32)");
+msgBox(FFI.nullptr, "Hello from JS!", "FFI", 0);
+```
+
+<Tabs>
+  <Tab title="Basic">
+    ```ts
+    const getTickCount = kernel32.func("uint32 GetTickCount()");
+    const ticks = getTickCount();
+    ```
+  </Tab>
+  <Tab title="Calling convention">
+    ```ts
+    // Explicit stdcall (default on most WinAPI)
+    const wndProc = user32.func(
+        "int __stdcall DefWindowProcA(pointer, uint32, pointer, pointer)"
+    );
+    ```
+  </Tab>
+  <Tab title="Variadic">
+    ```ts
+    const printf = libc.func("int printf(string, ...)");
+    // Pass variadic args as type/value pairs after the fixed args:
+    printf("count: %d, name: %s\n", "int", 42, "string", "hello");
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  Supported calling conventions: `__cdecl` (default), `__stdcall`,
+  `__fastcall`, `__thiscall`. Prefix the function name with the keyword.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### funcs
+
+<br />
+
+```ts
+lib.funcs(definitions: { [alias: string]: string }): { [alias: string]: Function }
+```
+
+Batch-declare multiple functions at once. Returns an object with
+a callable for each key.
+
+```ts
+const k32 = FFI.open("kernel32.dll");
+
+const { sleep, getTickCount } = k32.funcs({
+    sleep:        "void Sleep(uint32)",
+    getTickCount: "uint32 GetTickCount()",
+});
+
+sleep(100);
+log(getTickCount());
+```
+
+<Tip>
+  If the signature already contains a function name, the symbol is resolved
+  by that name. The object key just becomes the JS alias. So `sleep` in
+  the example above resolves `Sleep` from the DLL.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### funcAsync / funcsAsync
+
+<br />
+
+```ts
+lib.funcAsync(signature: string): (...args) => Promise
+lib.funcsAsync(definitions: { [alias: string]: string }): { [alias: string]: (...args) => Promise }
+```
+
+Async variants of `func` and `funcs`. The native call runs on a worker
+thread and returns a `Promise` that resolves with the result.
+
+```ts
+const readFile = kernel32.funcAsync(
+    "bool ReadFile(pointer, pointer, uint32, _Out_ uint32*, pointer)"
+);
+
+const ok = await readFile(hFile, buf, bufSize, bytesRead, FFI.nullptr);
+```
+
+<Warning>
+  Variadic functions are not supported in async mode.
+  Only use `funcAsync` for non-variadic signatures.
+</Warning>
+
+---
+
+## Structs & unions
+
+Define C-compatible memory layouts. Struct instances are backed by an
+`ArrayBuffer` — fields are live accessors into the buffer, not copies.
+Write a field and the native memory updates immediately.
+
+{/* ------------------------------------------------------------------ */}
+
+### struct
+
+<br />
+
+```ts
+FFI.struct(name?: string, fields: { [name: string]: string }): StructType
+```
+
+Defines a struct layout. Field order matches property insertion order.
+Returns a **type object** with factory methods.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `name` | `string` | Optional name (registers globally for nesting) |
+| `fields` | `object` | Field names → [type names](#type-system) |
+
+```ts
+const Vec3 = FFI.struct("Vec3", {
+    x: "float",
+    y: "float",
+    z: "float",
+});
+```
+
+**Array fields** use bracket notation:
+
+```ts
+const Matrix = FFI.struct("Matrix", {
+    m: "float[16]",
+});
+```
+
+**Nested structs** reference by name:
+
+```ts
+const Player = FFI.struct("Player", {
+    position: "Vec3",
+    health:   "int32",
+    name:     "char[64]",
+});
+```
+
+<Note>
+  `char[N]` fields are treated as C strings — they read/write as JS
+  strings, auto null-terminated at `N-1`.
+</Note>
+
+The returned type object has these methods:
+
+| Method | Returns | |
+|:-------|:--------|:--|
+| `alloc()` | Instance | Allocates zeroed memory |
+| `from(obj)` | Instance | Allocates and copies fields from a JS object |
+| `view(ptr)` | Instance | Wraps existing memory (no copy, no ownership) |
+| `decode(buf, offset?)` | Plain object | Reads into a plain JS object (snapshot) |
+| `array(count)` | Instance[] | Allocates a contiguous array of structs |
+| `offsetOf(field)` | `number` | Returns the byte offset of a field |
+
+<Tabs>
+  <Tab title="alloc + write">
+    ```ts
+    const pos = Vec3.alloc();
+    pos.x = 100.0;
+    pos.y = 200.0;
+    pos.z = 0.0;
+    ```
+  </Tab>
+  <Tab title="from">
+    ```ts
+    const pos = Vec3.from({ x: 100, y: 200, z: 0 });
+    ```
+  </Tab>
+  <Tab title="view">
+    ```ts
+    // Read a Vec3 directly from a pointer
+    const pos = Vec3.view(entityBaseAddr + 0x138);
+    log(pos.x, pos.y, pos.z);
+    ```
+  </Tab>
+  <Tab title="decode">
+    ```ts
+    // Snapshot into a plain object (no live backing)
+    const snap = Vec3.decode(buffer, 0);
+    // snap = { x: 100, y: 200, z: 0 }
+    ```
+  </Tab>
+  <Tab title="array">
+    ```ts
+    const bones = Vec3.array(128);
+    bones[0].x = 10.0;
+    // All 128 structs share one contiguous ArrayBuffer
+    ```
+  </Tab>
+  <Tab title="offsetOf">
+    ```ts
+    Vec3.offsetOf("y"); // 4
+    Vec3.offsetOf("z"); // 8
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  `view()` wraps raw memory with no bounds checking beyond the struct's
+  own size. A bad pointer will read garbage or crash. Always validate
+  addresses before calling `view`.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### union
+
+<br />
+
+```ts
+FFI.union(name?: string, fields: { [name: string]: string }): UnionType
+```
+
+Like `struct`, but all fields share the same memory (offset 0). The
+total size equals the largest field.
+
+```ts
+const Value = FFI.union("Value", {
+    asInt:   "int32",
+    asFloat: "float",
+    asPtr:   "pointer",
+});
+
+const v = Value.alloc();
+v.asInt = 0x42280000;
+log(v.asFloat); // 42.0 — same bits, different interpretation
+```
+
+The returned type has `alloc()`, `from()`, and `view()` — same as struct.
+
+---
+
+## Memory
+
+Raw memory operations. Use these when you need to go below struct-level —
+reading strings from pointers, allocating scratch buffers, or converting
+between pointer representations.
+
+{/* ------------------------------------------------------------------ */}
+
+### alloc
+
+<br />
+
+```ts
+FFI.alloc(size: number): ArrayBuffer
+```
+
+Allocates a zeroed `ArrayBuffer` of `size` bytes. Maximum 256 MB.
+
+```ts
+const buf = FFI.alloc(1024);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### free
+
+<br />
+
+```ts
+FFI.free(ptr: BigInt | External): void
+```
+
+Frees memory previously allocated by native code (via the C runtime's
+`free`). Silent no-op on `null` / `undefined`.
+
+```ts
+const pStr = someDll.func("string! GetName()")();
+// The `!` suffix means the return value must be freed
+// But with disposable() this is handled automatically — see below
+```
+
+<Warning>
+  Only use `FFI.free` on pointers returned by native allocators (e.g.
+  `malloc`). **Never** free an `ArrayBuffer` pointer — the JS garbage
+  collector owns those.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### toPointer
+
+<br />
+
+```ts
+FFI.toPointer(value: any): BigInt
+```
+
+Converts any pointer-like value to a BigInt address.
+
+| Input type | Behavior |
+|:-----------|:---------|
+| `BigInt` | Returned as-is |
+| `ArrayBuffer` | Returns backing store address |
+| `ArrayBufferView` | Returns data pointer (with byte offset) |
+| `External` | Unwraps the external pointer |
+| Struct instance | Returns the struct's buffer address |
+
+```ts
+const buf = FFI.alloc(64);
+const addr = FFI.toPointer(buf); // BigInt address
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### readString
+
+<br />
+
+```ts
+FFI.readString(ptr: BigInt | External | ArrayBuffer, maxLen?: number): string | null
+```
+
+Reads a null-terminated C string from a pointer. Returns `null` if the
+pointer is null. Default `maxLen` is 4096, capped at 64 MB.
+
+```ts
+const name = FFI.readString(pName);
+const longStr = FFI.readString(pData, 65536);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### writeString
+
+<br />
+
+```ts
+FFI.writeString(buffer: ArrayBuffer | ArrayBufferView, str: string): number
+```
+
+Writes a UTF-8 string into a buffer, null-terminated. Returns the
+number of bytes written (excluding the null terminator).
+
+```ts
+const buf = FFI.alloc(256);
+FFI.writeString(buf, "Hello, world!");
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### sizeOf
+
+<br />
+
+```ts
+FFI.sizeOf(typeName: string): number
+```
+
+Returns the byte size of any [type name](#type-system), including
+registered structs and unions.
+
+```ts
+FFI.sizeOf("int32");   // 4
+FFI.sizeOf("pointer"); // 8 (on x64)
+FFI.sizeOf("Vec3");    // 12 (if Vec3 is 3 floats)
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### errno
+
+<br />
+
+```ts
+FFI.errno(): number
+```
+
+Returns the current C `errno` value. Check it right after a native call.
+
+```ts
+const fd = openFunc(path, flags);
+if (fd < 0) {
+    log("error:", FFI.errno());
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### nullptr
+
+<br />
+
+```ts
+FFI.nullptr  // External (null)
+```
+
+A null pointer constant. Pass it wherever a native function expects a
+`NULL`.
+
+```ts
+msgBox(FFI.nullptr, "text", "title", 0);
+```
+
+---
+
+## Callbacks
+
+Pass a JavaScript function where native code expects a **function pointer**.
+The engine creates a native trampoline that invokes your JS function when
+the native side calls through the pointer.
+
+{/* ------------------------------------------------------------------ */}
+
+### callback
+
+<br />
+
+```ts
+FFI.callback(signature: string, fn: Function): BigInt
+FFI.callback(retType: string, argTypes: string[], fn: Function): BigInt
+```
+
+Returns a BigInt pointer to a native-callable trampoline. Two forms —
+signature string or explicit types.
+
+<Tabs>
+  <Tab title="Signature style">
+    ```ts
+    const cb = FFI.callback("int (int, int)", (a, b) => {
+        return a + b;
+    });
+    // cb is a BigInt you can pass to any native function expecting
+    // a function pointer with that signature
+    ```
+  </Tab>
+  <Tab title="Explicit types">
+    ```ts
+    const cb = FFI.callback("bool", ["pointer", "uint32"], (hwnd, msg) => {
+        log("window message:", msg);
+        return true;
+    });
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  Callbacks are **not garbage collected**. You must call
+  [freeCallback](#freecallback) when done, or they leak. The only
+  exception is if the callback lives for the entire script lifetime.
+</Warning>
+
+<Note>
+  Callbacks have a re-entry depth limit of 16. If native code calls
+  your callback recursively beyond that, the engine returns zero/null
+  instead of calling JS.
+</Note>
+
+{/* ------------------------------------------------------------------ */}
+
+### freeCallback
+
+<br />
+
+```ts
+FFI.freeCallback(ptr: BigInt): void
+```
+
+Frees a previously created callback. Throws if the callback is currently
+executing (mid-call).
+
+```ts
+FFI.freeCallback(cb);
+```
+
+---
+
+## Type system
+
+Type names are strings used throughout the FFI API — in signatures,
+struct fields, `proc` calls, and `sizeOf`. The engine recognizes
+C-style names, Rust-style names, and Windows typedefs.
+
+### Primitive types
+
+| Type name(s) | Size | JS representation |
+|:-------------|:-----|:------------------|
+| `void` | 0 | `undefined` |
+| `bool`, `BOOL` | 4 | `boolean` |
+| `uint8`, `uint8_t`, `BYTE`, `byte` | 1 | `number` |
+| `int8`, `int8_t`, `char` | 1 | `number` |
+| `uint16`, `uint16_t`, `WORD`, `word` | 2 | `number` |
+| `int16`, `int16_t`, `short` | 2 | `number` |
+| `uint32`, `uint32_t`, `uint`, `unsigned`, `DWORD` | 4 | `number` |
+| `int32`, `int32_t`, `int`, `long` | 4 | `number` |
+| `uint64`, `uint64_t`, `uintptr_t` | 8 | `BigInt` |
+| `int64`, `int64_t` | 8 | `BigInt` |
+| `float`, `float32` | 4 | `number` |
+| `double`, `float64` | 8 | `number` |
+| `size_t` | 4 or 8 | `number` or `BigInt` |
+
+### Pointer types
+
+| Type name(s) | JS representation |
+|:-------------|:------------------|
+| `pointer`, `ptr`, `void*` | `BigInt` (address) |
+| `string`, `str`, `char*`, `const char*` | `string` (auto UTF-8 conversion) |
+| `wstring`, `wchar_t*`, `LPCWSTR`, `LPWSTR` | `string` (auto wide conversion) |
+| Any type ending with `*` | `BigInt` (pointer to that type) |
+
+<Note>
+  When a function **returns** `string` or `wstring`, the engine reads
+  the C string and gives you a JS string. When you **pass** a JS string
+  as a `pointer` argument, the engine auto-converts it to a temporary
+  null-terminated C string for the duration of the call.
+</Note>
+
+### Composite types
+
+Struct and union names become valid type names after definition:
+
+```ts
+FFI.struct("POINT", { x: "int32", y: "int32" });
+
+// Now "POINT" works as a type name
+FFI.sizeOf("POINT"); // 8
+
+// And "POINT*" works as a pointer-to-struct
+const fn = lib.func("bool GetCursorPos(POINT*)");
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### typedef
+
+<br />
+
+```ts
+FFI.typedef(alias: string, realType: string): void
+```
+
+Creates a type alias. Resolved recursively (up to 32 levels).
+
+```ts
+FFI.typedef("HANDLE", "pointer");
+FFI.typedef("HWND", "HANDLE");
+
+// Now HWND resolves to pointer
+const findWindow = user32.func("HWND FindWindowA(string, string)");
+```
+
+---
+
+## Resource management
+
+Native resources (allocated memory, file handles, callbacks) don't get
+garbage collected. These helpers prevent leaks.
+
+{/* ------------------------------------------------------------------ */}
+
+### disposable
+
+<br />
+
+```ts
+fn.disposable(cleanupFn: (returnValue) => void): Function
+```
+
+Every function returned by `func` / `proc` has a `.disposable()` method.
+It returns a new function that wraps return values in a **managed handle**
+which auto-closes inside `FFI.using()` scopes.
+
+```ts
+const allocName = lib.func("string! AllocName(int)");
+const safeName = allocName.disposable((ptr) => FFI.free(ptr));
+```
+
+The managed handle has:
+
+| Property | |
+|:---------|:--|
+| `.$val` | The raw return value |
+| `.close()` | Calls the cleanup function (idempotent) |
+
+<Tip>
+  The `!` suffix on a return type (e.g. `string!`) signals that the
+  return value is heap-allocated and should be freed. It's a convention,
+  not enforced — pair it with `.disposable()` for safety.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### using
+
+<br />
+
+```ts
+FFI.using(fn: () => any): any
+```
+
+Runs `fn` in a managed scope. Any managed handles (from `.disposable()`)
+created during the scope are automatically closed when `fn` returns or
+throws.
+
+```ts
+FFI.using(() => {
+    const name = safeName(playerId);
+    // name.$val is the string
+    log(name.$val);
+    // name.close() is called automatically when this block exits
+});
+```
+
+<Tabs>
+  <Tab title="Memory safety">
+    ```ts
+    const allocBuf = lib.func("pointer! CreateBuffer(uint32)")
+        .disposable((ptr) => FFI.free(ptr));
+
+    FFI.using(() => {
+        const buf = allocBuf(4096);
+        // Use buf.$val as a pointer...
+        doSomething(buf);
+        // buf is freed automatically here
+    });
+    ```
+  </Tab>
+  <Tab title="Nested scopes">
+    ```ts
+    FFI.using(() => {
+        const outer = allocBuf(1024);
+
+        FFI.using(() => {
+            const inner = allocBuf(512);
+            // inner freed here
+        });
+
+        // outer still alive, freed here
+    });
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  `FFI.using` is synchronous. Don't `await` inside it — the scope
+  closes on function return, not on promise resolution.
+</Warning>
+
+---
+
+## Out parameters
+
+Some native APIs write results through pointer parameters (like
+`GetCursorPos(POINT*)`). The FFI supports this with `_Out_` and
+`_Inout_` annotations in signatures.
+
+```ts
+const POINT = FFI.struct("POINT", { x: "int32", y: "int32" });
+
+const getCursorPos = lib.func("bool GetCursorPos(_Out_ POINT*)");
+
+const pos = { x: 0, y: 0 };
+getCursorPos(pos);
+// pos.x and pos.y now contain the cursor position
+```
+
+For primitive out params, pass an array or `{ $: initialValue }`:
+
+```ts
+const getExitCode = lib.func("bool GetExitCodeProcess(pointer, _Out_ uint32*)");
+
+const code = [0];
+getExitCode(hProcess, code);
+log(code[0]); // the exit code
+
+// Or with object style:
+const code2 = { $: 0 };
+getExitCode(hProcess, code2);
+log(code2.$); // same result
+```
+
+| Annotation | Behavior |
+|:-----------|:---------|
+| `_Out_` | Native writes through the pointer, JS object updated after call |
+| `_Inout_` | JS values copied in before the call, native result copied back after |
+
+---
+
+## Signature cheat sheet
+
+A quick reference for the `func` signature format:
+
+```
+returnType [callingConvention] functionName([_Out_|_Inout_] paramType, ..., ...)
+```
+
+| Element | Examples | |
+|:--------|:---------|:--|
+| Return type | `void`, `int`, `string`, `POINT` | Any [type name](#type-system) |
+| Return type + `!` | `string!`, `pointer!` | Signals the caller owns (should free) the return value |
+| Calling convention | `__stdcall`, `__cdecl`, `__fastcall`, `__thiscall` | Optional, defaults to `__cdecl` |
+| Param annotation | `_Out_`, `_Inout_` | Optional, for write-back params |
+| Variadic | `...` or `___` | Must be last, marks the start of variadic args |
+
+```ts
+// All valid signatures:
+"void Sleep(uint32)"
+"int __stdcall MessageBoxA(pointer, string, string, uint32)"
+"bool GetCursorPos(_Out_ POINT*)"
+"int printf(string, ...)"
+"string! AllocGreeting(string)"
+```
+
+---
+
+## Complete example
+
+Putting it all together — calling the Windows API to show a message box
+and read the cursor position:
+
+```ts
+const user32  = FFI.open("user32.dll");
+
+const POINT = FFI.struct("POINT", {
+    x: "int32",
+    y: "int32",
+});
+
+const { msgBox, getCursorPos } = user32.funcs({
+    msgBox:       "int MessageBoxA(pointer, string, string, uint32)",
+    getCursorPos: "bool GetCursorPos(_Out_ POINT*)",
+});
+
+const pos = { x: 0, y: 0 };
+getCursorPos(pos);
+
+msgBox(FFI.nullptr, `Cursor at ${pos.x}, ${pos.y}`, "FFI Demo", 0);
+
+user32.close();
+```
+---
+title: "FileSystem"
+sidebarTitle: "FileSystem"
+description: "Read, write, and manage files inside a sandboxed data directory."
+icon: "folder-open"
+---
+
+```ts
+import fs from "@native/fs";  // requires "filesystem" permission
+```
+
+The `fs` module gives scripts a sandboxed file system rooted at `scripts/data`.
+
+<Note>
+  All paths are **relative to `scripts/data`**. Absolute paths or anything that
+  escapes the sandbox (e.g. `../../secret`) will throw `"path escapes sandbox"`.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Reading & writing" icon="file-pen" href="#reading--writing">
+    Read, write, and append file contents as UTF-8 strings.
+  </Card>
+  <Card title="Directories" icon="folder" href="#directories">
+    Create, remove, and list directory entries.
+  </Card>
+  <Card title="Metadata & checks" icon="circle-info" href="#metadata--checks">
+    Check existence, read file size, and inspect types.
+  </Card>
+  <Card title="Move, copy & watch" icon="arrows-rotate" href="#move-copy--watch">
+    Rename, copy, truncate, and watch paths for changes.
+  </Card>
+</CardGroup>
+
+---
+
+## Reading & writing
+
+### fs.readFile
+
+<br />
+
+```ts
+fs.readFile(path: string): Promise<string>
+fs.readFileSync(path: string): string
+```
+
+Returns the full UTF-8 contents of a file.
+
+```ts
+const json = await fs.readFile("profiles/player1.json");
+const profile = JSON.parse(json);
+console.log(`Welcome back, ${profile.name}!`);
+```
+
+---
+
+### fs.writeFile
+
+<br />
+
+```ts
+fs.writeFile(path: string, data: string): Promise<true>
+fs.writeFileSync(path: string, data: string): true
+```
+
+Writes `data` to a file, **replacing** it if it already exists.
+
+```ts
+const save = { level: 12, hp: 85, inventory: ["sword", "shield", "potion"] };
+await fs.writeFile("saves/slot1.json", JSON.stringify(save, null, 2));
+```
+
+---
+
+### fs.appendFile
+
+<br />
+
+```ts
+fs.appendFile(path: string, data: string): Promise<true>
+fs.appendFileSync(path: string, data: string): true
+```
+
+Appends `data` to the end of a file. Creates the file if it doesn't exist.
+
+```ts
+async function log(message: string) {
+    const line = `[${new Date().toISOString()}] ${message}\n`;
+    await fs.appendFile("debug.log", line);
+}
+
+await log("Script started");
+await log("Player spawned at (100, 200)");
+```
+
+<Tip>
+  Prefer the async variants (`readFile`, `writeFile`, `appendFile`) in event
+  handlers and loops. Use the `*Sync` variants only during initialization where
+  blocking I/O is acceptable.
+</Tip>
+
+---
+
+## Directories
+
+### fs.mkdir
+
+<br />
+
+```ts
+fs.mkdir(path: string, recursive?: boolean): Promise<void>
+fs.mkdirSync(path: string, recursive?: boolean): void
+```
+
+Creates a directory. Pass `true` as the second argument to create the full
+path at once (like `mkdir -p`).
+
+```ts
+await fs.mkdir("saves/player_42/backups", true);
+```
+
+---
+
+### fs.rmdir
+
+<br />
+
+```ts
+fs.rmdir(path: string, recursive?: boolean): Promise<void>
+```
+
+Removes a directory. Pass `true` to delete it recursively.
+
+```ts
+await fs.rmdir("saves/old_profile", true);
+```
+
+---
+
+### fs.readdir
+
+<br />
+
+```ts
+fs.readdir(path: string): Promise<string[]>
+fs.readdirSync(path: string): string[]
+```
+
+Returns an array of entry names (files and subdirectories) inside `path`.
+
+```ts
+const entries = await fs.readdir("saves");
+// ["slot1.json", "slot2.json", "autosave.json", "backups"]
+
+// Sync — build a script picker
+const files = fs.readdirSync("scripts");
+const jsFiles = files.filter(f => fs.path.extname(f) === ".js");
+```
+
+---
+
+## Metadata & checks
+
+### fs.exists
+
+<br />
+
+```ts
+fs.exists(path: string): Promise<boolean>
+fs.existsSync(path: string): boolean
+```
+
+Returns `true` if the path exists (file or directory), `false` otherwise.
+
+```ts
+if (await fs.exists("saves/autosave.json")) {
+    console.log("Autosave found, loading...");
+} else {
+    console.log("No autosave, starting fresh.");
+}
+```
+
+---
+
+### fs.stat
+
+<br />
+
+```ts
+fs.stat(path: string): Promise<StatResult>
+fs.statSync(path: string): StatResult
+```
+
+Returns a `StatResult` object describing the path.
+
+| Field         | Type      | Description                              |
+|:--------------|:----------|:-----------------------------------------|
+| `size`        | `number`  | File size in bytes (`0` for directories) |
+| `isFile`      | `boolean` | `true` if a regular file                 |
+| `isDirectory` | `boolean` | `true` if a directory                    |
+
+```ts
+const info = await fs.stat("saves/slot1.json");
+
+if (info.isFile) {
+    console.log(`Save file size: ${(info.size / 1024).toFixed(1)} KB`);
+}
+```
+
+---
+
+## Move, copy & watch
+
+### fs.unlink
+
+<br />
+
+```ts
+fs.unlink(path: string): Promise<void>
+fs.unlinkSync(path: string): boolean
+```
+
+Deletes a single file. The async variant rejects if the file doesn't exist;
+the sync variant returns `false` instead of throwing.
+
+```ts
+await fs.writeFile("temp_export.txt", buildExportData());
+await uploadToServer("temp_export.txt");
+await fs.unlink("temp_export.txt");
+```
+
+---
+
+### fs.rename
+
+<br />
+
+```ts
+fs.rename(oldPath: string, newPath: string): Promise<void>
+```
+
+Moves or renames a file/directory within the sandbox.
+
+```ts
+if (await fs.exists("debug.log")) {
+    await fs.rename("debug.log", "debug_prev.log");
+}
+await fs.writeFile("debug.log", "");
+```
+
+---
+
+### fs.copyFile
+
+<br />
+
+```ts
+fs.copyFile(src: string, dst: string): Promise<void>
+```
+
+Copies a file. Overwrites `dst` if it already exists.
+
+```ts
+// Backup before modifying
+await fs.copyFile("config.json", "config.backup.json");
+
+const config = JSON.parse(await fs.readFile("config.json"));
+config.debug = true;
+await fs.writeFile("config.json", JSON.stringify(config, null, 2));
+```
+
+---
+
+### fs.truncate
+
+<br />
+
+```ts
+fs.truncate(path: string, length?: number): Promise<void>
+```
+
+Resizes a file to `length` bytes. Defaults to `0` (clears the file).
+If the file is shorter than `length`, it is padded with null bytes.
+
+```ts
+// Clear a log without deleting it
+await fs.truncate("debug.log");
+
+// Keep only the first 1 KB
+await fs.truncate("large_output.txt", 1024);
+```
+
+---
+
+### fs.watch
+
+<br />
+
+```ts
+fs.watch(
+    path: string,
+    callback: (event: "change" | "rename" | "error", filename: string) => void,
+    options?: { recursive?: boolean }
+): FSWatcher
+```
+
+Watches a file or directory for changes. Returns an `FSWatcher` — call
+`.close()` to stop.
+
+| Event | Trigger |
+|:------|:--------|
+| `"change"` | File content was modified |
+| `"rename"` | File was created, deleted, or renamed |
+| `"error"` | A watcher error occurred |
+
+<CodeGroup>
+```ts Directory watcher
+const watcher = fs.watch("saves", (event, filename) => {
+    if (event === "error") { console.error("Watch error:", filename); return; }
+    console.log(`[${event}] ${filename}`);
+}, { recursive: true });
+
+setTimeout(() => watcher.close(), 60_000);
+```
+
+```ts Hot-reload config
+const configWatcher = fs.watch("config.json", (event) => {
+    if (event === "change") {
+        try {
+            applyConfig(JSON.parse(fs.readFileSync("config.json")));
+            console.log("Config hot-reloaded!");
+        } catch (e) {
+            console.error("Reload failed:", e);
+        }
+    }
+});
+```
+</CodeGroup>
+
+---
+
+## Path utilities — `fs.path`
+
+Pure string helpers — they do **not** touch the file system.
+
+| Function | Returns | Example |
+|:---------|:--------|:--------|
+| `fs.path.join(...segments)` | `string` | `join("saves","p1","data.json")` → `"saves/p1/data.json"` |
+| `fs.path.basename(path)` | `string` | `basename("saves/p1/data.json")` → `"data.json"` |
+| `fs.path.dirname(path)` | `string` | `dirname("saves/p1/data.json")` → `"saves/p1"` |
+| `fs.path.extname(path)` | `string` | `extname("archive.tar.gz")` → `".gz"` |
+| `fs.path.resolve(...segments)` | `string` | Resolves to absolute path from cwd |
+| `fs.path.isAbsolute(path)` | `boolean` | `isAbsolute("/data/f.txt")` → `true` |
+
+---
+
+## Recipes
+
+### JSON key-value store
+
+```ts
+class JsonStore {
+    constructor(private file: string) {}
+
+    async load(fallback = {}) {
+        return (await fs.exists(this.file))
+            ? JSON.parse(await fs.readFile(this.file))
+            : fallback;
+    }
+
+    async save(data: object) {
+        await fs.writeFile(this.file, JSON.stringify(data, null, 2));
+    }
+
+    async update(fn: (d: any) => any) {
+        const result = fn(await this.load());
+        await this.save(result);
+        return result;
+    }
+}
+
+const db = new JsonStore("playerdata.json");
+await db.save({ kills: 0, deaths: 0 });
+await db.update(d => ({ ...d, kills: d.kills + 1 }));
+```
+
+### Save slot manager
+
+```ts
+const SAVE_DIR = "saves";
+
+async function saveGame(slot: number, data: object) {
+    await fs.mkdir(SAVE_DIR, true);
+    const file = fs.path.join(SAVE_DIR, `slot${slot}.json`);
+    if (await fs.exists(file)) await fs.copyFile(file, `${file}.bak`);
+    await fs.writeFile(file, JSON.stringify({ ...data, savedAt: new Date().toISOString() }, null, 2));
+}
+
+async function loadGame(slot: number) {
+    const file = fs.path.join(SAVE_DIR, `slot${slot}.json`);
+    return (await fs.exists(file)) ? JSON.parse(await fs.readFile(file)) : null;
+}
+```
+
+### Log rotation
+
+```ts
+const LOG_FILE = "app.log";
+const MAX_SIZE = 50 * 1024; // 50 KB
+
+async function writeLog(level: string, message: string) {
+    if (await fs.exists(LOG_FILE)) {
+        const { size } = await fs.stat(LOG_FILE);
+        if (size >= MAX_SIZE) {
+            if (await fs.exists("app_prev.log")) await fs.unlink("app_prev.log");
+            await fs.rename(LOG_FILE, "app_prev.log");
+        }
+    }
+    await fs.appendFile(LOG_FILE, `[${new Date().toISOString()}] [${level}] ${message}\n`);
+}
+```
+
+---
+
+## Error handling
+
+All async functions return Promises that reject on failure. Sync functions
+throw directly.
+
+```ts
+// Async
+try {
+    const data = await fs.readFile("might_not_exist.json");
+} catch (err) {
+    console.error("Read failed:", err);
+}
+
+// Sync
+try {
+    fs.writeFileSync("output.txt", "Hello");
+} catch (err) {
+    console.error("Write failed:", err);
+}
+
+// Guard pattern — cleanest when the file is optional
+if (await fs.exists("optional.json")) {
+    const content = await fs.readFile("optional.json");
+}
+```
+
+---
+
+## Security
+
+All paths resolve relative to `scripts/data`. Any path that escapes the
+sandbox throws `"path escapes sandbox"`.
+
+<Warning>
+  The following will **always throw** — absolute paths and directory
+  traversal are blocked at the sandbox boundary:
+  ```ts
+  await fs.readFile("/etc/passwd");          // absolute path
+  await fs.readFile("../../secrets.txt");    // traversal
+  await fs.writeFile("../outside.txt", ""); // traversal
+  ```
+</Warning>
+---
+title: "Game"
+sidebarTitle: "Game"
+description: "Per-frame timestamps, tick counters, map info, and frame timing — engine state updated every tick."
+icon: "gauge-high"
+---
+
+```ts
+import Game from "@native/game";
+```
+
+The `Game` module exposes engine globals that are updated each tick.
+All fields are **readonly**.
+
+## Fields
+
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `serverTime` | `number` | Current server-side time in seconds |
+| `curTime` | `number` | Client-side current time in seconds |
+| `frameTime` | `number` | Time elapsed since the previous frame (seconds) |
+| `absFrameTime` | `number` | Absolute frame time, unaffected by time scaling |
+| `tickFraction` | `number` | Fractional position within the current tick `[0, 1]` |
+| `tickCount` | `number` | Current server tick number |
+| `frameCount` | `number` | Total frames rendered since engine start |
+| `maxClients` | `number` | Maximum number of players on the server |
+| `mapName` | `string` | Full map path, e.g. `"maps/de_dust2.vpk"` |
+| `shortMapName` | `string` | Short map name, e.g. `"de_dust2"` |
+
+```ts
+on("tick", () => {
+    const speed = 200 * Game.frameTime;
+    console.log(`Tick #${Game.tickCount} — map: ${Game.shortMapName}`);
+});
+```
+
+<Tip>
+  Use `Game.frameTime` to make any per-frame calculation **frame-rate
+  independent**. Multiply velocities, animation deltas, and lerp factors
+  by `Game.frameTime` so they behave the same at 60 FPS and 300 FPS.
+</Tip>
+---
+title: "Globals"
+sidebarTitle: "Globals"
+description: "Timers, console output, event system, and the script object — available everywhere without imports."
+icon: "globe"
+---
+
+Everything on this page is available in every script without any import.
+These are the building blocks every script starts with: scheduling work,
+reacting to game events, and reading per-frame state.
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Timers" icon="clock" href="#timers">
+    Schedule one-shot or repeating callbacks with setTimeout and setInterval.
+  </Card>
+  <Card title="console" icon="terminal" href="#console">
+    Log, warn, error, and assert output to the script console.
+  </Card>
+  <Card title="Events — on / once / off" icon="bolt" href="#events">
+    React to ticks, input, and engine events. Returns IDs for cleanup.
+  </Card>
+  <Card title="script" icon="file-code" href="#script">
+    Metadata about the running script — name, version, author.
+  </Card>
+</CardGroup>
+
+---
+
+## Timers
+
+Standard browser-style timer API. IDs returned by `setTimeout` and
+`setInterval` are independent — pass the right ID to the right clear function.
+
+### setTimeout
+
+<br />
+
+```ts
+setTimeout(callback: () => void, ms: number): number
+```
+
+Calls `callback` once after `ms` milliseconds. Returns a timer ID.
+
+```ts
+setTimeout(() => {
+    console.log("3 seconds have passed");
+}, 3000);
+```
+
+---
+
+### setInterval
+
+<br />
+
+```ts
+setInterval(callback: () => void, ms: number): number
+```
+
+Calls `callback` repeatedly every `ms` milliseconds. Returns a timer ID.
+
+```ts
+const id = setInterval(() => {
+    console.log("tick");
+}, 1000);
+```
+
+---
+
+### clearTimeout / clearInterval
+
+<br />
+
+```ts
+clearTimeout(id: number): void
+clearInterval(id: number): void
+```
+
+Cancels a pending timer by its ID. Safe to call with an invalid or
+already-fired ID.
+
+```ts
+const id = setInterval(() => {
+    console.log("tick");
+}, 500);
+
+// Stop after 5 seconds
+setTimeout(() => clearInterval(id), 5000);
+```
+
+<Warning>
+  Always cancel intervals you no longer need. Intervals keep firing even if
+  the entities or objects they reference have become invalid, and they
+  accumulate across script reloads until explicitly cleared.
+</Warning>
+
+---
+
+## console
+
+Standard console output. All methods accept any number of arguments
+and format them automatically.
+
+```ts
+console.log(...args: any[]): void      // general output
+console.warn(...args: any[]): void     // yellow warning
+console.error(...args: any[]): void    // red error
+console.assert(cond: any, ...args: any[]): void  // logs if cond is falsy
+```
+
+```ts
+console.log("Player HP:", player.m_iHealth);
+console.warn("Entity not found for index", idx);
+console.error("Critical failure:", err);
+console.assert(player.isValid, "Player should be valid");
+
+// Multiple values are space-joined
+console.log("pos:", pos.x, pos.y, pos.z);
+```
+
+---
+
+## Events
+
+### on
+
+<br />
+
+```ts
+on(event: string, callback: (...args: any[]) => void): number
+```
+
+Registers a callback for a named event. Returns a numeric **ID** that
+can be passed to [`off`](#off) to unregister.
+
+```ts
+const id = on("tick", () => {
+    // called every tick (128 Hz)
+});
+```
+
+---
+
+### once
+
+<br />
+
+```ts
+once(event: string, callback: (...args: any[]) => void): number
+```
+
+Like `on`, but the callback fires **once** and is automatically removed.
+
+```ts
+once("tick", () => {
+    console.log("only the first tick");
+});
+```
+
+---
+
+### off
+
+<br />
+
+```ts
+off(id: number): boolean
+```
+
+Removes a callback by its ID. Returns `true` if found and removed,
+`false` if already removed or invalid.
+
+```ts
+const id = on("tick", () => { /* ... */ });
+
+off(id);   // true  — removed
+off(id);   // false — already gone
+```
+
+<Tip>
+  Always store the ID returned by `on()` if you plan to clean up later.
+  Use `once()` when you only need a single invocation — it handles
+  cleanup for you.
+</Tip>
+
+---
+
+### Built-in events
+
+#### `"tick"`
+
+Fires every game tick (128 Hz). The primary place for per-frame logic —
+entity reads, render calls, state machines.
+
+```ts
+import Entities from "@native/entities";
+import Render   from "@native/render";
+
+on("tick", () => {
+    const local = Entities.getLocalPlayer();
+    if (!local) return;
+
+    const { success, screen } = Math.worldToScreen(local.m_pGameSceneNode.m_vecAbsOrigin);
+    if (success) {
+        Render.text(screen, `HP: ${local.m_iHealth}`, Color.white());
+    }
+});
+```
+
+---
+
+#### `"OnMouseMove"`
+
+```ts
+on("OnMouseMove", (absX: number, absY: number, deltaX: number, deltaY: number) => void)
+```
+
+| Param | Type | |
+|:------|:-----|:--|
+| `absX` | `number` | Absolute cursor X position in screen pixels |
+| `absY` | `number` | Absolute cursor Y position in screen pixels |
+| `deltaX` | `number` | Change in X since the last event |
+| `deltaY` | `number` | Change in Y since the last event |
+
+```ts
+let cursorPos = { x: 0, y: 0 };
+
+on("OnMouseMove", (absX, absY) => {
+    cursorPos = { x: absX, y: absY };
+});
+```
+
+---
+
+#### `"OnMouseClick"`
+
+```ts
+on("OnMouseClick", (button: number, isDown: boolean) => void)
+```
+
+| Param | Type | |
+|:------|:-----|:--|
+| `button` | `number` | `0` = left, `1` = right, `2` = middle, `3` = X1, `4` = X2 |
+| `isDown` | `boolean` | `true` on press, `false` on release |
+
+```ts
+on("OnMouseClick", (button, isDown) => {
+    if (button === 0 && isDown) {
+        console.log("Left mouse button pressed");
+    }
+});
+```
+
+---
+
+#### `"OnMouseScroll"`
+
+```ts
+on("OnMouseScroll", (direction: number) => void)
+```
+
+| Param | Type | |
+|:------|:-----|:--|
+| `direction` | `number` | `1` = scroll up, `-1` = scroll down |
+
+```ts
+on("OnMouseScroll", (dir) => {
+    console.log(dir > 0 ? "Scrolled up" : "Scrolled down");
+});
+```
+
+---
+
+#### `"OnKeyDown"` / `"OnKeyUp"`
+
+```ts
+on("OnKeyDown", (vkCode: number) => void)
+on("OnKeyUp",   (vkCode: number) => void)
+```
+
+| Param | Type | |
+|:------|:-----|:--|
+| `vkCode` | `number` | Windows Virtual Key code |
+
+```ts
+const VK_INSERT = 0x2D;
+
+on("OnKeyDown", (vk) => {
+    if (vk === VK_INSERT) {
+        console.log("Insert pressed");
+    }
+});
+```
+
+<Tip>
+  Virtual Key codes are listed in the
+  [Microsoft documentation](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes).
+  Common ones: `0x01` LMB · `0x02` RMB · `0x04` MMB · `0x10` Shift ·
+  `0x11` Ctrl · `0x12` Alt · `0x2D` Insert · `0x2E` Delete.
+</Tip>
+
+---
+
+### onUnload
+
+Script cleanup is handled by exporting a function named `onUnload`.
+It is called once when the script is about to be unloaded or reloaded.
+
+```ts
+export function onUnload() {
+    console.log("script unloaded");
+}
+```
+
+<CodeGroup>
+```ts Cleanup intervals
+const intervalId = setInterval(() => { /* ... */ }, 100);
+
+export function onUnload() {
+    clearInterval(intervalId);
+    console.log("Cleaned up.");
+}
+```
+
+```ts Cleanup event listeners
+const tickId = on("tick", () => { /* ... */ });
+const keyId  = on("OnKeyDown", () => { /* ... */ });
+
+export function onUnload() {
+    off(tickId);
+    off(keyId);
+}
+```
+</CodeGroup>
+
+<Warning>
+  `onUnload` must be a **named export** at the module level. It will not
+  fire if declared as a local variable or inside a nested function.
+</Warning>
+
+---
+
+## script
+
+The `script` object exposes metadata about the currently running script.
+All fields are **readonly**.
+
+```ts
+declare var script: {
+    name: string;
+    version: string;
+    author: string;
+};
+```
+
+| Field | Type | Description |
+|:------|:-----|:------------|
+| `name` | `string` | Script display name |
+| `version` | `string` | Version string |
+| `author` | `string` | Author name |
+
+```ts
+console.log(`${script.name} v${script.version} by ${script.author}`);
+```
+
+---
+
+## Recipes
+
+### Feature toggle with a keybind
+
+```ts
+let enabled = false;
+const VK_INSERT = 0x2D;
+
+on("OnKeyDown", (vk) => {
+    if (vk === VK_INSERT) {
+        enabled = !enabled;
+        console.log("Feature:", enabled ? "ON" : "OFF");
+    }
+});
+
+on("tick", () => {
+    if (!enabled) return;
+    // ... render / logic
+});
+```
+
+### Throttle expensive work with setInterval
+
+```ts
+import Entities from "@native/entities";
+import Render   from "@native/render";
+
+let cachedEnemies = [];
+
+setInterval(() => {
+    cachedEnemies = Entities.find("C_CSPlayerPawn")
+        .filter(p => p.m_iHealth > 0)
+        .toArray();
+}, 100);
+
+on("tick", () => {
+    for (const enemy of cachedEnemies) {
+        const { success, screen } = Math.worldToScreen(enemy.m_pGameSceneNode.m_vecAbsOrigin);
+        if (success) Render.circleFilled(screen, 4, Color.red());
+    }
+});
+```
+
+### Frame-time independent animation
+
+```ts
+import Game   from "@native/game";
+import Render from "@native/render";
+
+let alpha = 0;
+let direction = 1;
+
+on("tick", () => {
+    alpha += direction * 120 * Game.frameTime;
+
+    if (alpha >= 255) { alpha = 255; direction = -1; }
+    if (alpha <= 0)   { alpha = 0;   direction =  1; }
+
+    const { x: w, y: h } = Render.getScreenSize();
+    Render.text(
+        { x: w / 2, y: h / 2 },
+        "Hello World",
+        new Color(255, 255, 255, alpha)
+    );
+});
+```
+---
+title: "Math"
+sidebarTitle: "Math"
+description: "Angle math, screen projection, and interpolation — built into the global Math object."
+icon: "calculator"
+---
+
+The engine extends the global `Math` object. No imports needed — just call
+`Math.calcAngle(...)` like you'd call `Math.sin(...)`.
+
+<Note>
+  All angles are in **radians** unless stated otherwise. Convert with
+  `Math.toRadians(deg)` and `Math.toDegrees(rad)`.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Vectors & angles" icon="compass" href="#vectors--angles">
+    Convert between directions and Euler angles, calculate aim angles.
+  </Card>
+  <Card title="Screen projection" icon="display" href="#screen-projection">
+    Project 3D world positions onto your 2D screen.
+  </Card>
+  <Card title="Angle normalization" icon="arrows-rotate" href="#angle-normalization">
+    Clamp, normalize, and compare angles safely.
+  </Card>
+  <Card title="Interpolation" icon="wave-sine" href="#interpolation--mapping">
+    Lerp, smooth step, remap — smooth everything.
+  </Card>
+</CardGroup>
+
+---
+
+## Vectors & angles
+
+These three functions convert between world positions, direction vectors,
+and Euler angles ([QAngle](/api/types#qangle)). They form the core of
+any aim or movement calculation.
+
+{/* ------------------------------------------------------------------ */}
+
+### calcAngle
+
+<br />
+
+```ts
+Math.calcAngle(src: Vector, dst: Vector): QAngle
+```
+
+Returns the angle you'd need to look from `src` directly at `dst`.
+This is the function you reach for first in any aim-related code.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `src` | [Vector](/api/types#vector) | Your eye position |
+| `dst` | [Vector](/api/types#vector) | Where you want to look |
+
+<CodeGroup>
+```ts Basic aim angle
+import Entities from "@native/entities";
+
+const local = Entities.getLocalPlayer();
+const enemy = Entities.getPlayers({ skipLocal: true })[0];
+
+const aim = Math.calcAngle(
+    local.m_pGameSceneNode.m_vecAbsOrigin,
+    enemy.m_pGameSceneNode.m_vecAbsOrigin
+);
+```
+
+```ts Closest target by FOV
+import Entities from "@native/entities";
+
+const local = Entities.getLocalPlayer();
+const myEyePos = local.m_pGameSceneNode.m_vecAbsOrigin;
+const myViewAngle = local.m_angEyeAngles;
+
+let bestFov = Infinity;
+let bestTarget = null;
+
+for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+    if (enemy.m_iHealth <= 0) continue;
+
+    const aim = Math.calcAngle(myEyePos, enemy.m_pGameSceneNode.m_vecAbsOrigin);
+    const fov = Math.calculateFOV(myViewAngle, aim);
+    if (fov < bestFov) {
+        bestFov = fov;
+        bestTarget = enemy;
+    }
+}
+```
+</CodeGroup>
+
+<Warning>
+  The returned angle is **not** normalized. Pipe it through
+  [clampAngles](#clampangles) before sending to the engine — it
+  hard-caps pitch to `[-89, 89]` which the engine requires.
+  Use [normalizeAngles](#normalizeangles) instead if you only need to
+  wrap overflows (e.g. for angle comparisons or delta calculations).
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### angleVectors
+
+<br />
+
+```ts
+Math.angleVectors(angle: QAngle): { forward: Vector, right: Vector, up: Vector }
+```
+
+Decomposes an Euler angle into three perpendicular direction vectors.
+"Where am I looking?" → `forward`. "What's to my right?" → `right`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `angle` | [QAngle](/api/types#qangle) | Euler angle to decompose |
+
+```ts
+import Entities from "@native/entities";
+
+const local = Entities.getLocalPlayer();
+const eyePos = local.m_pGameSceneNode.m_vecAbsOrigin;
+
+const { forward } = Math.angleVectors(local.m_angEyeAngles);
+
+// Project 1000 units ahead of the player's view
+const traceEnd = eyePos.add(forward.scale(1000));
+```
+
+<Tip>
+  You rarely need all three vectors. Destructure only what you use —
+  `const { forward } = ...` is the most common pattern.
+</Tip>
+
+See also: [vectorAngles](#vectorangles) — the inverse operation.
+
+{/* ------------------------------------------------------------------ */}
+
+### vectorAngles
+
+<br />
+
+```ts
+Math.vectorAngles(vec: Vector): QAngle
+```
+
+The inverse of `angleVectors` — converts a direction vector back to an
+Euler angle.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `vec` | [Vector](/api/types#vector) | Direction to convert |
+
+```ts
+const moveAngle = Math.vectorAngles(entity.getVelocity());
+// moveAngle.yaw → compass direction the entity is walking
+```
+
+See also: [angleVectors](#anglevectors) — the inverse operation.
+
+---
+
+## Screen projection
+
+These functions bridge 3D world space and 2D screen space. You need them
+every time you draw something at a game object's position.
+
+<Frame caption="A 3D world position projected to pixel coordinates on the screen.">
+  <img src="/images/world-to-screen.png" alt="worldToScreen projects a 3D point onto your monitor" />
+</Frame>
+
+{/* ------------------------------------------------------------------ */}
+
+### worldToScreen
+
+<br />
+
+```ts
+Math.worldToScreen(vec: Vector): { success: boolean, screen: Vector2 }
+```
+
+Projects a 3D position to **pixel coordinates** on your monitor.
+This is the function you'll use 99% of the time for ESP and overlays.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `vec` | [Vector](/api/types#vector) | World position to project |
+
+| Returns | Type | |
+|:--------|:-----|:--|
+| `success` | `boolean` | `false` if the point is behind the camera |
+| `screen` | [Vector2](/api/types#vector2) | Pixel coords, top-left origin |
+
+```ts
+import Entities from "@native/entities";
+import Render   from "@native/render";
+
+on("tick", () => {
+    for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+        if (enemy.m_iHealth <= 0) continue;
+
+        const pos = enemy.m_pGameSceneNode.m_vecAbsOrigin;
+        const { success, screen } = Math.worldToScreen(pos);
+
+        if (success) {
+            Render.circleFilled(screen, 4, Color.red());
+            Render.text({ x: screen.x + 8, y: screen.y - 6 }, enemy.controller?.m_iszPlayerName, Color.red());
+        }
+    }
+});
+```
+
+<Warning>
+  **Never skip the `success` check.** Behind-camera positions project to
+  random screen edges and cause wild flickering. This is the #1 ESP bug.
+</Warning>
+
+<Info>
+  Full walkthrough: [Drawing on screen](/learn/drawing-on-screen) builds
+  a complete ESP overlay step by step using `worldToScreen`.
+</Info>
+
+{/* ------------------------------------------------------------------ */}
+
+### screenTransform
+
+<br />
+
+```ts
+Math.screenTransform(vec: Vector): { success: boolean, screen: Vector2 }
+```
+
+Same as `worldToScreen` but returns **normalized device coordinates** (`-1`
+to `1`) instead of pixel values. For custom projection math only.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `vec` | [Vector](/api/types#vector) | World position to project |
+
+| Returns | Type | |
+|:--------|:-----|:--|
+| `success` | `boolean` | `false` if the point is behind the camera |
+| `screen` | [Vector2](/api/types#vector2) | NDC coords, `(-1, -1)` to `(1, 1)` |
+
+```ts
+import Entities from "@native/entities";
+import Render   from "@native/render";
+
+const enemy = Entities.getPlayers({ skipLocal: true })[0];
+const { success, screen } = Math.screenTransform(enemy.m_pGameSceneNode.m_vecAbsOrigin);
+
+if (success) {
+    const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
+    const px = (1 + screen.x) / 2 * screenWidth;
+    const py = (1 - screen.y) / 2 * screenHeight;
+}
+```
+
+---
+
+## Angle normalization
+
+Engine angles can overflow or land outside expected ranges after math
+operations. These functions clean them up.
+
+{/* ------------------------------------------------------------------ */}
+
+### clampAngles
+
+<br />
+
+```ts
+Math.clampAngles(angle: QAngle): QAngle   // mutates in place
+```
+
+Hard-clamps each component to engine-safe bounds and returns the same object.
+
+| Component | Clamped to |
+|:----------|:-----------|
+| Pitch | `[-89, 89]` |
+| Yaw | `[-180, 180]` |
+| Roll | `[-50, 50]` |
+
+```ts
+const aim = Math.calcAngle(localPos, enemyPos);
+Math.clampAngles(aim);
+// Safe to send to engine now
+```
+
+<Warning>
+  Mutates the original. Clone first if you need the raw value:
+  `const safe = Math.clampAngles({ ...rawAngle });`
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### normalizeAngles
+
+<br />
+
+```ts
+Math.normalizeAngles(angle: QAngle): QAngle   // mutates in place
+```
+
+Wraps all components into `[-180, 180]` using modular arithmetic
+and returns the same object.
+Unlike `clampAngles`, `270°` becomes `−90°`, not `180°`.
+
+```ts
+Math.normalizeAngles(angle);
+// 270° → -90°    |    -540° → 180°    |    45° → 45° (unchanged)
+```
+
+<Warning>
+  Mutates the original, just like [clampAngles](#clampangles).
+  Clone first if you need the raw value:
+  `const wrapped = Math.normalizeAngles({ ...rawAngle });`
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### calculateFOV
+
+<br />
+
+```ts
+Math.calculateFOV(view: QAngle, aim: QAngle): number
+```
+
+Returns the angular distance (in degrees) between two look-directions.
+Think of it as "how many degrees would I move my crosshair to reach this?"
+
+| Param | Type | |
+|:------|:-----|:--|
+| `view` | [QAngle](/api/types#qangle) | Your current view angle |
+| `aim` | [QAngle](/api/types#qangle) | Target angle (from [calcAngle](#calcangle)) |
+
+**Returns** `number` — `0` = perfectly aligned, `180` = opposite direction.
+
+```ts
+import Entities from "@native/entities";
+
+const local = Entities.getLocalPlayer();
+const myEyePos = local.m_pGameSceneNode.m_vecAbsOrigin;
+
+const enemy = Entities.getPlayers({ skipLocal: true })[0];
+const aim = Math.calcAngle(myEyePos, enemy.m_pGameSceneNode.m_vecAbsOrigin);
+const fov = Math.calculateFOV(local.m_angEyeAngles, aim);
+
+if (fov < 5) {
+    // Target is within 5° of crosshair
+}
+```
+
+---
+
+## Interpolation & mapping
+
+Five functions for smoothing, clamping, and remapping values.
+The building blocks for animations, health bars, opacity fades,
+and anything that transitions between two states.
+
+{/* ------------------------------------------------------------------ */}
+
+### clamp
+
+<br />
+
+```ts
+Math.clamp(value: number, min: number, max: number): number
+```
+
+Restricts a value to `[min, max]`. Below min → min. Above max → max.
+
+```ts
+Math.clamp(1.5,  0, 1);    // 1     — capped at max
+Math.clamp(-3,   0, 100);  // 0     — capped at min
+Math.clamp(50,   0, 100);  // 50    — in range, untouched
+
+// Always clamp health fraction before using it
+const fill = Math.clamp(health / maxHealth, 0, 1);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### lerp
+
+<br />
+
+```ts
+Math.lerp(a: number, b: number, t: number): number
+```
+
+Linear interpolation. `t=0` → `a`, `t=1` → `b`, `t=0.5` → midpoint.
+Not clamped — `t` outside `[0, 1]` extrapolates past the endpoints.
+
+```ts
+Math.lerp(0, 100, 0.25);  // 25
+Math.lerp(0, 100, 0.5);   // 50
+Math.lerp(0, 100, 1.5);   // 150 (extrapolates)
+
+// Smooth follow: ease toward target each frame
+currentX = Math.lerp(currentX, targetX, 0.3);
+```
+
+<Tip>
+  `lerp` with a constant `t` each frame gives **exponential decay** — the
+  object slows as it approaches the target. `0.1–0.3` feels smooth,
+  `0.5+` feels snappy.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### inverseLerp
+
+<br />
+
+```ts
+Math.inverseLerp(a: number, b: number, val: number): number
+```
+
+The reverse of `lerp`: given a value in the `[a, b]` range, returns where
+it sits as a `0–1` factor.
+
+<Note>
+  Returns `0` if `a === b` (avoids division by zero). Keep this in mind
+  when `a` and `b` come from game data that might collapse to a single value.
+</Note>
+
+```ts
+Math.inverseLerp(0, 100, 25);   // 0.25  — a quarter through
+Math.inverseLerp(0, 100, 100);  // 1.0   — at the end
+Math.inverseLerp(0, 100, 150);  // 1.5   — past the end (not clamped)
+
+// "How far through the animation?"
+const progress = Math.inverseLerp(startTime, endTime, now);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### smoothStep
+
+<br />
+
+```ts
+Math.smoothStep(a: number, b: number, t: number): number
+```
+
+Like `lerp` but with easing — starts slow, speeds up, ends slow.
+Internally clamps `t` to `[0, 1]`, then applies `3t² − 2t³`.
+
+```ts
+Math.smoothStep(0, 1, 0.0);  // 0.0     — start
+Math.smoothStep(0, 1, 0.1);  // 0.028   — slow ramp
+Math.smoothStep(0, 1, 0.5);  // 0.5     — midpoint
+Math.smoothStep(0, 1, 0.9);  // 0.972   — slow finish
+Math.smoothStep(0, 1, 1.0);  // 1.0     — end
+```
+
+<Tabs>
+  <Tab title="Health bar fill">
+    ```ts
+    const t = Math.clamp(health / maxHealth, 0, 1);
+    const barWidth = Math.smoothStep(0, 200, t);
+    // Visually emphasizes low/full HP more than a linear bar
+    ```
+  </Tab>
+  <Tab title="Opacity fade">
+    ```ts
+    const alpha = Math.smoothStep(0, 255, animProgress);
+    const color = new Color(255, 255, 255, alpha);
+    ```
+  </Tab>
+  <Tab title="Position ease">
+    ```ts
+    const t = Math.clamp((now - moveStart) / 300, 0, 1);
+    posX = Math.smoothStep(fromX, toX, t);
+    posY = Math.smoothStep(fromY, toY, t);
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  **lerp vs smoothStep vs lerp-per-frame:**
+
+  | Pattern | Motion | Clamps `t`? | Best for |
+  |:--------|:-------|:------------|:---------|
+  | `lerp(a, b, t)` | Constant speed (with linear `t`) | No | Timed animations with linear `t` |
+  | `smoothStep(a, b, t)` | Ease in-out | Yes, to `[0, 1]` | UI transitions, overlay animations |
+  | `x = lerp(x, target, 0.3)` per frame | Exponential decay | N/A | Following a moving target |
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### remapVal
+
+<br />
+
+```ts
+Math.remapVal(val: number, srcMin: number, srcMax: number, dstMin: number, dstMax: number): number
+```
+
+Maps a value from one range to another. The Swiss army knife for converting
+game values to visual properties.
+Does **not** clamp — wrap in [clamp](#clamp) if you need bounded output.
+
+<Tabs>
+  <Tab title="Health → color">
+    ```ts
+    // Green at full HP, red at zero
+    const r = Math.remapVal(health, 0, 100, 255, 0);
+    const g = Math.remapVal(health, 0, 100, 0, 255);
+    const color = new Color(r, g, 0, 255);
+    ```
+  </Tab>
+  <Tab title="Distance → opacity">
+    ```ts
+    // Fade out between 2000–8000 units
+    const alpha = Math.clamp(
+        Math.remapVal(distance, 2000, 8000, 255, 40),
+        40, 255
+    );
+    ```
+  </Tab>
+  <Tab title="Health → bar width">
+    ```ts
+    const barPx = Math.remapVal(health, 0, maxHealth, 0, 200);
+    ```
+  </Tab>
+  <Tab title="FOV → circle size">
+    ```ts
+    // Smaller FOV circle when target is far away
+    const radius = Math.remapVal(distance, 0, 5000, 20, 4);
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  Values outside the source range extrapolate: health `120` mapped from
+  `[0, 100]` to `[0, 255]` gives `306`. Always clamp when your data can
+  exceed the expected range:
+  ```ts
+  const safe = Math.clamp(Math.remapVal(val, 0, 100, 0, 255), 0, 255);
+  ```
+</Warning>
+
+<Note>
+  If `srcMin === srcMax`, the result is a division by zero. Guard against
+  this when source bounds come from game data (e.g. `maxHealth` could be `0`
+  for a newly spawned entity).
+</Note>
+
+{/* ------------------------------------------------------------------ */}
+
+### Putting it together
+
+A typical overlay pipeline chains several interpolation functions.
+Here's a complete example — an ESP name tag that fades and shrinks
+with distance:
+
+```ts
+import Entities from "@native/entities";
+import Render   from "@native/render";
+
+on("tick", () => {
+    const local = Entities.getLocalPlayer();
+    if (!local) return;
+
+    const localPos = local.m_pGameSceneNode.m_vecAbsOrigin;
+
+    for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+        if (enemy.m_iHealth <= 0) continue;
+
+        const enemyPos = enemy.m_pGameSceneNode.m_vecAbsOrigin;
+        const { success, screen } = Math.worldToScreen(enemyPos);
+        if (!success) continue;
+
+        const distance = localPos.distTo(enemyPos);
+
+        // 1. Figure out where we are in the distance range (0–1)
+        const t = Math.clamp(Math.inverseLerp(500, 6000, distance), 0, 1);
+
+        // 2. Ease the factor so transitions feel smooth, not linear
+        const eased = Math.smoothStep(0, 1, t);
+
+        // 3. Map to visual properties
+        const alpha = Math.lerp(255, 30, eased);
+
+        const color = new Color(255, 255, 255, alpha);
+        Render.text(screen, enemy.controller?.m_iszPlayerName, color);
+    }
+});
+```
+
+---
+
+## Angle conversion
+
+| Function | Signature | Example |
+|:---------|:----------|:--------|
+| `toRadians` | `Math.toRadians(deg: number): number` | `Math.toRadians(180)` → `3.14159…` |
+| `toDegrees` | `Math.toDegrees(rad: number): number` | `Math.toDegrees(Math.PI)` → `180` |
+
+```ts
+// FOV check in degrees, but trig functions need radians
+const fovRad = Math.toRadians(90);
+const halfWidth = Math.sin(fovRad / 2) * distance;
+```
+
+---
+title: "Memory"
+sidebarTitle: "Memory"
+description: "Construct pointers, resolve loaded modules, and scan memory for byte patterns."
+icon: "memory"
+---
+
+```ts
+import Memory from "@native/memory";
+```
+
+The `Memory` module gives scripts access to the process address space.
+Use it to find a module's base address, scan for signatures, and create
+[Pointer](/api/types/pointer) values to navigate from there.
+
+<Note>
+  `ptr(addr)` is also available as a **global shorthand** — you don't need
+  to write `Memory.ptr(addr)` everywhere.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="ptr()" icon="arrow-pointer" href="#ptr">
+    Wrap any address in a Pointer.
+  </Card>
+  <Card title="Memory.module()" icon="box" href="#memorymodule">
+    Resolve a loaded module to its base address and size.
+  </Card>
+  <Card title="Memory.scan()" icon="magnifying-glass" href="#memoryscan">
+    Find the first occurrence of a byte pattern in a module.
+  </Card>
+  <Card title="Memory.scanAll()" icon="list" href="#memoryscanall">
+    Collect every occurrence of a pattern across a module.
+  </Card>
+</CardGroup>
+
+---
+
+## ptr
+
+<br />
+
+```ts
+ptr(address: number | BigInt | Pointer): Pointer
+Memory.ptr(address: number | BigInt | Pointer): Pointer
+```
+
+Creates a [Pointer](/api/types/pointer) from a raw address. The two forms
+are identical — `ptr()` is the global shorthand.
+
+```ts
+const p = ptr(0x7FFE0000n);
+console.log(p.address);  // 7FFE0000n
+console.log(p.isNull);   // false
+
+const zero = ptr(0);
+console.log(zero.isNull); // true
+```
+
+---
+
+## Memory.module
+
+<br />
+
+```ts
+Memory.module(name: string): { base: Pointer, size: number }
+```
+
+Looks up a loaded module by name and returns its base address and byte size.
+Throws if the module is not found.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `name` | `string` | Module file name, e.g. `"client.dll"` |
+
+| Returns | Type | |
+|:--------|:-----|:--|
+| `base` | `Pointer` | Start of the module in the process |
+| `size` | `number` | Total byte size of the module |
+
+```ts
+const { base, size } = Memory.module("client.dll");
+console.log(`client.dll → 0x${base.address.toString(16)} (${size} bytes)`);
+```
+
+```ts
+// Store base for repeated offset calculations
+const client = Memory.module("engine2.dll").base;
+const someField = client.add(0x1234AB).read('int32');
+```
+
+<Warning>
+  Throws `"Memory.module: '<name>' not found"` if the module isn't loaded.
+  Make sure the target process has already mapped the DLL before calling this.
+</Warning>
+
+---
+
+## Memory.scan
+
+<br />
+
+```ts
+Memory.scan(moduleName: string, pattern: string): Pointer | null
+```
+
+Scans the entire module for the **first** occurrence of `pattern` and returns
+a [Pointer](/api/types/pointer) to it. Returns `null` if not found.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `moduleName` | `string` | Module to scan, e.g. `"client.dll"` |
+| `pattern` | `string` | IDA-style byte pattern (see [Pattern syntax](#pattern-syntax)) |
+
+```ts
+const result = Memory.scan("client.dll", "48 8B 05 ? ? ? ? 48 85 C0 74");
+
+if (result) {
+    // result points to the first matching byte
+    const offset = result.read('int32', 1)[0];
+    const target = result.add(7).add(offset);
+}
+```
+
+---
+
+## Memory.scanAll
+
+<br />
+
+```ts
+Memory.scanAll(moduleName: string, pattern: string): Pointer[]
+```
+
+Returns an array of [Pointer](/api/types/pointer) values — one for each
+occurrence of `pattern` in the module. Returns an empty array if none found.
+
+```ts
+const hits = Memory.scanAll("server.dll", "FF 25 ? ? ? ? 90");
+console.log(`Found ${hits.length} matches`);
+
+for (const hit of hits) {
+    console.log(hit.address.toString(16));
+}
+```
+
+---
+
+## Pattern syntax
+
+Patterns are space-separated hex bytes. Use `?` or `??` as wildcards to
+match any byte at that position.
+
+```
+48 8B 05 ? ? ? ? 48 85 C0 74 ??
+```
+
+| Token | Matches |
+|:------|:--------|
+| `AB` | Exactly `0xAB` |
+| `?` | Any byte |
+| `??` | Any byte (same as `?`) |
+
+<Tip>
+  Patterns are usually copied from a disassembler (IDA, Ghidra, x64dbg).
+  Wildcard the bytes that change between builds — typically relative offsets,
+  addresses, and immediate values that the linker patches at link time.
+</Tip>
+
+---
+
+## Recipes
+
+### Signature scan + relative offset resolution
+
+A common pattern: scan for a `lea`/`mov` instruction, read the embedded
+relative offset, and resolve the final address.
+
+```ts
+// Find: MOV RAX, [rip+????]   →   48 8B 05 ?? ?? ?? ??
+const sig = Memory.scan("client.dll", "48 8B 05 ? ? ? ? 48 85 C0");
+if (!sig) throw new Error("Signature not found");
+
+// Read the 4-byte signed offset at +3, instruction ends at +7
+const rel = sig.add(3).read('int32');
+const target = sig.add(7).add(rel);
+console.log("Target:", target.address.toString(16));
+```
+
+### Walk a pointer chain from a scanned base
+
+```ts
+const { base } = Memory.module("client.dll");
+
+// Static offset from module base, then walk a pointer chain
+const health = base
+    .add(0x1234AB)    // static offset
+    .deref()          // follow pointer
+    .add(0x100)       // field offset
+    .read('int32');
+
+console.log("Health:", health);
+```
+
+### Collect all occurrences and filter by context
+
+```ts
+const hits = Memory.scanAll("client.dll", "FF 15 ? ? ? ?");
+
+for (const hit of hits) {
+    // Read 2 bytes before the match for context
+    const snap = hit.sub(2).read(8);
+    const prefix = snap.at(0).uint16;
+    if (prefix === 0x4889) {
+        console.log("Interesting hit at", hit.address.toString(16));
+    }
+}
+```
+---
+title: "Render"
+sidebarTitle: "Render"
+description: "Draw lines, shapes, text, and images on the screen overlay."
+icon: "paintbrush"
+---
+
+```ts
+import Render from "@native/render";
+```
+
+The `Render` module draws primitives on the screen overlay. Everything is drawn on top of the game in screen-space pixel coordinates.
+
+<Note>
+  **Pro tip:** All position arguments accept both [Vector2](/api/types/vector2) instances and plain `{ x, y }` objects. 
+  All color arguments accept [Color](/api/types/color) instances and packed hex integers (e.g. `0xFF0000FF`). If a color is omitted, white is used.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Screen size" icon="display" href="#screen-size">
+    Get the current overlay dimensions.
+  </Card>
+  <Card title="Rectangles & Circles" icon="shapes" href="#rectangles--circles">
+    Draw bounding boxes, health bars, and FOV rings.
+  </Card>
+  <Card title="Lines & Polygons" icon="draw-polygon" href="#lines--polygons">
+    Connect points, draw custom radar shapes and crosshairs.
+  </Card>
+  <Card title="Text" icon="font" href="#text">
+    Render custom strings and player names.
+  </Card>
+  <Card title="Images" icon="image" href="#images">
+    Draw loaded textures with optional rounding.
+  </Card>
+</CardGroup>
+
+---
+
+## Screen size
+
+### Render.getScreenSize
+
+<br />
+
+```ts
+Render.getScreenSize(): Vector2
+```
+
+Returns the current overlay dimensions in pixels as a
+[Vector2](/api/types/vector2) (`x` = width, `y` = height).
+
+Call this once per frame — the size can change if the user resizes the window
+or switches resolution.
+
+```ts
+on("tick", () => {
+    const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
+    const center = { x: screenWidth / 2, y: screenHeight / 2 };
+    Render.circleFilled(center, 3, Color.white());
+});
+```
+
+---
+
+## Rectangles & Circles
+
+Instead of listing separate functions for outlines and filled shapes, we group them here. The parameters are nearly identical, with the exception of `thickness`.
+
+### Rectangles
+
+```ts
+Render.rect(min: Vector2, max: Vector2, color?: Color, thickness?: number, rounding?: number): void
+Render.rectFilled(min: Vector2, max: Vector2, color?: Color, rounding?: number): void
+```
+
+<ParamField path="min" type="Vector2" required>
+  Top-left corner of the rectangle in screen coordinates.
+</ParamField>
+<ParamField path="max" type="Vector2" required>
+  Bottom-right corner of the rectangle in screen coordinates.
+</ParamField>
+<ParamField path="color" type="Color" default="Color.white()">
+  Outline or fill color.
+</ParamField>
+<ParamField path="thickness" type="number" default="1.0">
+  Border width in pixels. **(Ignored in `rectFilled`)**
+</ParamField>
+<ParamField path="rounding" type="number" default="0.0">
+  Corner radius in pixels. Use for UI backgrounds or modern-looking ESP boxes.
+</ParamField>
+
+<Tabs>
+  <Tab title="Box ESP (Outline)">
+    ```ts
+    import Entities from "@native/entities";
+
+    function getBoundingBox(entity) {
+        const origin = entity.m_pGameSceneNode.m_vecAbsOrigin;
+        const collision = entity.m_pCollision;
+        if (!collision) return null;
+
+        const mins = collision.m_vecMins;
+        const maxs = collision.m_vecMaxs;
+
+        let screenMins = new Vector2(Infinity, Infinity);
+        let screenMaxs = new Vector2(-Infinity, -Infinity);
+
+        for (let i = 0; i < 8; i++) {
+            const world = new Vector(
+                origin.x + (i & 1 ? maxs.x : mins.x),
+                origin.y + (i & 2 ? maxs.y : mins.y),
+                origin.z + (i & 4 ? maxs.z : mins.z),
+            );
+            const { success, screen } = Math.worldToScreen(world);
+            if (!success) return null;
+
+            screenMins.x = Math.min(screenMins.x, screen.x);
+            screenMins.y = Math.min(screenMins.y, screen.y);
+            screenMaxs.x = Math.max(screenMaxs.x, screen.x);
+            screenMaxs.y = Math.max(screenMaxs.y, screen.y);
+        }
+
+        return { mins: screenMins, maxs: screenMaxs };
+    }
+
+    on("tick", () => {
+        for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+            if (enemy.m_iHealth <= 0) continue;
+
+            const box = getBoundingBox(enemy);
+            if (!box) continue;
+
+            Render.rect(box.mins, box.maxs, Color.red(), 1.5);
+        }
+    });
+    ```
+  </Tab>
+  <Tab title="Health Bar (Filled)">
+    ```ts
+    // Assuming screen position (top-left of the bar) is already calculated
+    const barWidth = 60;
+    const barHeight = 4;
+    const fillWidth = (enemy.m_iHealth / 100) * barWidth;
+
+    const barMin = screen;
+    const barMax = new Vector2(screen.x + barWidth, screen.y + barHeight);
+
+    // 1. Draw dark background
+    Render.rectFilled(barMin, barMax, new Color(0, 0, 0, 150));
+
+    // 2. Draw green fill on top
+    const fillMax = new Vector2(screen.x + fillWidth, screen.y + barHeight);
+    Render.rectFilled(barMin, fillMax, Color.green());
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+### Circles
+
+```ts
+Render.circle(center: Vector2, radius: number, color?: Color, thickness?: number): void
+Render.circleFilled(center: Vector2, radius: number, color?: Color): void
+```
+
+<ParamField path="center" type="Vector2" required>
+  The center point of the circle on the screen.
+</ParamField>
+<ParamField path="radius" type="number" required>
+  The radius in pixels.
+</ParamField>
+<ParamField path="color" type="Color" default="Color.white()">
+  Outline or fill color.
+</ParamField>
+<ParamField path="thickness" type="number" default="1.0">
+  Line width for the outline. **(Ignored in `circleFilled`)**
+</ParamField>
+
+<CodeGroup>
+```ts FOV Ring (Outline)
+on("tick", () => {
+    const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
+    const center = { x: screenWidth / 2, y: screenHeight / 2 };
+    const fovRadius = 150;
+
+    Render.circle(center, fovRadius, Color.white().withAlpha(100), 1);
+});
+```
+
+```ts Head Dot (Filled)
+import Entities from "@native/entities";
+
+on("tick", () => {
+    for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+        if (enemy.m_iHealth <= 0) continue;
+
+        const pos = enemy.m_pGameSceneNode.m_vecAbsOrigin;
+        const head = new Vector(pos.x, pos.y, pos.z + 72);
+        const { success, screen } = Math.worldToScreen(head);
+        if (success) {
+            Render.circleFilled(screen, 4, Color.red());
+        }
+    }
+});
+```
+</CodeGroup>
+
+---
+
+## Lines & Polygons
+
+<AccordionGroup>
+  <Accordion title="Render.line" icon="minus">
+    Draws a single straight line between two points.
+
+    ```ts
+    Render.line(start: Vector2, end: Vector2, color?: Color, thickness?: number): void
+    ```
+    
+    <ParamField path="start" type="Vector2" required>Starting point.</ParamField>
+    <ParamField path="end" type="Vector2" required>Ending point.</ParamField>
+    
+    **Example:** Draw a snapline from the bottom center of the screen to an enemy.
+    ```ts
+    import Entities from "@native/entities";
+
+    on("tick", () => {
+        const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
+        const bottomCenter = { x: screenWidth / 2, y: screenHeight };
+
+        for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+            if (enemy.m_iHealth <= 0) continue;
+
+            const { success, screen } = Math.worldToScreen(enemy.m_pGameSceneNode.m_vecAbsOrigin);
+            if (success) {
+                Render.line(bottomCenter, screen, Color.yellow(), 1);
+            }
+        }
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Render.triangle" icon="play">
+    Draws a triangle outline using three specific vertices.
+
+    ```ts
+    Render.triangle(p1: Vector2, p2: Vector2, p3: Vector2, color?: Color, thickness?: number): void
+    ```
+
+    **Example:** Draw a directional arrow indicating where an off-screen enemy is.
+    ```ts
+    const tip = center.add({ x: 0, y: -15 });
+    const left = center.add({ x: -8, y: 5 });
+    const right = center.add({ x: 8, y: 5 });
+
+    Render.triangle(tip, left, right, Color.white(), 1.5);
+    ```
+  </Accordion>
+
+  <Accordion title="Render.polyline" icon="draw-polygon">
+    Draws a series of connected line segments through an array of points. Best used for custom complex shapes like radar blips or star polygons.
+
+    ```ts
+    Render.polyline(points: Vector2[], color?: Color, thickness?: number, closed?: boolean): void
+    ```
+
+    <ParamField path="points" type="Vector2[]" required>Array of vertices.</ParamField>
+    <ParamField path="closed" type="boolean" default="false">If true, automatically draws a line from the last point back to the first point.</ParamField>
+
+    **Example:** Draw a diamond shape.
+    ```ts
+    const points = [
+        center.add({ x: 0, y: -20 }),
+        center.add({ x: 15, y: 0 }),
+        center.add({ x: 0, y: 20 }),
+        center.add({ x: -15, y: 0 }),
+    ];
+    // 'closed: true' completes the diamond automatically
+    Render.polyline(points, Color.white(), 1, true);
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Text
+
+### Render.text
+
+<br />
+
+```ts
+Render.text(pos: Vector2, text: string, color?: Color, fontSize?: number): void
+```
+
+Draws a text string on the screen. The position defines the **top-left** corner of the rendered text block.
+
+<ParamField path="pos" type="Vector2" required>
+  Top-left coordinate for the text.
+</ParamField>
+<ParamField path="text" type="string" required>
+  The string to render.
+</ParamField>
+<ParamField path="color" type="Color" default="Color.white()">
+  Text color.
+</ParamField>
+<ParamField path="fontSize" type="number" default="14">
+  Font size in pixels.
+</ParamField>
+
+```ts
+import Entities from "@native/entities";
+
+// getBoundingBox defined above — see Box ESP example
+
+on("tick", () => {
+    for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+        if (enemy.m_iHealth <= 0) continue;
+
+        const box = getBoundingBox(enemy);
+        if (!box) continue;
+
+        // center the name above the bounding box
+        const name = enemy.controller?.m_iszPlayerName ?? "unknown";
+        const textSize = Render.calcTextSize(name);
+        const centerX = (box.mins.x + box.maxs.x) / 2 - textSize.x / 2;
+        Render.text(new Vector2(centerX, box.mins.y - 16), name, Color.white());
+    }
+});
+```
+
+---
+
+### Render.calcTextSize
+
+<br />
+
+```ts
+Render.calcTextSize(text: string, fontSize?: number): Vector2
+```
+
+Returns the pixel dimensions of a text string without drawing it.
+Use this to center or align text precisely.
+
+<ParamField path="text" type="string" required>
+  The string to measure.
+</ParamField>
+<ParamField path="fontSize" type="number" default="14">
+  Font size in pixels. Must match the size you pass to `Render.text`.
+</ParamField>
+
+```ts
+const text = "Hello World";
+const size = Render.calcTextSize(text, 18);
+console.log(`Text is ${size.x}px wide, ${size.y}px tall`);
+
+// center text on screen
+on("tick", () => {
+    const screen = Render.getScreenSize();
+    const textSize = Render.calcTextSize(text, 18);
+    const pos = new Vector2(
+        screen.x / 2 - textSize.x / 2,
+        screen.y / 2 - textSize.y / 2
+    );
+    Render.text(pos, text, Color.white(), 18);
+});
+```
+
+---
+
+## Images
+
+Draw loaded [Texture](/api/types/texture) objects. 
+
+<Warning>
+  Always check `texture.isReady` before drawing. Textures load asynchronously from the disk. Attempting to draw a texture that hasn't finished loading is a silent no-op.
+</Warning>
+
+```ts
+Render.image(texture: Texture, min: Vector2, max: Vector2, color?: Color): void
+Render.imageRounded(texture: Texture, min: Vector2, max: Vector2, rounding?: number, color?: Color): void
+```
+
+<ParamField path="texture" type="Texture" required>
+  A previously loaded texture instance.
+</ParamField>
+<ParamField path="min" type="Vector2" required>
+  Top-left corner of the image rectangle.
+</ParamField>
+<ParamField path="max" type="Vector2" required>
+  Bottom-right corner of the image rectangle.
+</ParamField>
+<ParamField path="rounding" type="number" default="0.0">
+  Corner radius in pixels. *(Only available in `imageRounded`)*
+</ParamField>
+<ParamField path="color" type="Color" default="Color.white()">
+  Acts as a tint mask. Using `Color.white()` draws the image in its original colors.
+</ParamField>
+
+```ts
+// Do this ONCE outside your render loop
+const avatar = new Texture("path/to/avatar.png");
+
+// Inside your tick callback:
+on("tick", () => {
+    if (!avatar.isReady) return;
+
+    // Draw a 48x48 avatar in the top-left corner as a circle
+    Render.imageRounded(avatar, new Vector2(10, 10), new Vector2(58, 58), 24, Color.white());
+});
+```
+
+---
+
+## Cookbook: Custom Crosshairs
+
+A quick example showing how to combine basic primitives to build custom UI elements.
+
+<Frame>
+  <img src="/images/crosshair-example.png" alt="A custom drawn crosshair" />
+</Frame>
+
+```ts
+on("tick", () => {
+    const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
+    const cx = screenWidth / 2;
+    const cy = screenHeight / 2;
+    const gap = 4;
+    const size = 10;
+    const col = Color.green();
+
+    // Center dot
+    Render.circleFilled({ x: cx, y: cy }, 1, col);
+
+    // 4 radiating lines
+    Render.line({ x: cx - gap - size, y: cy }, { x: cx - gap, y: cy }, col);
+    Render.line({ x: cx + gap, y: cy }, { x: cx + gap + size, y: cy }, col);
+    Render.line({ x: cx, y: cy - gap - size }, { x: cx, y: cy - gap }, col);
+    Render.line({ x: cx, y: cy + gap }, { x: cx, y: cy + gap + size }, col);
+});
+---
+title: "Trace"
+sidebarTitle: "Trace"
+description: "Cast rays, boxes, spheres, and capsules through the game world — hit detection, visibility checks, overlap queries, and surface info."
+icon: "crosshairs"
+---
+
+```ts
+import Trace from "@native/trace";
+```
+
+The `Trace` module casts rays and sweeps shapes through the game world using
+the same collision data the engine uses — static geometry, dynamic entities,
+and tagged collision layers.
+
+<Note>
+  All trace functions are **synchronous** and return immediately. Create
+  a `TraceFilter` once and reuse it across frames — this avoids per-call
+  allocation and lets you build up an ignore list over time.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Filters" icon="filter" href="#filters">
+    Create reusable trace filters from presets or custom configs.
+  </Card>
+  <Card title="Raycasts" icon="arrow-right-long" href="#raycasts">
+    Single and multi-hit rays, box / sphere / capsule sweeps.
+  </Card>
+  <Card title="Spatial queries" icon="magnifying-glass" href="#spatial-queries">
+    Visibility, solid checks, overlap spheres, closest point.
+  </Card>
+  <Card title="Results" icon="bullseye" href="#results">
+    TraceResult, OverlapResult, ClosestPointResult shapes.
+  </Card>
+</CardGroup>
+
+---
+
+## Filters
+
+Every trace function accepts an optional **filter** that controls what
+the trace collides with. Filters can be passed in three forms — pick
+whichever fits your situation:
+
+| Form | Example |
+|:-----|:--------|
+| Preset string | `"bullet"` |
+| `TraceFilter` object | `Trace.filter("bullet")` |
+| Inline config object | `{ type: "bullet", backFaces: true }` |
+| Omitted | Defaults to `"bullet"` |
+
+{/* ------------------------------------------------------------------ */}
+
+### Trace.filter
+
+<br />
+
+```ts
+Trace.filter(preset?: string): TraceFilter
+Trace.filter(options: FilterOptions): TraceFilter
+```
+
+Creates a reusable `TraceFilter`. Pass a preset string for common
+scenarios, or a configuration object for fine-grained control.
+
+<ParamField path="preset" type="string" default="bullet">
+  One of the built-in filter presets (see table below).
+</ParamField>
+
+**Preset strings**
+
+| Preset | Description |
+|:-------|:------------|
+| `"bullet"` | Standard bullet collision (default) |
+| `"visibility"` | Line-of-sight checks |
+| `"everything"` | Collide with all surfaces |
+| `"grenade"` | Grenade collision rules |
+| `"player_movement"` | Player movement sweep |
+| `"occlusion"` | Occlusion culling traces |
+
+<CodeGroup>
+```ts Preset string
+const filter = Trace.filter("bullet");
+const visFilter = Trace.filter("visibility");
+
+// No argument — defaults to "bullet"
+const defaultFilter = Trace.filter();
+```
+
+```ts Custom config
+const filter = Trace.filter({
+    type: "bullet",
+    static: true,
+    dynamic: true,
+    resolveNormals: true,
+    resolveMaterials: true,
+    resolveEntity: true,
+    backFaces: false,
+    includeTags: ["pass_bullets", "window", "sky", "ladder", "player"],
+    excludeTags: ["player_clip", "npc_clip", "grenade_clip"],
+});
+```
+</CodeGroup>
+
+**Configuration object fields**
+
+| Option | Type | Default | Description |
+|:-------|:-----|:--------|:------------|
+| `type` | `string` | `"bullet"` | Base preset to start from |
+| `static` | `boolean` | `true` | Trace against static world geometry |
+| `dynamic` | `boolean` | `true` | Trace against dynamic entities |
+| `resolveNormals` | `boolean` | `true` | Compute surface normals on hit |
+| `resolveMaterials` | `boolean` | `true` | Resolve surface material info on hit |
+| `resolveEntity` | `boolean` | `true` | Populate entity info on hit |
+| `backFaces` | `boolean` | `false` | Collide with back-facing surfaces |
+| `includeTags` | `string[]` | — | [Collision tags](#collision-tags) to include |
+| `excludeTags` | `string[]` | — | [Collision tags](#collision-tags) to exclude |
+
+<Tip>
+  Disable `resolveNormals`, `resolveMaterials`, and `resolveEntity` if
+  you only care about **whether** something was hit — the trace runs
+  faster when it doesn't need to fill in extra data.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### TraceFilter methods
+
+Once you have a filter, you can tell it to skip specific entities.
+
+<AccordionGroup>
+  <Accordion title="filter.ignore" icon="eye-slash">
+    Adds an entity to the filter's ignore list. Accepts a raw entity index
+    or any object with an `.index` property (e.g. an `Entity`).
+
+    ```ts
+    filter.ignore(entityIndex: number): void
+    filter.ignore(entity: { index: number }): void
+    ```
+
+    ```ts
+    const filter = Trace.filter("bullet");
+    const local = Entities.getLocalPlayer();
+
+    // Ignore by entity object
+    filter.ignore(local);
+
+    // Ignore by raw index
+    filter.ignore(42);
+    ```
+  </Accordion>
+
+  <Accordion title="filter.clearIgnore" icon="rotate">
+    Clears the ignore list so the filter collides with all entities again.
+
+    ```ts
+    filter.clearIgnore(): void
+    ```
+
+    ```ts
+    filter.clearIgnore();
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Raycasts
+
+{/* ------------------------------------------------------------------ */}
+
+### Trace.ray
+
+<br />
+
+```ts
+Trace.ray(start: Vector, end: Vector, filter?): TraceResult
+```
+
+Casts a single ray from `start` to `end`. The workhorse of the trace API —
+use this for hit detection, aim checks, and penetration tests.
+
+<ParamField path="start" type="Vector" required>
+  Ray origin, typically the player's eye position.
+</ParamField>
+<ParamField path="end" type="Vector" required>
+  Ray endpoint — the target position.
+</ParamField>
+<ParamField path="filter" type="string | TraceFilter | FilterOptions">
+  Collision filter. Defaults to `"bullet"` if omitted.
+</ParamField>
+
+<Tabs>
+  <Tab title="Default filter">
+    ```ts
+    const result = Trace.ray(eye, target);
+    ```
+  </Tab>
+  <Tab title="Preset string">
+    ```ts
+    const result = Trace.ray(eye, target, "bullet");
+    ```
+  </Tab>
+  <Tab title="Reusable filter">
+    ```ts
+    const filter = Trace.filter("bullet");
+    filter.ignore(local);
+    const result = Trace.ray(eye, target, filter);
+    ```
+  </Tab>
+  <Tab title="Inline config">
+    ```ts
+    const result = Trace.ray(eye, target, { type: "bullet", backFaces: true });
+    ```
+  </Tab>
+</Tabs>
+
+{/* ------------------------------------------------------------------ */}
+
+### Trace.box
+
+<br />
+
+```ts
+Trace.box(start: Vector, end: Vector, mins: Vector, maxs: Vector, filter?): TraceResult
+```
+
+Sweeps an axis-aligned box from `start` to `end`. `mins` and `maxs` define
+the box extents relative to the sweep origin.
+
+<ParamField path="start" type="Vector" required>Sweep origin.</ParamField>
+<ParamField path="end" type="Vector" required>Sweep destination.</ParamField>
+<ParamField path="mins" type="Vector" required>
+  Minimum corner of the box (negative offsets).
+</ParamField>
+<ParamField path="maxs" type="Vector" required>
+  Maximum corner of the box (positive offsets).
+</ParamField>
+<ParamField path="filter" type="string | TraceFilter | FilterOptions">
+  Collision filter. Defaults to `"bullet"`.
+</ParamField>
+
+```ts
+const mins = new Vector(-16, -16, 0);
+const maxs = new Vector(16, 16, 72);
+
+const result = Trace.box(start, end, mins, maxs, "player_movement");
+if (result.hit) {
+    console.log("Blocked at", result.position);
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Trace.sphere
+
+<br />
+
+```ts
+Trace.sphere(start: Vector, end: Vector, radius: number, filter?): TraceResult
+```
+
+Sweeps a sphere from `start` to `end`.
+
+<ParamField path="start" type="Vector" required>Sweep origin.</ParamField>
+<ParamField path="end" type="Vector" required>Sweep destination.</ParamField>
+<ParamField path="radius" type="number" required>Sphere radius in game units.</ParamField>
+<ParamField path="filter" type="string | TraceFilter | FilterOptions">
+  Collision filter. Defaults to `"bullet"`.
+</ParamField>
+
+```ts
+const result = Trace.sphere(start, end, 8.0, "grenade");
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Trace.capsule
+
+<br />
+
+```ts
+Trace.capsule(start: Vector, end: Vector, radius: number, halfHeight: number, filter?): TraceResult
+```
+
+Sweeps a capsule (cylinder with hemispherical caps) from `start` to `end`.
+Useful for simulating player-sized collision hulls.
+
+<ParamField path="start" type="Vector" required>Sweep origin.</ParamField>
+<ParamField path="end" type="Vector" required>Sweep destination.</ParamField>
+<ParamField path="radius" type="number" required>Capsule radius.</ParamField>
+<ParamField path="halfHeight" type="number" required>Half the height of the cylindrical section.</ParamField>
+<ParamField path="filter" type="string | TraceFilter | FilterOptions">
+  Collision filter. Defaults to `"bullet"`.
+</ParamField>
+
+```ts
+const result = Trace.capsule(start, end, 16.0, 36.0, "player_movement");
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Trace.rayAll
+
+<br />
+
+```ts
+Trace.rayAll(start: Vector, end: Vector, filter?, maxHits?: number): TraceResult[]
+```
+
+Casts a ray and returns **all** hits along the path, not just the first.
+Useful for penetration simulation — you get every surface the ray passes
+through.
+
+<ParamField path="start" type="Vector" required>Ray origin.</ParamField>
+<ParamField path="end" type="Vector" required>Ray endpoint.</ParamField>
+<ParamField path="filter" type="string | TraceFilter | FilterOptions">
+  Collision filter. Defaults to `"bullet"`.
+</ParamField>
+<ParamField path="maxHits" type="number" default="32">
+  Maximum number of hits to return. Clamped to `1..128`.
+</ParamField>
+
+```ts
+const hits = Trace.rayAll(eye, target, "bullet", 8);
+
+for (const hit of hits) {
+    console.log(`Hit at fraction ${hit.fraction.toFixed(3)}`);
+    if (hit.surface) {
+        console.log(`  Material: ${hit.surface.name}`);
+    }
+}
+```
+
+---
+
+## Spatial queries
+
+Fast utility functions that answer spatial questions without giving you
+a full `TraceResult`.
+
+{/* ------------------------------------------------------------------ */}
+
+### Trace.isVisible
+
+<br />
+
+```ts
+Trace.isVisible(from: Vector, to: Vector): boolean
+```
+
+The **fastest** way to check line of sight. Returns `true` if nothing
+blocks the path between `from` and `to`. Skips normal, material,
+and entity resolution entirely — just a yes/no answer.
+
+<ParamField path="from" type="Vector" required>Start position (e.g. eye position).</ParamField>
+<ParamField path="to" type="Vector" required>Target position (e.g. enemy head).</ParamField>
+
+```ts
+import Entities from "@native/entities";
+
+const local = Entities.getLocalPlayer();
+const enemy = Entities.getPlayers({ skipLocal: true })[0];
+
+const localPos = local.m_pGameSceneNode.m_vecAbsOrigin;
+const enemyPos = enemy.m_pGameSceneNode.m_vecAbsOrigin;
+
+if (Trace.isVisible(localPos, enemyPos)) {
+    console.log("Target is visible");
+}
+```
+
+<Tip>
+  Use `isVisible` over `Trace.ray` when you only need a boolean — it's
+  significantly faster because it doesn't resolve any hit data.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### Trace.isSolid
+
+<br />
+
+```ts
+Trace.isSolid(point: Vector): boolean
+```
+
+Returns `true` if the given point is inside solid geometry. Useful for
+checking whether a calculated position is valid or stuck in a wall.
+
+<ParamField path="point" type="Vector" required>World position to test.</ParamField>
+
+```ts
+if (Trace.isSolid(position)) {
+    console.log("Point is inside a wall");
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Trace.overlapSphere
+
+<br />
+
+```ts
+Trace.overlapSphere(origin: Vector, radius: number, filter?): OverlapResult[]
+```
+
+Returns all colliders overlapping a sphere centered at `origin`.
+
+<ParamField path="origin" type="Vector" required>Center of the sphere.</ParamField>
+<ParamField path="radius" type="number" required>Sphere radius in game units.</ParamField>
+<ParamField path="filter" type="string | TraceFilter | FilterOptions">
+  Collision filter. Defaults to `"bullet"`.
+</ParamField>
+
+```ts
+import Entities from "@native/entities";
+
+const local = Entities.getLocalPlayer();
+const localPos = local.m_pGameSceneNode.m_vecAbsOrigin;
+
+const nearby = Trace.overlapSphere(localPos, 256.0);
+
+for (const overlap of nearby) {
+    if (overlap.entity) {
+        console.log(`${overlap.entity.className} — depth: ${overlap.depth}`);
+    }
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Trace.closestPoint
+
+<br />
+
+```ts
+Trace.closestPoint(origin: Vector, maxDistance: number, filter?): ClosestPointResult
+```
+
+Finds the closest point on any surface within `maxDistance` of `origin`.
+
+<ParamField path="origin" type="Vector" required>Search center.</ParamField>
+<ParamField path="maxDistance" type="number" required>Maximum search radius in game units.</ParamField>
+<ParamField path="filter" type="string | TraceFilter | FilterOptions">
+  Collision filter. Defaults to `"bullet"`.
+</ParamField>
+
+```ts
+import Entities from "@native/entities";
+
+const local = Entities.getLocalPlayer();
+const localPos = local.m_pGameSceneNode.m_vecAbsOrigin;
+
+const closest = Trace.closestPoint(localPos, 128.0);
+if (closest.hit) {
+    console.log(`Nearest wall at distance ${closest.distance.toFixed(1)}`);
+}
+```
+
+---
+
+## Results
+
+### TraceResult
+
+Returned by `Trace.ray`, `Trace.box`, `Trace.sphere`, `Trace.capsule`,
+and each element of `Trace.rayAll`.
+
+| Property | Type | Description |
+|:---------|:-----|:------------|
+| `hit` | `boolean` | Whether the trace hit anything |
+| `fraction` | `number` | `0..1` — how far along the path the hit occurred |
+| `position` | [`Vector`](/api/types/vector) | Impact point in world space |
+| `normal` | [`Vector`](/api/types/vector) | Surface normal at the impact point |
+| `startSolid` | `boolean` | `true` if the trace started inside solid geometry |
+| `allSolid` | `boolean` | `true` if the entire trace was inside solid |
+| `hitSky` | `boolean` | Hit the skybox |
+| `hitWindow` | `boolean` | Hit a window surface |
+| `hitLadder` | `boolean` | Hit a ladder surface |
+| `hitPassBullets` | `boolean` | Hit a pass-bullets surface |
+| `entity` | `object \| null` | Entity info (see below) |
+| `surface` | `object \| null` | Surface material info (see below) |
+
+**`entity`** — populated when `resolveEntity` is `true` and the trace hit a dynamic entity:
+
+| Property | Type | |
+|:---------|:-----|:--|
+| `className` | `string` | Entity class name, e.g. `"C_CSPlayerPawn"` |
+| `handle` | `number` | Entity handle |
+| `origin` | [`Vector`](/api/types/vector) | Entity origin |
+
+**`surface`** — populated when `resolveMaterials` is `true`:
+
+| Property | Type | |
+|:---------|:-----|:--|
+| `name` | `string` | Material name |
+| `penetration` | `number` | Penetration factor (higher = easier to shoot through) |
+| `damage` | `number` | Damage modifier for this surface |
+
+```ts
+const result = Trace.ray(eye, target);
+
+if (result.hit) {
+    console.log(`Hit at ${result.position}, fraction: ${result.fraction}`);
+
+    if (result.entity) {
+        console.log(`Entity: ${result.entity.className}`);
+    }
+    if (result.surface) {
+        console.log(`Material: ${result.surface.name}`);
+        console.log(`Penetration: ${result.surface.penetration}`);
+    }
+}
+```
+
+---
+
+### OverlapResult
+
+Returned by each element of `Trace.overlapSphere`.
+
+| Property | Type | Description |
+|:---------|:-----|:------------|
+| `position` | [`Vector`](/api/types/vector) | Contact point |
+| `normal` | [`Vector`](/api/types/vector) | Contact normal |
+| `depth` | `number` | Penetration depth |
+| `entity` | `{ className: string } \| null` | Entity class if the overlap is with an entity |
+
+---
+
+### ClosestPointResult
+
+Returned by `Trace.closestPoint`.
+
+| Property | Type | Description |
+|:---------|:-----|:------------|
+| `hit` | `boolean` | Whether a surface was found within range |
+| `position` | [`Vector`](/api/types/vector) | Closest point on the surface |
+| `normal` | [`Vector`](/api/types/vector) | Surface normal at that point |
+| `distance` | `number` | Distance from origin to the closest point |
+
+---
+
+## Collision tags
+
+Tags control which collision layers are included or excluded in a
+[filter's](#tracefilter) `includeTags` / `excludeTags` arrays.
+
+| Tag | Description |
+|:----|:------------|
+| `"pass_bullets"` | Surfaces that bullets pass through |
+| `"player_clip"` | Player clip brushes — block players, not bullets |
+| `"npc_clip"` | NPC clip brushes |
+| `"grenade_clip"` | Grenade clip brushes |
+| `"ladder"` | Ladder surfaces |
+| `"window"` | Breakable windows |
+| `"sky"` | Skybox surfaces |
+| `"player"` | Player collision hulls |
+
+---
+
+## Recipes
+
+### Fast visibility check
+
+`Trace.isVisible` is the fastest way to check line of sight — it skips
+normal / material / entity resolution and just returns a boolean.
+
+```ts
+const local = Entities.getLocalPlayer();
+if (!local) return;
+
+const myEyes = local.m_pGameSceneNode.m_vecAbsOrigin;
+
+for (const enemy of Entities.getPlayers({ skipLocal: true })) {
+    if (enemy.m_iHealth <= 0) continue;
+
+    const head = enemy.m_pGameSceneNode.m_vecAbsOrigin;
+    if (Trace.isVisible(myEyes, head)) {
+        console.log(`${enemy.controller?.m_iszPlayerName} is visible`);
+    }
+}
+```
+
+### Ground trace
+
+```ts
+import Entities from "@native/entities";
+
+const local = Entities.getLocalPlayer();
+if (!local) return;
+
+const feet = local.m_pGameSceneNode.m_vecAbsOrigin;
+const below = new Vector(feet.x, feet.y, feet.z - 64);
+
+const ground = Trace.ray(feet, below, "player_movement");
+if (ground.hit) {
+    console.log(`Ground at Z=${ground.position.z.toFixed(1)}`);
+    console.log(`Normal: ${ground.normal}`);
+}
+```
+---
+title: "Color"
+sidebarTitle: "Color"
+description: "RGBA color type with HSV/HSL conversion, blending, and brightness control."
+icon: "palette"
+---
+
+`Color` represents an RGBA color with four `uint8` components — `r`, `g`,
+`b`, `a`, each in the range `0–255`. Every render function, ESP element,
+and visual effect uses this type.
+
+<Note>
+  The default alpha is **255** (fully opaque). A freshly constructed
+  `new Color()` is white `(255, 255, 255, 255)`, not transparent.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Creating colors" icon="plus" href="#creating-colors">
+    RGBA, hex, arrays, objects, HSV, HSL, and float forms.
+  </Card>
+  <Card title="Arithmetic" icon="calculator" href="#arithmetic">
+    Add, subtract, scale — all return new instances.
+  </Card>
+  <Card title="Modification" icon="sliders" href="#modification">
+    Alpha override, brightness, and interpolation.
+  </Card>
+  <Card title="Conversion" icon="arrows-rotate" href="#conversion">
+    HSV, packed integers, arrays, and string output.
+  </Card>
+  <Card title="Presets" icon="swatchbook" href="#presets">
+    Built-in white, black, red, green.
+  </Card>
+</CardGroup>
+
+---
+
+## Properties
+
+| Name | Type | Range | |
+|:-----|:-----|:------|:--|
+| `r` | `number` | `0–255` | Red channel. Read/write |
+| `g` | `number` | `0–255` | Green channel. Read/write |
+| `b` | `number` | `0–255` | Blue channel. Read/write |
+| `a` | `number` | `0–255` | Alpha channel. Read/write. 255 = opaque, 0 = invisible |
+
+```ts
+const col = new Color(255, 128, 0, 200);
+col.a = 100;
+log(col.r, col.g, col.b, col.a);  // 255, 128, 0, 100
+```
+
+---
+
+## Creating colors
+
+Seven forms — pick whatever fits your data source.
+
+{/* ------------------------------------------------------------------ */}
+
+### Constructor
+
+<br />
+
+```ts
+new Color(): Color                                          // white (255, 255, 255, 255)
+new Color(r: number, g: number, b: number): Color           // alpha defaults to 255
+new Color(r: number, g: number, b: number, a: number): Color
+new Color(hex: number): Color                               // 0xRRGGBBAA packed
+new Color(arr: [number, number, number, number?]): Color    // from array
+new Color(obj: { r?, g?, b?, a? }): Color                   // from object
+```
+
+Creates a new Color. Missing components default to `255`.
+
+<Tabs>
+  <Tab title="RGBA numbers">
+    ```ts
+    const white = new Color();               // (255, 255, 255, 255)
+    const red   = new Color(255, 0, 0);      // alpha = 255
+    const fade  = new Color(255, 0, 0, 128); // semi-transparent red
+    ```
+  </Tab>
+  <Tab title="Hex integer">
+    ```ts
+    const col = new Color(0xFF0000FF);  // red, full alpha
+    const col2 = new Color(0x00FF0080); // green, half alpha
+    ```
+  </Tab>
+  <Tab title="Array">
+    ```ts
+    const col = new Color([255, 128, 0, 200]);
+
+    // 3-element arrays work — alpha defaults to 255
+    const opaque = new Color([255, 128, 0]);
+    ```
+  </Tab>
+  <Tab title="Object">
+    ```ts
+    const col = new Color({ r: 255, g: 128, b: 0 });
+    // a defaults to 255
+
+    const faded = new Color({ r: 255, g: 0, b: 0, a: 100 });
+    ```
+  </Tab>
+</Tabs>
+
+{/* ------------------------------------------------------------------ */}
+
+### Color.fromHex
+
+<br />
+
+```ts
+Color.fromHex(hex: string): Color
+Color.fromHex(hex: number): Color
+```
+
+Creates a color from a hex string (e.g. `"#FF0000"`, `"FF0000FF"`) or a
+packed hex integer.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `hex` | `string` or `number` | Hex color value |
+
+```ts
+const red = Color.fromHex("#FF0000");
+const blue = Color.fromHex(0x0000FFFF);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Color.fromHSV
+
+<br />
+
+```ts
+Color.fromHSV(h: number, s: number, v: number, a?: number): Color
+```
+
+Creates a color from **Hue-Saturation-Value**. Alpha defaults to `1.0`.
+
+| Param | Type | Range | |
+|:------|:-----|:------|:--|
+| `h` | `number` | `0–360` | Hue in degrees |
+| `s` | `number` | `0–1` | Saturation |
+| `v` | `number` | `0–1` | Value (brightness) |
+| `a` | `number` | `0–1` | Alpha (optional, default `1.0`) |
+
+```ts
+const red    = Color.fromHSV(0, 1, 1);
+const orange = Color.fromHSV(30, 1, 1);
+const faded  = Color.fromHSV(120, 1, 1, 0.5);  // green, 50% alpha
+```
+
+<Tip>
+  HSV is ideal for cycling through hues — just animate the `h` parameter
+  from `0` to `360` for a rainbow effect.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### Color.fromHSL
+
+<br />
+
+```ts
+Color.fromHSL(h: number, s: number, l: number, a?: number): Color
+```
+
+Creates a color from **Hue-Saturation-Lightness**. Alpha defaults to
+`1.0`.
+
+| Param | Type | Range | |
+|:------|:-----|:------|:--|
+| `h` | `number` | `0–360` | Hue in degrees |
+| `s` | `number` | `0–1` | Saturation |
+| `l` | `number` | `0–1` | Lightness (0 = black, 0.5 = pure, 1 = white) |
+| `a` | `number` | `0–1` | Alpha (optional, default `1.0`) |
+
+```ts
+const pure = Color.fromHSL(0, 1, 0.5);    // pure red
+const pastel = Color.fromHSL(0, 1, 0.75);  // light red / pink
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Color.fromFloat
+
+<br />
+
+```ts
+Color.fromFloat(r: number, g: number, b: number, a?: number): Color
+```
+
+Creates a color from **floating-point** components in the `0–1` range.
+Alpha defaults to `1.0`.
+
+| Param | Type | Range | |
+|:------|:-----|:------|:--|
+| `r` | `number` | `0–1` | Red |
+| `g` | `number` | `0–1` | Green |
+| `b` | `number` | `0–1` | Blue |
+| `a` | `number` | `0–1` | Alpha (optional, default `1.0`) |
+
+```ts
+const half = Color.fromFloat(1.0, 0.5, 0.0);  // orange, r=255 g=128 b=0
+```
+
+---
+
+## Presets
+
+Static factories for common colors. All return a **new** Color instance
+with alpha `255`.
+
+| Method | Color | RGBA |
+|:-------|:------|:-----|
+| `Color.white()` | White | `(255, 255, 255, 255)` |
+| `Color.black()` | Black | `(0, 0, 0, 255)` |
+| `Color.red()` | Red | `(255, 0, 0, 255)` |
+| `Color.green()` | Green | `(0, 255, 0, 255)` |
+
+```ts
+Render.text(screen, "Hello", Color.red());
+Render.circleFilled(pos, 5, Color.white());
+```
+
+<Tip>
+  Presets create a new instance every call — safe to modify without
+  affecting future calls: `const c = Color.red(); c.a = 128;` is fine.
+</Tip>
+
+---
+
+## Arithmetic
+
+All arithmetic methods return a **new** Color. Components are clamped
+to `0–255` internally.
+
+{/* ------------------------------------------------------------------ */}
+
+### add
+
+<br />
+
+```ts
+color.add(other: Color): Color
+```
+
+Component-wise addition. Each channel is clamped to `0–255`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Color` | Color to add |
+
+```ts
+const warm = new Color(200, 100, 0);
+const tint = new Color(55, 55, 55);
+const result = warm.add(tint);  // (255, 155, 55, 255)
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### sub
+
+<br />
+
+```ts
+color.sub(other: Color): Color
+```
+
+Component-wise subtraction. Each channel is clamped to `0–255`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Color` | Color to subtract |
+
+```ts
+const dimmed = bright.sub(new Color(50, 50, 50, 0));
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### mul
+
+<br />
+
+```ts
+color.mul(factor: number): Color
+```
+
+Multiplies RGB channels by a scalar. Alpha is unchanged. Returns a new
+Color.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `factor` | `number` | Scale multiplier |
+
+```ts
+const half = Color.red().mul(0.5);
+// (128, 0, 0, 255) — half-intensity red
+```
+
+---
+
+## Modification
+
+These methods create variations of a color — adjusting alpha, brightness,
+or blending with another color. All return a **new** Color.
+
+{/* ------------------------------------------------------------------ */}
+
+### withAlpha
+
+<br />
+
+```ts
+color.withAlpha(alpha: number): Color
+```
+
+Returns a copy with a different alpha. Accepts either a `0–255` integer
+or a `0.0–1.0` float.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `alpha` | `number` | New alpha — `0–255` (int) or `0.0–1.0` (float) |
+
+The engine auto-detects: if the value is a float in `[0.0, 1.0]` (and
+not an integer), it's treated as a fraction. Otherwise it's a byte.
+
+```ts
+const solid = Color.red();
+const half = solid.withAlpha(0.5);   // float → a = 128
+const exact = solid.withAlpha(200);  // int   → a = 200
+```
+
+<Warning>
+  The value `1` is ambiguous — it could mean "1 out of 255" or "100%
+  opacity". The engine treats integer `1` as the byte value `1` (nearly
+  invisible). Use `1.0` for full opacity, or `255` to be explicit.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### brightness
+
+<br />
+
+```ts
+color.brightness(factor: number): Color
+```
+
+Scales the RGB brightness by `factor`. A factor of `0.5` halves the
+brightness, `2.0` doubles it. Alpha is unchanged. Returns a new Color.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `factor` | `number` | Brightness multiplier |
+
+```ts
+const bright = baseColor.brightness(1.5);  // 50% brighter
+const dim = baseColor.brightness(0.3);     // 70% dimmer
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### lerp
+
+<br />
+
+```ts
+color.lerp(other: Color, t: number): Color
+```
+
+Linear interpolation between this color and `other`. `t=0` returns this
+color, `t=1` returns `other`, `t=0.5` returns the midpoint. All four
+channels (including alpha) are interpolated.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Color` | Target color |
+| `t` | `number` | Interpolation factor `[0, 1]` |
+
+<Tabs>
+  <Tab title="Health color">
+    ```ts
+    // Red at 0 HP, green at full HP
+    const healthColor = Color.red().lerp(Color.green(), health / maxHealth);
+    ```
+  </Tab>
+  <Tab title="Smooth transition">
+    ```ts
+    // Fade from current color to target each frame
+    displayColor = displayColor.lerp(targetColor, 0.2);
+    ```
+  </Tab>
+  <Tab title="Alert flash">
+    ```ts
+    // Pulse between white and red using a sine wave
+    const t = (Math.sin(Date.now() * 0.005) + 1) / 2;
+    const flash = Color.white().lerp(Color.red(), t);
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Conversion
+
+{/* ------------------------------------------------------------------ */}
+
+### toHSV
+
+<br />
+
+```ts
+color.toHSV(): { h: number, s: number, v: number, a: number }
+```
+
+Converts to Hue-Saturation-Value. Returns a plain object.
+
+| Field | Range | |
+|:------|:------|:--|
+| `h` | `0–360` | Hue in degrees |
+| `s` | `0–1` | Saturation |
+| `v` | `0–1` | Value |
+| `a` | `0–1` | Alpha |
+
+```ts
+const hsv = Color.red().toHSV();
+// { h: 0, s: 1, v: 1, a: 1 }
+```
+
+<Tip>
+  Round-trip works: `Color.fromHSV(c.toHSV().h, c.toHSV().s, c.toHSV().v)`
+  gives back the same color (within rounding). Useful for hue-shifting:
+  modify `h`, then convert back.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### toRGBA
+
+<br />
+
+```ts
+color.toRGBA(): number
+```
+
+Returns a packed 32-bit integer in **RGBA** byte order.
+
+```ts
+const packed = Color.red().toRGBA();
+// 0xFF0000FF
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toARGB
+
+<br />
+
+```ts
+color.toARGB(): number
+```
+
+Returns a packed 32-bit integer in **ARGB** byte order.
+
+```ts
+const packed = Color.red().toARGB();
+// 0xFFFF0000
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toImU32
+
+<br />
+
+```ts
+color.toImU32(): number
+```
+
+Returns the color as an ImGui-compatible packed integer (`ImU32`,
+ABGR byte order). You rarely need this directly — render functions
+accept Color objects natively.
+
+```ts
+const imcol = myColor.toImU32();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### equals
+
+<br />
+
+```ts
+color.equals(other: Color): boolean
+```
+
+Exact equality — all four channels must match. Returns `false` if
+`other` is not a Color.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Color` | Color to compare |
+
+```ts
+Color.red().equals(new Color(255, 0, 0, 255));  // true
+Color.red().equals(Color.red().withAlpha(128));   // false — alpha differs
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### clone
+
+<br />
+
+```ts
+color.clone(): Color
+```
+
+Returns an independent deep copy.
+
+```ts
+const original = Color.red();
+const copy = original.clone();
+copy.a = 0;
+// original.a is still 255
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toArray
+
+<br />
+
+```ts
+color.toArray(): [number, number, number, number]
+```
+
+Returns `[r, g, b, a]` as a plain array.
+
+```ts
+const [r, g, b, a] = myColor.toArray();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toString
+
+<br />
+
+```ts
+color.toString(): string
+```
+
+Returns a human-readable string.
+
+```ts
+Color.red().toString();
+// "Color(255, 0, 0, 255)"
+```
+
+---
+
+## Common patterns
+
+<Tabs>
+  <Tab title="Health bar color">
+    ```ts
+    // Smooth red → yellow → green gradient
+    const t = Math.clamp(health / maxHealth, 0, 1);
+    const r = Math.remapVal(health, 0, 100, 255, 0);
+    const g = Math.remapVal(health, 0, 100, 0, 255);
+    const col = new Color(r, g, 0);
+    ```
+  </Tab>
+  <Tab title="Distance fade">
+    ```ts
+    // Fade alpha based on distance
+    const alpha = Math.clamp(
+        Math.remapVal(distance, 2000, 8000, 255, 30),
+        30, 255
+    );
+    const col = Color.white().withAlpha(alpha);
+    ```
+  </Tab>
+  <Tab title="Rainbow cycle">
+    ```ts
+    // Cycle through hues over time
+    const hue = (Date.now() * 0.1) % 360;
+    const col = Color.fromHSV(hue, 1, 1);
+    ```
+  </Tab>
+  <Tab title="Team colors">
+    ```ts
+    const teamColors = {
+        CT: new Color(150, 200, 255),
+        T:  new Color(255, 200, 100),
+    };
+    const col = teamColors[player.team].withAlpha(200);
+    ```
+  </Tab>
+</Tabs>
+---
+title: "Pointer"
+sidebarTitle: "Pointer"
+description: "A typed wrapper around a memory address with arithmetic, dereference, and structured read operations."
+icon: "arrow-pointer"
+---
+
+`Pointer` wraps a single memory address. You get one from `ptr()`, from
+`Memory.scan()`, or by following another pointer — and then use it to
+navigate and read game memory.
+
+<Note>
+  `.address` is always a **BigInt** (`0n`, `0x12345678n`, etc.).
+  All methods accept `number`, `BigInt`, or another `Pointer` as an address
+  argument — the engine converts automatically.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Arithmetic" icon="calculator" href="#arithmetic">
+    Offset and compare pointers with add, sub, and equals.
+  </Card>
+  <Card title="Dereference" icon="arrow-turn-down" href="#dereference">
+    Follow a pointer to get the value it points to.
+  </Card>
+  <Card title="Resolve" icon="link" href="#resolve">
+    Walk multi-level pointer chains in one call.
+  </Card>
+  <Card title="Read" icon="database" href="#read">
+    Read typed scalars, strings, arrays, or raw byte snapshots.
+  </Card>
+</CardGroup>
+
+---
+
+## Properties
+
+| Name | Type | |
+|:-----|:-----|:--|
+| `address` | `BigInt` | The raw address. Readonly. |
+| `isNull` | `boolean` | `true` when address is `0`. Readonly. |
+
+---
+
+## Creating a pointer
+
+```ts
+new Pointer(address: number | BigInt | Pointer): Pointer
+ptr(address: number | BigInt | Pointer): Pointer   // shorthand
+```
+
+Both forms are equivalent. `ptr()` is the idiomatic shorthand in scripts.
+
+```ts
+const p = ptr(0x12345678n);
+console.log(p.address);  // 12345678n
+console.log(p.isNull);   // false
+```
+
+### Pointer.null
+
+A pre-built null pointer — use it as a sentinel or default value.
+
+```ts
+const empty = Pointer.null;
+console.log(empty.isNull); // true
+```
+
+---
+
+## Arithmetic
+
+### .add
+
+<br />
+
+```ts
+ptr.add(offset: number | BigInt): Pointer
+```
+
+Returns a new `Pointer` shifted forward by `offset` bytes. The original is
+not modified.
+
+```ts
+const base = ptr(moduleBase);
+const field = base.add(0x3C);   // base + 0x3C
+```
+
+---
+
+### .sub
+
+<br />
+
+```ts
+ptr.sub(offset: number | BigInt): Pointer
+```
+
+Returns a new `Pointer` shifted backward by `offset` bytes.
+
+```ts
+const prev = ptr.sub(8);
+```
+
+---
+
+### .equals
+
+<br />
+
+```ts
+ptr.equals(other: number | BigInt | Pointer): boolean
+```
+
+Returns `true` if both pointers point to the same address.
+
+```ts
+if (entityPtr.equals(localPlayerPtr)) {
+    console.log("That's us!");
+}
+```
+
+---
+
+## Dereference
+
+### .deref / .derefRaw
+
+<br />
+
+```ts
+ptr.deref(): Pointer      // uses cache
+ptr.derefRaw(): Pointer   // bypasses cache
+```
+
+Reads a pointer-sized value from this address and returns it as a new
+`Pointer`. Use `deref` in most cases — `derefRaw` forces a live read.
+
+```ts
+const entity = ptr(entityListBase).deref();
+if (!entity.isNull) {
+    // entity now points to the actual entity object
+}
+```
+
+<Tip>
+  **Cached vs raw** — `deref` reads through the SDK cache (fast, data
+  is up-to-date within a frame). `derefRaw` always hits process memory
+  directly. Prefer cached reads in per-frame code.
+</Tip>
+
+---
+
+## Resolve
+
+### .resolve / .resolveRaw
+
+<br />
+
+```ts
+ptr.resolve(...offsets: (number | BigInt)[]): Pointer
+ptr.resolveRaw(...offsets: (number | BigInt)[]): Pointer
+```
+
+Walks a multi-level pointer chain. For each offset except the last, adds the
+offset then dereferences. The final offset is only added — not dereferenced.
+
+Equivalent to writing a chain of `add` + `deref` calls manually.
+
+```ts
+// Read a classic multi-level pointer: base → +0x10 → +0x3C → +0x8
+const value = ptr(moduleBase).resolve(0x10, 0x3C, 0x8);
+```
+
+```ts
+// Base → deref → +0x2F0 → deref → +0x58   (two dereferences)
+const health = ptr(clientBase).resolve(0x2F0, 0x58);
+```
+
+<Warning>
+  If any intermediate pointer in the chain is null, `resolve` throws
+  `"Pointer.resolve: null in chain"`. Check `.isNull` on the result
+  when the chain might not exist yet.
+</Warning>
+
+---
+
+## Read
+
+### .read / .readRaw
+
+<br />
+
+```ts
+// Raw snapshot — read byteCount bytes
+ptr.read(byteCount: number): Snapshot
+
+// Typed scalar
+ptr.read(type: string): number | BigInt | boolean | string | Pointer
+
+// Typed array — returns a TypedArray
+ptr.read(type: string, count: number): TypedArray | Pointer[]
+
+// Struct view (from FFI.struct)
+ptr.read(StructType): StructView
+
+// Array of struct views
+ptr.read(StructType, count: number): StructView[]
+```
+
+`readRaw` mirrors every overload but bypasses the cache.
+
+<Note>
+  Reads that fail (bad address, access denied) throw an error. Check
+  `.isNull` before reading from a pointer you're not sure about.
+</Note>
+
+### Type names
+
+| Name | Returns | Notes |
+|:-----|:--------|:------|
+| `'int8'` | `number` | |
+| `'uint8'`, `'byte'` | `number` | |
+| `'int16'` | `number` | |
+| `'uint16'` | `number` | |
+| `'int32'` | `number` | |
+| `'uint32'` | `number` | |
+| `'int64'` | `BigInt` | |
+| `'uint64'` | `BigInt` | |
+| `'float'` | `number` | |
+| `'double'` | `number` | |
+| `'bool'` | `boolean` | |
+| `'string'` | `string` | Reads up to 4096 bytes; pass `count` to override |
+| `'wstring'` | `string` | Reads up to 2048 UTF-16 chars |
+| `'ptr'`, `'pointer'` | `Pointer` | |
+
+<CodeGroup>
+```ts Scalars
+const hp    = entityPtr.add(0x100).read('int32');
+const speed = entityPtr.add(0x11C).read('float');
+const name  = entityPtr.add(0x344).read('string');
+```
+
+```ts Arrays
+// Read 64 floats starting at this address
+const floats = ptr(addr).read('float', 64);   // Float32Array
+
+// Read 16 pointers
+const ptrs = ptr(addr).read('ptr', 16);       // Pointer[]
+```
+
+```ts Struct
+const PlayerInfo = FFI.struct("PlayerInfo", { ... });
+const player = entityPtr.read(PlayerInfo);
+console.log(player.health, player.name);
+
+// Array of 64 players
+const list = ptr(entityList).read(PlayerInfo, 64);
+```
+</CodeGroup>
+
+---
+
+## Snapshot
+
+`Snapshot` is what `.read(byteCount)` returns — a frozen copy of raw bytes
+together with helpers to interpret them.
+
+```ts
+const snap = ptr(someBase).read(0x200);
+```
+
+| Member | Type | Description |
+|:-------|:-----|:------------|
+| `.buffer` | `ArrayBuffer` | The raw byte backing store |
+| `.at(offset)` | `Accessor` | Returns a typed accessor at `offset` bytes |
+| `.as(StructType, offset?, count?)` | `StructView \| StructView[]` | Interpret bytes as a struct or array |
+
+### Accessor
+
+`.at(offset)` returns an object whose getter properties decode bytes in-place:
+
+| Property | Returns |
+|:---------|:--------|
+| `.int8` | `number` |
+| `.uint8` / `.byte` | `number` |
+| `.int16` | `number` |
+| `.uint16` | `number` |
+| `.int32` | `number` |
+| `.uint32` | `number` |
+| `.int64` | `BigInt` |
+| `.uint64` | `BigInt` |
+| `.float` | `number` |
+| `.double` | `number` |
+| `.bool` | `boolean` |
+| `.string` | `string` |
+| `.wstring` | `string` |
+| `.ptr` | `Pointer` |
+
+```ts
+const snap = ptr(base).read(0x100);
+
+const flags    = snap.at(0x00).int32;
+const velocity = snap.at(0x10).float;
+const namePtr  = snap.at(0x28).ptr;
+const tag      = snap.at(0x50).string;
+```
+
+```ts
+// Struct via .as()
+const WeaponData = FFI.struct("WeaponData", { ... });
+
+const weapon = snap.as(WeaponData);
+const mags   = snap.as(WeaponData, 0x80, 4); // array of 4 starting at offset 0x80
+```
+
+---
+
+## Recipes
+
+### Follow a pointer chain and read a field
+
+```ts
+const hp = ptr(clientBase)
+    .resolve(0x2F0, 0x58)   // two-level chain
+    .read('int32');          // read the int at the end
+
+console.log("Health:", hp);
+```
+
+### Read multiple fields from one snapshot
+
+```ts
+// Read once — avoid hammering the read path per field
+const snap = ptr(entityBase).read(0x400);
+
+const info = {
+    health:  snap.at(0x100).int32,
+    armor:   snap.at(0x104).int32,
+    velocity: snap.at(0x10C).float,
+    name:    snap.at(0x344).string,
+};
+```
+
+### Null-safe pointer walk
+
+```ts
+const entity = ptr(entityListBase).deref();
+
+if (!entity.isNull) {
+    const health = entity.add(0x100).read('int32');
+    console.log("HP:", health);
+}
+```
+---
+title: "QAngle"
+sidebarTitle: "QAngle"
+description: "Euler angles for view direction, aim, and rotation — pitch, yaw, roll in degrees."
+icon: "compass-drafting"
+---
+
+`QAngle` represents an Euler rotation as three components — **pitch**
+(up/down), **yaw** (left/right), and **roll** (tilt). Every view angle,
+aim calculation, and rotation in the engine uses this type.
+
+<Note>
+  All QAngle components are in **degrees**, not radians. The engine's
+  safe ranges are pitch `[-89, 89]`, yaw `[-180, 180]`, roll `[-50, 50]`.
+  Use [Math.clampAngles](/api/math#clampangles) before sending angles to
+  the engine.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Creating angles" icon="plus" href="#creating-angles">
+    Six constructor forms — numbers, arrays, objects, or zero.
+  </Card>
+  <Card title="Arithmetic" icon="calculator" href="#arithmetic">
+    Add, subtract, scale, divide, negate — all return new instances.
+  </Card>
+  <Card title="Normalization" icon="arrows-rotate" href="#normalization">
+    Wrap overflowed components back into valid ranges.
+  </Card>
+  <Card title="Direction vectors" icon="arrows-split-up-and-left" href="#direction-vectors">
+    Decompose into forward, right, and up vectors.
+  </Card>
+  <Card title="Comparison" icon="code-compare" href="#comparison">
+    FOV distance, equality checks.
+  </Card>
+  <Card title="Utility" icon="wrench" href="#utility">
+    Clone, set, invalidate, convert to array or string.
+  </Card>
+</CardGroup>
+
+---
+
+## Components
+
+| Component | Axis | Engine range | |
+|:----------|:-----|:-------------|:--|
+| `pitch` | Up / down | `[-89, 89]` | Negative = looking up, positive = looking down |
+| `yaw` | Left / right | `[-180, 180]` | 0 = north, 90 = east, ±180 = south |
+| `roll` | Tilt | `[-50, 50]` | Rarely used in practice |
+
+All three are **read/write** `number` properties:
+
+```ts
+const angle = new QAngle(10, 45, 0);
+angle.pitch = -5;
+angle.yaw += 90;
+log(angle.roll);  // 0
+```
+
+---
+
+## Creating angles
+
+Six forms — use whichever reads best in your code.
+
+{/* ------------------------------------------------------------------ */}
+
+### Constructor
+
+<br />
+
+```ts
+new QAngle(): QAngle
+new QAngle(pitch: number): QAngle
+new QAngle(pitch: number, yaw: number): QAngle
+new QAngle(pitch: number, yaw: number, roll: number): QAngle
+new QAngle(arr: [number, number, number]): QAngle
+new QAngle(obj: { pitch?: number, yaw?: number, roll?: number }): QAngle
+```
+
+Creates a new QAngle. Missing components default to `0`.
+
+<Tabs>
+  <Tab title="Numbers">
+    ```ts
+    const a = new QAngle();           // (0, 0, 0)
+    const b = new QAngle(-5, 90);     // pitch=-5, yaw=90, roll=0
+    const c = new QAngle(10, 45, 0);  // all three explicit
+    ```
+  </Tab>
+  <Tab title="Array">
+    ```ts
+    const angle = new QAngle([45, 90, 0]);
+    // pitch=45, yaw=90, roll=0
+
+    // Shorter arrays work — missing elements stay 0
+    const partial = new QAngle([10]);
+    // pitch=10, yaw=0, roll=0
+    ```
+  </Tab>
+  <Tab title="Object">
+    ```ts
+    const angle = new QAngle({ pitch: 45, yaw: 90 });
+    // pitch=45, yaw=90, roll=0
+
+    // Only set what you need — the rest default to 0
+    const yawOnly = new QAngle({ yaw: 180 });
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  The object form is most readable when you only care about one or
+  two components: `new QAngle({ yaw: 90 })` is clearer than
+  `new QAngle(0, 90, 0)`.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### QAngle.zero
+
+<br />
+
+```ts
+QAngle.zero(): QAngle
+```
+
+Returns a new `(0, 0, 0)` angle. Equivalent to `new QAngle()` but reads
+better as a named factory.
+
+```ts
+const origin = QAngle.zero();
+```
+
+---
+
+## Arithmetic
+
+All arithmetic methods return a **new** QAngle — the original is never
+modified. This makes them safe to use in calculations without cloning
+first.
+
+{/* ------------------------------------------------------------------ */}
+
+### add
+
+<br />
+
+```ts
+angle.add(other: QAngle): QAngle
+```
+
+Component-wise addition. Returns a new QAngle.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `QAngle` | Angle to add |
+
+```ts
+const base = new QAngle(10, 90, 0);
+const offset = new QAngle(5, -10, 0);
+
+const result = base.add(offset);
+// result = QAngle(15, 80, 0)
+// base is still QAngle(10, 90, 0)
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### sub
+
+<br />
+
+```ts
+angle.sub(other: QAngle): QAngle
+```
+
+Component-wise subtraction. Returns a new QAngle.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `QAngle` | Angle to subtract |
+
+```ts
+const delta = currentAngle.sub(previousAngle);
+// How much the view rotated since last frame
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### scale
+
+<br />
+
+```ts
+angle.scale(factor: number): QAngle
+```
+
+Multiplies all three components by `factor`. Returns a new QAngle.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `factor` | `number` | Scale multiplier |
+
+```ts
+const halfAngle = aim.scale(0.5);
+const doubled = aim.scale(2);
+```
+
+<Warning>
+  Scaling can push components out of engine-safe ranges. Pipe the
+  result through [Math.clampAngles](/api/math#clampangles) if you're
+  sending it to the engine.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### div
+
+<br />
+
+```ts
+angle.div(divisor: number): QAngle
+```
+
+Divides all three components by `divisor`. Returns a new QAngle.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `divisor` | `number` | Value to divide by |
+
+```ts
+const average = totalAngle.div(sampleCount);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### negate
+
+<br />
+
+```ts
+angle.negate(): QAngle
+```
+
+Flips the sign of all components. Returns a new QAngle.
+
+```ts
+const angle = new QAngle(10, 90, 0);
+const flipped = angle.negate();
+// flipped = QAngle(-10, -90, 0)
+```
+
+---
+
+## Normalization
+
+After math operations, components can overflow past `[-180, 180]`.
+These methods wrap them back.
+
+{/* ------------------------------------------------------------------ */}
+
+### normalize
+
+<br />
+
+```ts
+angle.normalize(): this   // mutates in place
+```
+
+Wraps all components into `[-180, 180]` using modular arithmetic.
+**Mutates the original** and returns `this` for chaining.
+
+```ts
+const angle = new QAngle(0, 270, 0);
+angle.normalize();
+// angle.yaw is now -90
+```
+
+<Warning>
+  This mutates the original. If you need the raw value preserved, use
+  [normalized()](#normalized) instead, or clone first:
+  `const clean = angle.clone().normalize();`
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### normalized
+
+<br />
+
+```ts
+angle.normalized(): QAngle
+```
+
+Returns a **new** QAngle with all components wrapped into `[-180, 180]`.
+The original is untouched.
+
+```ts
+const raw = new QAngle(0, 540, 0);
+const clean = raw.normalized();
+// clean.yaw = 180
+// raw.yaw is still 540
+```
+
+<Tip>
+  **normalize() vs normalized()** — the naming follows a common pattern:
+
+  | Method | Mutates? | Returns |
+  |:-------|:---------|:--------|
+  | `normalize()` | **Yes** | `this` (same object, modified) |
+  | `normalized()` | No | New QAngle (original untouched) |
+
+  Rule of thumb: bare verb mutates, past participle copies.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### QAngle.normalizeAngle
+
+<br />
+
+```ts
+QAngle.normalizeAngle(deg: number): number
+```
+
+Static utility — wraps a **single** angle value to `[-180, 180]`.
+Useful when you need to normalize one component without touching the
+others.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `deg` | `number` | Angle in degrees |
+
+```ts
+QAngle.normalizeAngle(270);   // -90
+QAngle.normalizeAngle(-540);  // 180
+QAngle.normalizeAngle(45);    // 45 (unchanged)
+```
+
+---
+
+## Direction vectors
+
+Decompose the angle into perpendicular direction vectors. These are
+instance-method shortcuts for
+[Math.angleVectors](/api/math#anglevectors) — same math, different
+syntax.
+
+{/* ------------------------------------------------------------------ */}
+
+### forward
+
+<br />
+
+```ts
+angle.forward(): Vector
+```
+
+Returns the **forward** direction vector — where this angle is pointing.
+This is the direction you'd trace a ray along.
+
+```ts
+const dir = myViewAngle.forward();
+
+const traceEnd = {
+    x: eyePos.x + dir.x * 1000,
+    y: eyePos.y + dir.y * 1000,
+    z: eyePos.z + dir.z * 1000,
+};
+```
+
+<Tip>
+  `angle.forward()` is equivalent to
+  `Math.angleVectors(angle).forward` — use whichever reads better.
+  If you need multiple vectors at once, `Math.angleVectors` is more
+  efficient (one decomposition vs three).
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### right
+
+<br />
+
+```ts
+angle.right(): Vector
+```
+
+Returns the **right** direction vector — perpendicular to forward,
+pointing to the right side of the view.
+
+```ts
+const rightDir = myViewAngle.right();
+
+// Offset position 100 units to the right
+const sidePos = {
+    x: myPos.x + rightDir.x * 100,
+    y: myPos.y + rightDir.y * 100,
+    z: myPos.z + rightDir.z * 100,
+};
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### up
+
+<br />
+
+```ts
+angle.up(): Vector
+```
+
+Returns the **up** direction vector — perpendicular to both forward and
+right, pointing above the view.
+
+```ts
+const upDir = myViewAngle.up();
+```
+
+---
+
+## Comparison
+
+{/* ------------------------------------------------------------------ */}
+
+### fovTo
+
+<br />
+
+```ts
+angle.fovTo(other: QAngle): number
+```
+
+Returns the angular distance in degrees between this angle and `other`.
+Equivalent to [Math.calculateFOV](/api/math#calculatefov) but as an
+instance method.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `QAngle` | Target angle to compare against |
+
+**Returns** `number` — `0` = identical direction, `180` = opposite.
+
+```ts
+const aim = Math.calcAngle(myEyePos, enemy.headPos);
+const fov = myViewAngle.fovTo(aim);
+
+if (fov < 5) {
+    // Target is within 5° of crosshair
+}
+```
+
+<CodeGroup>
+```ts Closest target
+let bestFov = Infinity;
+let bestTarget = null;
+
+for (const enemy of enemies) {
+    const aim = Math.calcAngle(myEyePos, enemy.headPos);
+    const fov = myViewAngle.fovTo(aim);
+    if (fov < bestFov) {
+        bestFov = fov;
+        bestTarget = enemy;
+    }
+}
+```
+
+```ts FOV gate with distance
+const aim = Math.calcAngle(myEyePos, enemy.headPos);
+const fov = myViewAngle.fovTo(aim);
+const dist = myPos.distTo(enemy.origin);
+
+// Tighter FOV requirement at long range
+const maxFov = Math.remapVal(dist, 500, 5000, 15, 3);
+if (fov < maxFov) {
+    // Valid target
+}
+```
+</CodeGroup>
+
+{/* ------------------------------------------------------------------ */}
+
+### equals
+
+<br />
+
+```ts
+angle.equals(other: QAngle): boolean
+```
+
+Exact component-wise equality. Returns `false` if `other` is not a
+QAngle.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `QAngle` | Angle to compare |
+
+```ts
+const a = new QAngle(10, 20, 0);
+const b = new QAngle(10, 20, 0);
+
+a.equals(b);  // true
+a.equals(a.clone());  // true
+```
+
+<Warning>
+  This is **exact** float comparison. Two angles that look the same
+  after normalization might not be `equals()` due to floating-point
+  precision. For approximate comparison, use `fovTo()` with a small
+  threshold instead.
+</Warning>
+
+---
+
+## Utility
+
+{/* ------------------------------------------------------------------ */}
+
+### set
+
+<br />
+
+```ts
+angle.set(pitch: number, yaw: number, roll: number): this
+angle.set(arr: [number, number, number]): this
+angle.set(obj: { pitch?: number, yaw?: number, roll?: number }): this
+angle.set(other: QAngle): this
+```
+
+Overwrites all components in place. Accepts the same forms as the
+constructor. **Mutates the original** and returns `this`.
+
+| Form | Example |
+|:-----|:--------|
+| Three numbers | `angle.set(0, 90, 0)` |
+| Array | `angle.set([0, 90, 0])` |
+| Object | `angle.set({ yaw: 90 })` |
+| Another QAngle | `angle.set(otherAngle)` |
+
+```ts
+const angle = new QAngle(10, 20, 30);
+
+angle.set(0, 180, 0);
+// angle is now QAngle(0, 180, 0)
+
+angle.set({ yaw: -90 });
+// angle is now QAngle(0, -90, 0) — pitch and roll reset to 0
+```
+
+<Warning>
+  The **object form** sets missing fields to `0`, not to their previous
+  value. `angle.set({ yaw: 90 })` resets pitch and roll to `0`. If you
+  want to update only yaw, assign the property directly:
+  `angle.yaw = 90;`
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### clone
+
+<br />
+
+```ts
+angle.clone(): QAngle
+```
+
+Returns an independent deep copy. Modifying the clone does not affect
+the original.
+
+```ts
+const original = new QAngle(10, 90, 0);
+const copy = original.clone();
+
+copy.yaw = 0;
+// original.yaw is still 90
+```
+
+<Tip>
+  Use `clone()` before mutating methods when you need to preserve the
+  original: `const safe = rawAngle.clone().normalize();`
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### invalidate
+
+<br />
+
+```ts
+angle.invalidate(): this   // mutates in place
+```
+
+Sets all components to `NaN`. Used as a sentinel value to mark an angle
+as "not yet computed" or "invalid". **Mutates the original** and returns
+`this`.
+
+```ts
+const cached = new QAngle();
+cached.invalidate();
+
+// Later, check with isNaN:
+if (isNaN(cached.pitch)) {
+    // Need to recompute
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### length
+
+<br />
+
+```ts
+angle.length(): number
+```
+
+Returns the Euclidean length of the angle treated as a 3D vector:
+`√(pitch² + yaw² + roll²)`. Occasionally useful for measuring total
+rotation magnitude.
+
+```ts
+const shake = new QAngle(2, -1, 0.5);
+shake.length();  // 2.29...
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### lengthSqr
+
+<br />
+
+```ts
+angle.lengthSqr(): number
+```
+
+Squared length — `pitch² + yaw² + roll²`. Faster than `length()` when
+you only need to compare magnitudes.
+
+```ts
+if (deltaAngle.lengthSqr() < 0.01) {
+    // Almost no rotation change — skip update
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toArray
+
+<br />
+
+```ts
+angle.toArray(): [number, number, number]
+```
+
+Returns `[pitch, yaw, roll]` as a plain array.
+
+```ts
+const [p, y, r] = myViewAngle.toArray();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toString
+
+<br />
+
+```ts
+angle.toString(): string
+```
+
+Returns a human-readable string with 3 decimal places.
+
+```ts
+const angle = new QAngle(10.5, 90, 0);
+angle.toString();
+// "QAngle(10.500, 90.000, 0.000)"
+```
+
+---
+
+## Common patterns
+
+Real-world patterns that combine QAngle methods with the
+[Math](/api/math) API.
+
+<Tabs>
+  <Tab title="Smooth aim">
+    ```ts
+    // Ease current view toward target each frame
+    const target = Math.calcAngle(myEyePos, enemyHeadPos);
+    const delta = target.sub(myViewAngle).normalized();
+    const step = delta.scale(0.3);
+    const newAngle = myViewAngle.add(step);
+    Math.clampAngles(newAngle);
+    ```
+  </Tab>
+  <Tab title="Angle delta">
+    ```ts
+    // How much the view rotated between two frames
+    const delta = currentAngle.sub(previousAngle).normalized();
+    const speed = delta.length();  // degrees per frame
+    ```
+  </Tab>
+  <Tab title="Direction offset">
+    ```ts
+    // Get a position 500 units ahead of where the player looks
+    const dir = myViewAngle.forward();
+    const ahead = new Vector(
+        myPos.x + dir.x * 500,
+        myPos.y + dir.y * 500,
+        myPos.z + dir.z * 500,
+    );
+    ```
+  </Tab>
+  <Tab title="Recoil compensation">
+    ```ts
+    // Subtract punch angle to compensate recoil
+    const punch = localPlayer.getAimPunchAngle();
+    const compensated = myViewAngle.sub(punch.scale(2));
+    Math.clampAngles(compensated);
+    ```
+  </Tab>
+</Tabs>
+---
+title: "Texture"
+sidebarTitle: "Texture"
+description: "Load images from disk or memory for drawing on the overlay."
+icon: "image"
+---
+
+`Texture` loads an image file (`.png`, `.jpg`, etc.) or raw pixel data
+into GPU memory so you can draw it with [Render.image](/api/render#image)
+and [Render.imageRounded](/api/render#imagerounded).
+
+<Note>
+  Textures load **asynchronously** — they may not be ready on the same
+  frame they're created. Always check `isReady` before drawing.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Loading" icon="upload" href="#loading">
+    From file path or raw RGBA pixel data.
+  </Card>
+  <Card title="Properties" icon="circle-info" href="#properties">
+    Width, height, readiness, and file path.
+  </Card>
+  <Card title="Drawing" icon="paintbrush" href="#drawing">
+    How to render loaded textures on screen.
+  </Card>
+</CardGroup>
+
+---
+
+## Loading
+
+{/* ------------------------------------------------------------------ */}
+
+### Constructor
+
+<br />
+
+```ts
+new Texture(path: string): Texture
+```
+
+Loads an image from a file path. The texture starts loading immediately
+but may not be ready until a later frame.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `path` | `string` | Path to the image file |
+
+```ts
+const icon = new Texture("assets/icon.png");
+```
+
+<Warning>
+  Create textures **once** outside your render callback — not every
+  frame. Repeated construction causes repeated disk reads and GPU
+  uploads.
+</Warning>
+
+<Tabs>
+  <Tab title="Correct">
+    ```ts
+    // Create once at script start
+    const icon = new Texture("assets/icon.png");
+
+    // Draw every frame
+    onRender(() => {
+        if (icon.isReady) {
+            Render.image(icon, pos, size, Color.white());
+        }
+    });
+    ```
+  </Tab>
+  <Tab title="Wrong">
+    ```ts
+    onRender(() => {
+        // BAD: loads from disk every frame!
+        const icon = new Texture("assets/icon.png");
+        Render.image(icon, pos, size, Color.white());
+    });
+    ```
+  </Tab>
+</Tabs>
+
+{/* ------------------------------------------------------------------ */}
+
+### Texture.fromMemory
+
+<br />
+
+```ts
+Texture.fromMemory(data: Uint8Array, width: number, height: number): Texture
+```
+
+Creates a texture from raw **RGBA** pixel data in memory. Each pixel
+is 4 bytes (R, G, B, A). The buffer must contain exactly
+`width × height × 4` bytes.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `data` | `Uint8Array` | Raw RGBA pixel buffer |
+| `width` | `number` | Image width in pixels |
+| `height` | `number` | Image height in pixels |
+
+```ts
+// Create a 2×2 checkerboard
+const pixels = new Uint8Array([
+    255, 0, 0, 255,    0, 0, 0, 255,     // row 1: red, black
+      0, 0, 0, 255,  255, 0, 0, 255,     // row 2: black, red
+]);
+
+const checker = Texture.fromMemory(pixels, 2, 2);
+```
+
+<Tip>
+  `fromMemory` is useful for procedurally generated textures — gradients,
+  noise patterns, or dynamically composited images.
+</Tip>
+
+---
+
+## Properties
+
+All properties are **read-only**.
+
+| Property | Type | |
+|:---------|:-----|:--|
+| `width` | `number` | Image width in pixels. `0` if not yet loaded |
+| `height` | `number` | Image height in pixels. `0` if not yet loaded |
+| `isReady` | `boolean` | `true` once the texture is uploaded to the GPU |
+| `path` | `string` | File path (empty for `fromMemory` textures) |
+
+```ts
+const tex = new Texture("assets/logo.png");
+
+// Later:
+if (tex.isReady) {
+    log(tex.width, tex.height);  // e.g. 256, 256
+    log(tex.path);               // "assets/logo.png"
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### getSize
+
+<br />
+
+```ts
+texture.getSize(): { width: number, height: number }
+```
+
+Returns both dimensions as a plain object. Convenience method when you
+need both at once.
+
+```ts
+const { width, height } = tex.getSize();
+const aspect = width / height;
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toString
+
+<br />
+
+```ts
+texture.toString(): string
+```
+
+Returns a debug string with dimensions, path, and ready state.
+
+```ts
+const tex = new Texture("icon.png");
+tex.toString();
+// "Texture(64x64, path='icon.png', ready=true)"
+```
+
+---
+
+## Drawing
+
+Textures are drawn using the [render](/api/render) module:
+
+```ts
+Render.image(texture, position, size, tintColor);
+Render.imageRounded(texture, position, size, rounding, tintColor);
+```
+
+See [Render.image](/api/render#image) and
+[Render.imageRounded](/api/render#imagerounded) for full parameter
+documentation.
+
+<Tabs>
+  <Tab title="Basic image">
+    ```ts
+    const icon = new Texture("assets/weapon.png");
+
+    onRender(() => {
+        if (!icon.isReady) return;
+
+        const { success, screen } = Math.worldToScreen(pos);
+        if (success) {
+            Render.image(icon, screen, new Vector2(24, 24), Color.white());
+        }
+    });
+    ```
+  </Tab>
+  <Tab title="Circular avatar">
+    ```ts
+    const avatar = new Texture("assets/avatar.png");
+
+    onRender(() => {
+        if (!avatar.isReady) return;
+
+        const size = new Vector2(48, 48);
+        Render.imageRounded(avatar, hudPos, size, 24, Color.white());
+        // rounding = half of width → perfect circle
+    });
+    ```
+  </Tab>
+  <Tab title="Tinted icon">
+    ```ts
+    const icon = new Texture("assets/shield.png");
+
+    onRender(() => {
+        if (!icon.isReady) return;
+
+        // Tint with team color
+        const tint = isAlly ? Color.green() : Color.red();
+        Render.image(icon, pos, new Vector2(32, 32), tint);
+    });
+    ```
+  </Tab>
+  <Tab title="Preserve aspect ratio">
+    ```ts
+    const logo = new Texture("assets/logo.png");
+
+    onRender(() => {
+        if (!logo.isReady) return;
+
+        const drawHeight = 64;
+        const aspect = logo.width / logo.height;
+        const drawWidth = drawHeight * aspect;
+
+        Render.image(logo, pos, new Vector2(drawWidth, drawHeight), Color.white());
+    });
+    ```
+  </Tab>
+</Tabs>
+---
+title: "Vector"
+sidebarTitle: "Vector"
+description: "3D vector for positions, velocities, directions — the most used type in the engine."
+icon: "location-arrow"
+---
+
+`Vector` is a 3D vector with `x`, `y`, `z` components. World positions,
+velocities, normals, trace endpoints — almost everything spatial is a
+Vector. If you're writing game logic, you'll use this type more than
+any other.
+
+<Note>
+  All Vector arithmetic methods return a **new** Vector — the original is
+  never modified. The exceptions are `normalize()` and direct property
+  assignment (`vec.x = 10`), which mutate in place.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Creating vectors" icon="plus" href="#creating-vectors">
+    Constructor and static factories.
+  </Card>
+  <Card title="Arithmetic" icon="calculator" href="#arithmetic">
+    Add, subtract, multiply, scale — all return new instances.
+  </Card>
+  <Card title="Length & distance" icon="ruler" href="#length--distance">
+    Magnitude, squared variants, and distance between points.
+  </Card>
+  <Card title="Products" icon="xmark" href="#products">
+    Dot product, cross product.
+  </Card>
+  <Card title="Normalization" icon="arrows-rotate" href="#normalization">
+    Unit vectors — mutating and non-mutating.
+  </Card>
+  <Card title="Utility" icon="wrench" href="#utility">
+    Clone, validity checks, conversion, string output.
+  </Card>
+</CardGroup>
+
+---
+
+## Properties
+
+| Name | Type | |
+|:-----|:-----|:--|
+| `x` | `number` | Read/write |
+| `y` | `number` | Read/write |
+| `z` | `number` | Read/write |
+
+```ts
+const pos = new Vector(100, 200, 64);
+pos.z += 10;
+log(pos.x, pos.y, pos.z);  // 100, 200, 74
+```
+
+---
+
+## Creating vectors
+
+{/* ------------------------------------------------------------------ */}
+
+### Constructor
+
+<br />
+
+```ts
+new Vector(x: number, y: number, z: number): Vector
+```
+
+Creates a new Vector from three components.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `x` | `number` | Horizontal position |
+| `y` | `number` | Lateral position |
+| `z` | `number` | Vertical position (up) |
+
+```ts
+const origin = new Vector(0, 0, 0);
+const pos = new Vector(1024, -512, 64.5);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector.zero
+
+<br />
+
+```ts
+Vector.zero(): Vector
+```
+
+Returns a new `(0, 0, 0)` vector.
+
+```ts
+const blank = Vector.zero();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector.one
+
+<br />
+
+```ts
+Vector.one(): Vector
+```
+
+Returns a new `(1, 1, 1)` vector. Useful as a default scale or as a
+starting multiplier.
+
+```ts
+const scale = Vector.one();
+```
+
+---
+
+## Arithmetic
+
+All arithmetic methods return a **new** Vector. The original is never
+modified.
+
+{/* ------------------------------------------------------------------ */}
+
+### add
+
+<br />
+
+```ts
+vec.add(other: Vector): Vector
+```
+
+Component-wise addition. Returns a new Vector.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector` | Vector to add |
+
+```ts
+const a = new Vector(1, 2, 3);
+const b = new Vector(10, 20, 30);
+
+const sum = a.add(b);  // Vector(11, 22, 33)
+// a is still Vector(1, 2, 3)
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### sub
+
+<br />
+
+```ts
+vec.sub(other: Vector): Vector
+```
+
+Component-wise subtraction. Returns a new Vector.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector` | Vector to subtract |
+
+```ts
+const delta = enemyPos.sub(myPos);
+// Direction vector from me to the enemy
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### mul
+
+<br />
+
+```ts
+vec.mul(other: Vector): Vector
+```
+
+Component-wise multiplication — `x*x`, `y*y`, `z*z`. Returns a new
+Vector. This is **not** dot or cross product — it's the Hadamard product.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector` | Vector to multiply component-wise |
+
+```ts
+const a = new Vector(2, 3, 4);
+const b = new Vector(10, 10, 10);
+
+const result = a.mul(b);  // Vector(20, 30, 40)
+```
+
+<Tip>
+  Use `mul` for component-wise operations like applying a per-axis
+  scale factor. For scalar multiplication use [scale](#scale), for the
+  geometric product use [dot](#dot) or [cross](#cross).
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### scale
+
+<br />
+
+```ts
+vec.scale(factor: number): Vector
+```
+
+Multiplies all three components by a scalar. Returns a new Vector.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `factor` | `number` | Scale multiplier |
+
+```ts
+const dir = enemyPos.sub(myPos).normalized();
+const offset = dir.scale(100);  // 100 units in that direction
+```
+
+---
+
+## Length & distance
+
+{/* ------------------------------------------------------------------ */}
+
+### length
+
+<br />
+
+```ts
+vec.length(): number
+```
+
+Returns the Euclidean length: `√(x² + y² + z²)`.
+
+```ts
+const vel = entity.getVelocity();
+const speed = vel.length();  // units per second
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### lengthSqr
+
+<br />
+
+```ts
+vec.lengthSqr(): number
+```
+
+Returns the **squared** length: `x² + y² + z²`. Faster than `length()`
+because it skips the square root — use it when you're comparing
+magnitudes, not when you need the actual value.
+
+```ts
+// "Is the player moving faster than 200 u/s?"
+if (vel.lengthSqr() > 200 * 200) {
+    // yes — and we didn't pay for a sqrt
+}
+```
+
+<Tip>
+  **When to use `lengthSqr` vs `length`:**
+
+  | Need | Use |
+  |:-----|:----|
+  | Compare two magnitudes | `lengthSqr()` — both skip sqrt, comparison still valid |
+  | Display speed in HUD | `length()` — you need the actual number |
+  | Threshold check (`> N`) | `lengthSqr()` — compare against `N * N` |
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### length2D
+
+<br />
+
+```ts
+vec.length2D(): number
+```
+
+Returns the length on the **XY plane** only: `√(x² + y²)`. Ignores the
+vertical component. Useful for horizontal speed or ground-plane distance.
+
+```ts
+const horizontalSpeed = entity.getVelocity().length2D();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### distTo
+
+<br />
+
+```ts
+vec.distTo(other: Vector): number
+```
+
+Returns the Euclidean distance to another vector.
+Equivalent to `vec.sub(other).length()` but slightly faster.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector` | Target point |
+
+```ts
+const dist = myPos.distTo(enemyPos);
+if (dist < 1000) {
+    // Within 1000 units
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### distToSqr
+
+<br />
+
+```ts
+vec.distToSqr(other: Vector): number
+```
+
+Returns the **squared** distance to another vector. Same speed advantage
+as `lengthSqr` — no square root.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector` | Target point |
+
+```ts
+// Distance check without sqrt
+const closeRange = myPos.distToSqr(enemyPos) < 500 * 500;
+```
+
+---
+
+## Products
+
+{/* ------------------------------------------------------------------ */}
+
+### dot
+
+<br />
+
+```ts
+vec.dot(other: Vector): number
+```
+
+Returns the dot product: `x*ox + y*oy + z*oz`. Measures how much
+two vectors point in the same direction.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector` | Second vector |
+
+**Returns** `number`:
+- Positive → vectors point roughly the same way
+- `0` → perpendicular
+- Negative → point away from each other
+
+```ts
+const forward = myViewAngle.forward();
+const toEnemy = enemyPos.sub(myEyePos).normalized();
+
+const alignment = forward.dot(toEnemy);
+if (alignment > 0.9) {
+    // Enemy is nearly straight ahead
+}
+```
+
+<Tip>
+  `dot` on two unit vectors gives the cosine of the angle between them.
+  `alignment > 0.9` ≈ within ~25°, `> 0.95` ≈ within ~18°.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### cross
+
+<br />
+
+```ts
+vec.cross(other: Vector): Vector
+```
+
+Returns the cross product — a vector **perpendicular** to both inputs.
+The magnitude equals the area of the parallelogram they span.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector` | Second vector |
+
+```ts
+const a = new Vector(1, 0, 0);
+const b = new Vector(0, 1, 0);
+
+const up = a.cross(b);  // Vector(0, 0, 1) — Z axis
+```
+
+<Warning>
+  Cross product is **not commutative**: `a.cross(b)` and `b.cross(a)`
+  point in opposite directions. Order matters.
+</Warning>
+
+---
+
+## Normalization
+
+{/* ------------------------------------------------------------------ */}
+
+### normalize
+
+<br />
+
+```ts
+vec.normalize(): this   // mutates in place
+```
+
+Scales the vector to length 1 **in place**. Returns `this`.
+
+```ts
+const dir = enemyPos.sub(myPos);
+dir.normalize();
+// dir is now a unit vector — length() ≈ 1.0
+```
+
+<Warning>
+  Mutates the original. If you need the raw vector preserved, use
+  [normalized()](#normalized) instead.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### normalized
+
+<br />
+
+```ts
+vec.normalized(): Vector
+```
+
+Returns a **new** unit vector pointing in the same direction. The
+original is untouched.
+
+```ts
+const toTarget = enemyPos.sub(myPos);
+const dir = toTarget.normalized();
+const dist = toTarget.length();
+// toTarget still has the original magnitude
+```
+
+<Tip>
+  **normalize() vs normalized()** — same pattern as QAngle:
+
+  | Method | Mutates? | Returns |
+  |:-------|:---------|:--------|
+  | `normalize()` | **Yes** | `this` (same object, now length 1) |
+  | `normalized()` | No | New Vector (original untouched) |
+
+  Use `normalized()` when you still need the original (e.g. to get
+  distance from its length). Use `normalize()` when you're done with the
+  magnitude and just want the direction.
+</Tip>
+
+---
+
+## Utility
+
+{/* ------------------------------------------------------------------ */}
+
+### isZero
+
+<br />
+
+```ts
+vec.isZero(epsilon?: number): boolean
+```
+
+Returns `true` if all components are within `epsilon` of zero. Default
+epsilon is `1e-6`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `epsilon` | `number` | Tolerance (optional, default `1e-6`) |
+
+```ts
+const vel = entity.getVelocity();
+if (vel.isZero()) {
+    // Entity is standing still
+}
+
+// Looser check
+if (vel.isZero(1.0)) {
+    // Effectively stationary (< 1 u/s per axis)
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### isFinite
+
+<br />
+
+```ts
+vec.isFinite(): boolean
+```
+
+Returns `true` if all three components are finite numbers (not `NaN`,
+not `±Infinity`).
+
+```ts
+if (!result.isFinite()) {
+    // Something went wrong — don't use this vector
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### clone
+
+<br />
+
+```ts
+vec.clone(): Vector
+```
+
+Returns an independent deep copy. Modifying the clone does not affect
+the original.
+
+```ts
+const original = new Vector(1, 2, 3);
+const copy = original.clone();
+copy.x = 999;
+// original.x is still 1
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toArray
+
+<br />
+
+```ts
+vec.toArray(): [number, number, number]
+```
+
+Returns `[x, y, z]` as a plain array.
+
+```ts
+const [x, y, z] = entity.getOrigin().toArray();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toString
+
+<br />
+
+```ts
+vec.toString(): string
+```
+
+Returns a human-readable string.
+
+```ts
+const pos = new Vector(100.5, 200, 64);
+pos.toString();
+// "Vector(100.5, 200, 64)"
+```
+
+---
+
+## Static methods
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector.lerp
+
+<br />
+
+```ts
+Vector.lerp(a: Vector, b: Vector, t: number): Vector
+```
+
+Linear interpolation between two vectors. `t=0` returns `a`, `t=1`
+returns `b`, `t=0.5` returns the midpoint. Not clamped — `t` outside
+`[0, 1]` extrapolates.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `a` | `Vector` | Start |
+| `b` | `Vector` | End |
+| `t` | `number` | Interpolation factor |
+
+<Tabs>
+  <Tab title="Smooth follow">
+    ```ts
+    // Ease a visual indicator toward the target each frame
+    displayPos = Vector.lerp(displayPos, targetPos, 0.2);
+    ```
+  </Tab>
+  <Tab title="Midpoint">
+    ```ts
+    // Center point between two players
+    const mid = Vector.lerp(player1.origin, player2.origin, 0.5);
+    ```
+  </Tab>
+  <Tab title="Predictive">
+    ```ts
+    // Extrapolate 200ms ahead based on current velocity
+    const futurePos = Vector.lerp(
+        currentPos,
+        currentPos.add(velocity),
+        0.2
+    );
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  `Vector.lerp` with a constant `t` each frame gives **exponential
+  decay** — the same smooth-follow behavior as `Math.lerp`. Values
+  around `0.1–0.3` feel smooth, `0.5+` feels snappy.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector.min
+
+<br />
+
+```ts
+Vector.min(a: Vector, b: Vector): Vector
+```
+
+Returns a vector with the **minimum** of each component pair:
+`(min(a.x, b.x), min(a.y, b.y), min(a.z, b.z))`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `a` | `Vector` | First vector |
+| `b` | `Vector` | Second vector |
+
+```ts
+// Build an axis-aligned bounding box from two corners
+const mins = Vector.min(corner1, corner2);
+const maxs = Vector.max(corner1, corner2);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector.max
+
+<br />
+
+```ts
+Vector.max(a: Vector, b: Vector): Vector
+```
+
+Returns a vector with the **maximum** of each component pair:
+`(max(a.x, b.x), max(a.y, b.y), max(a.z, b.z))`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `a` | `Vector` | First vector |
+| `b` | `Vector` | Second vector |
+
+```ts
+const maxs = Vector.max(corner1, corner2);
+```
+
+---
+
+## Common patterns
+
+Real-world patterns that combine Vector methods with the
+[Math](/api/math) API.
+
+<Tabs>
+  <Tab title="Direction + distance">
+    ```ts
+    // Get direction and distance in one pass
+    const delta = enemyPos.sub(myPos);
+    const dist = delta.length();
+    const dir = delta.normalized();
+    // delta is preserved — dir is a new unit vector
+    ```
+  </Tab>
+  <Tab title="Is enemy behind me?">
+    ```ts
+    const forward = myViewAngle.forward();
+    const toEnemy = enemyPos.sub(myEyePos).normalized();
+
+    if (forward.dot(toEnemy) < 0) {
+        // Negative dot = enemy is behind us
+    }
+    ```
+  </Tab>
+  <Tab title="Project onto plane">
+    ```ts
+    // Remove the vertical component to get ground-plane direction
+    const vel = entity.getVelocity();
+    const groundVel = new Vector(vel.x, vel.y, 0);
+    const groundSpeed = groundVel.length();
+    ```
+  </Tab>
+  <Tab title="Bounding box check">
+    ```ts
+    const mins = Vector.min(corner1, corner2);
+    const maxs = Vector.max(corner1, corner2);
+
+    const inside = pos.x >= mins.x && pos.x <= maxs.x
+                && pos.y >= mins.y && pos.y <= maxs.y
+                && pos.z >= mins.z && pos.z <= maxs.z;
+    ```
+  </Tab>
+</Tabs>
+---
+title: "Vector2"
+sidebarTitle: "Vector2"
+description: "2D vector for screen coordinates, UI layout, and planar math."
+icon: "display"
+---
+
+`Vector2` is a 2D vector with `x`, `y` components. You'll encounter it
+primarily as the return type of
+[Math.worldToScreen](/api/math#worldtoscreen) — screen-space pixel
+coordinates for ESP overlays and HUD elements.
+
+<Note>
+  Unlike [Vector](/api/types/vector), Vector2 has **no z component**.
+  Operations like `mul` and `div` accept both a scalar number and another
+  Vector2 — check the overloads below.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Creating vectors" icon="plus" href="#creating-vectors">
+    Numbers, arrays, objects, or axis presets.
+  </Card>
+  <Card title="Arithmetic" icon="calculator" href="#arithmetic">
+    Add, subtract, multiply, divide — all return new instances.
+  </Card>
+  <Card title="Length & distance" icon="ruler" href="#length--distance">
+    Magnitude and distance on the 2D plane.
+  </Card>
+  <Card title="Products" icon="xmark" href="#products">
+    Dot product, 2D cross product.
+  </Card>
+  <Card title="Transforms" icon="arrows-rotate" href="#transforms">
+    Normalize, rotate, absolute value.
+  </Card>
+  <Card title="Utility" icon="wrench" href="#utility">
+    Clone, convert to array, string output.
+  </Card>
+</CardGroup>
+
+---
+
+## Properties
+
+| Name | Type | |
+|:-----|:-----|:--|
+| `x` | `number` | Read/write |
+| `y` | `number` | Read/write |
+
+```ts
+const screen = new Vector2(640, 360);
+screen.y += 20;
+log(screen.x, screen.y);  // 640, 380
+```
+
+---
+
+## Creating vectors
+
+{/* ------------------------------------------------------------------ */}
+
+### Constructor
+
+<br />
+
+```ts
+new Vector2(): Vector2
+new Vector2(x: number, y: number): Vector2
+new Vector2(x: number): Vector2
+new Vector2(arr: [number, number]): Vector2
+new Vector2(obj: { x?: number, y?: number }): Vector2
+```
+
+Creates a new Vector2. Missing components default to `0`.
+
+<Tabs>
+  <Tab title="Numbers">
+    ```ts
+    const a = new Vector2();         // (0, 0)
+    const b = new Vector2(100, 50);  // explicit
+    const c = new Vector2(10);       // (10, 0)
+    ```
+  </Tab>
+  <Tab title="Array">
+    ```ts
+    const pos = new Vector2([640, 360]);
+    ```
+  </Tab>
+  <Tab title="Object">
+    ```ts
+    const pos = new Vector2({ x: 640, y: 360 });
+
+    // Partial — missing fields default to 0
+    const xOnly = new Vector2({ x: 100 });
+    ```
+  </Tab>
+</Tabs>
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector2.zero
+
+<br />
+
+```ts
+Vector2.zero(): Vector2
+```
+
+Returns a new `(0, 0)` vector.
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector2.one
+
+<br />
+
+```ts
+Vector2.one(): Vector2
+```
+
+Returns a new `(1, 1)` vector.
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector2.xAxis
+
+<br />
+
+```ts
+Vector2.xAxis(): Vector2
+```
+
+Returns `(1, 0)` — the horizontal unit vector.
+
+{/* ------------------------------------------------------------------ */}
+
+### Vector2.yAxis
+
+<br />
+
+```ts
+Vector2.yAxis(): Vector2
+```
+
+Returns `(0, 1)` — the vertical unit vector.
+
+```ts
+// All four presets
+Vector2.zero();   // (0, 0)
+Vector2.one();    // (1, 1)
+Vector2.xAxis();  // (1, 0)
+Vector2.yAxis();  // (0, 1)
+```
+
+---
+
+## Arithmetic
+
+All arithmetic methods return a **new** Vector2.
+
+{/* ------------------------------------------------------------------ */}
+
+### add
+
+<br />
+
+```ts
+vec.add(other: Vector2): Vector2
+```
+
+Component-wise addition.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector2` | Vector to add |
+
+```ts
+const { success, screen } = Math.worldToScreen(headPos);
+if (success) {
+    const labelPos = screen.add(new Vector2(8, -6));
+    Render.text(labelPos, "HEAD", Color.red());
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### sub
+
+<br />
+
+```ts
+vec.sub(other: Vector2): Vector2
+```
+
+Component-wise subtraction.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector2` | Vector to subtract |
+
+```ts
+const delta = mousePos.sub(boxCenter);
+// Offset from center of a UI element to cursor
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### mul
+
+<br />
+
+```ts
+vec.mul(factor: number): Vector2
+vec.mul(other: Vector2): Vector2
+```
+
+Overloaded — accepts a **scalar** or a **Vector2** for component-wise
+multiplication.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `factor` | `number` | Scalar multiplier |
+| `other` | `Vector2` | Component-wise multiplier |
+
+```ts
+// Scalar: scale both axes equally
+const doubled = pos.mul(2);
+
+// Vector2: scale axes independently
+const stretched = pos.mul(new Vector2(2, 0.5));
+// x doubled, y halved
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### div
+
+<br />
+
+```ts
+vec.div(divisor: number): Vector2
+vec.div(other: Vector2): Vector2
+```
+
+Overloaded — accepts a **scalar** or a **Vector2** for component-wise
+division.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `divisor` | `number` | Scalar divisor |
+| `other` | `Vector2` | Component-wise divisor |
+
+```ts
+// Scalar: divide both axes
+const half = pos.div(2);
+
+// Vector2: divide axes independently
+const normalized = pixelPos.div(new Vector2(screenWidth, screenHeight));
+// Now in [0, 1] range
+```
+
+---
+
+## Length & distance
+
+{/* ------------------------------------------------------------------ */}
+
+### length
+
+<br />
+
+```ts
+vec.length(): number
+```
+
+Returns the 2D Euclidean length: `√(x² + y²)`.
+
+```ts
+const delta = screenA.sub(screenB);
+const pixelDistance = delta.length();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### lengthSqr
+
+<br />
+
+```ts
+vec.lengthSqr(): number
+```
+
+Returns the **squared** length: `x² + y²`. Faster for comparisons.
+
+```ts
+// "Is cursor within 50px of this element?"
+if (cursor.sub(elementCenter).lengthSqr() < 50 * 50) {
+    // yes
+}
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### distTo
+
+<br />
+
+```ts
+vec.distTo(other: Vector2): number
+```
+
+Returns the distance to another Vector2.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector2` | Target point |
+
+```ts
+const { success: s1, screen: a } = Math.worldToScreen(headPos);
+const { success: s2, screen: b } = Math.worldToScreen(feetPos);
+
+if (s1 && s2) {
+    const boxHeight = a.distTo(b);
+    // Use as ESP box height in pixels
+}
+```
+
+---
+
+## Products
+
+{/* ------------------------------------------------------------------ */}
+
+### dot
+
+<br />
+
+```ts
+vec.dot(other: Vector2): number
+```
+
+Returns the 2D dot product: `x*ox + y*oy`.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector2` | Second vector |
+
+```ts
+const alignment = dir.dot(toTarget);
+// > 0 = same general direction
+// = 0 = perpendicular
+// < 0 = opposite direction
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### cross
+
+<br />
+
+```ts
+vec.cross(other: Vector2): number
+```
+
+Returns the 2D cross product — a **scalar**, not a vector. Its sign
+tells you the winding direction: positive = `other` is counter-clockwise
+from `vec`, negative = clockwise.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Vector2` | Second vector |
+
+```ts
+const a = new Vector2(1, 0);
+const b = new Vector2(0, 1);
+
+a.cross(b);  //  1 (b is CCW from a)
+b.cross(a);  // -1 (a is CW from b)
+```
+
+<Note>
+  In 3D the cross product returns a vector. In 2D it returns a scalar —
+  the z-component of what the 3D cross would be. This is different
+  from [Vector.cross](/api/types/vector#cross).
+</Note>
+
+---
+
+## Transforms
+
+{/* ------------------------------------------------------------------ */}
+
+### normalize
+
+<br />
+
+```ts
+vec.normalize(): this   // mutates in place
+```
+
+Scales to length 1 **in place**. Returns `this`.
+
+```ts
+const dir = target.sub(origin);
+dir.normalize();
+// dir is now a unit vector
+```
+
+<Warning>
+  Mutates the original. Use [normalized()](#normalized) if you need the
+  original preserved.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### normalized
+
+<br />
+
+```ts
+vec.normalized(): Vector2
+```
+
+Returns a **new** unit vector. The original is untouched.
+
+```ts
+const delta = target.sub(origin);
+const dir = delta.normalized();
+const dist = delta.length();
+// delta still has its original magnitude
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### rotate
+
+<br />
+
+```ts
+vec.rotate(degrees: number): Vector2
+```
+
+Rotates the vector by `degrees` around the origin. Returns a **new**
+Vector2. Positive = counter-clockwise.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `degrees` | `number` | Rotation angle in degrees |
+
+```ts
+const right = new Vector2(1, 0);
+
+const up = right.rotate(90);
+// up ≈ Vector2(0, 1)
+
+const left = right.rotate(180);
+// left ≈ Vector2(-1, 0)
+```
+
+<Tabs>
+  <Tab title="Indicator offset">
+    ```ts
+    // Draw 8 indicators in a circle around a screen point
+    const base = new Vector2(30, 0);  // 30px radius
+    for (let i = 0; i < 8; i++) {
+        const offset = base.rotate(i * 45);
+        const pos = center.add(offset);
+        Render.circleFilled(pos, 3, Color.white());
+    }
+    ```
+  </Tab>
+  <Tab title="Rotated HUD">
+    ```ts
+    // Arrow pointing in the direction of movement
+    const moveDir2D = new Vector2(vel.x, vel.y).normalized();
+    const angle = Math.toDegrees(Math.atan2(moveDir2D.y, moveDir2D.x));
+    const arrowTip = center.add(new Vector2(20, 0).rotate(angle));
+    ```
+  </Tab>
+</Tabs>
+
+{/* ------------------------------------------------------------------ */}
+
+### abs
+
+<br />
+
+```ts
+vec.abs(): Vector2
+```
+
+Returns a new Vector2 with absolute values of both components.
+
+```ts
+const v = new Vector2(-10, -20);
+const a = v.abs();  // Vector2(10, 20)
+```
+
+---
+
+## Utility
+
+{/* ------------------------------------------------------------------ */}
+
+### clone
+
+<br />
+
+```ts
+vec.clone(): Vector2
+```
+
+Returns an independent deep copy.
+
+```ts
+const original = new Vector2(10, 20);
+const copy = original.clone();
+copy.x = 999;
+// original.x is still 10
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toArray
+
+<br />
+
+```ts
+vec.toArray(): [number, number]
+```
+
+Returns `[x, y]` as a plain array.
+
+```ts
+const [sx, sy] = screenPos.toArray();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### toString
+
+<br />
+
+```ts
+vec.toString(): string
+```
+
+Returns a human-readable string with 3 decimal places.
+
+```ts
+const pos = new Vector2(640.5, 360);
+pos.toString();
+// "Vector2(640.500, 360.000)"
+```
+
+---
+
+## Common patterns
+
+<Tabs>
+  <Tab title="ESP label offset">
+    ```ts
+    const { success, screen } = Math.worldToScreen(headPos);
+    if (success) {
+        const namePos = screen.add(new Vector2(0, -14));
+        const hpPos = screen.add(new Vector2(0, 4));
+        Render.text(namePos, name, Color.white());
+        Render.text(hpPos, `${health} HP`, Color.green());
+    }
+    ```
+  </Tab>
+  <Tab title="Screen-space box">
+    ```ts
+    const { success: s1, screen: head } = Math.worldToScreen(headPos);
+    const { success: s2, screen: feet } = Math.worldToScreen(feetPos);
+
+    if (s1 && s2) {
+        const h = feet.y - head.y;
+        const w = h * 0.5;
+        const topLeft = head.sub(new Vector2(w / 2, 0));
+        Render.rect(topLeft, new Vector2(w, h), Color.red());
+    }
+    ```
+  </Tab>
+  <Tab title="Circle indicator">
+    ```ts
+    // Draw a dashed circle around a screen point
+    const radius = 40;
+    const segments = 32;
+    const base = new Vector2(radius, 0);
+
+    for (let i = 0; i < segments; i += 2) {
+        const a = center.add(base.rotate(i * (360 / segments)));
+        const b = center.add(base.rotate((i + 1) * (360 / segments)));
+        Render.line(a, b, Color.white());
+    }
+    ```
+  </Tab>
+  <Tab title="Normalized screen coords">
+    ```ts
+    // Convert pixel coords to [0, 1] range
+    const normPos = screenPos.div(
+        new Vector2(screenWidth, screenHeight)
+    );
+    ```
+  </Tab>
+</Tabs>

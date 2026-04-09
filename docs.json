@@ -39,7 +39,8 @@
           {
             "group": "Overview",
             "pages": [
-              "api/globals"
+              "api/globals",
+              "api/wasm"
             ]
           },
           {
