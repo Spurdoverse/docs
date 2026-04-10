@@ -1,7 +1,7 @@
 ---
 title: "Trace"
 sidebarTitle: "Trace"
-description: "Cast rays, boxes, spheres, and capsules through the game world — hit detection, visibility checks, overlap queries, and surface info."
+description: "Cast rays, boxes, spheres, and capsules through the game world - hit detection, visibility checks, overlap queries, and surface info."
 icon: "crosshairs"
 ---
 
@@ -10,12 +10,12 @@ import Trace from "@native/trace";
 ```
 
 The `Trace` module casts rays and sweeps shapes through the game world using
-the same collision data the engine uses — static geometry, dynamic entities,
+the same collision data the engine uses - static geometry, dynamic entities,
 and tagged collision layers.
 
 <Note>
   All trace functions are **synchronous** and return immediately. Create
-  a `TraceFilter` once and reuse it across frames — this avoids per-call
+  a `TraceFilter` once and reuse it across frames - this avoids per-call
   allocation and lets you build up an ignore list over time.
 </Note>
 
@@ -41,7 +41,7 @@ and tagged collision layers.
 ## Filters
 
 Every trace function accepts an optional **filter** that controls what
-the trace collides with. Filters can be passed in three forms — pick
+the trace collides with. Filters can be passed in three forms - pick
 whichever fits your situation:
 
 | Form | Example |
@@ -85,7 +85,7 @@ scenarios, or a configuration object for fine-grained control.
 const filter = Trace.filter("bullet");
 const visFilter = Trace.filter("visibility");
 
-// No argument — defaults to "bullet"
+// No argument - defaults to "bullet"
 const defaultFilter = Trace.filter();
 ```
 
@@ -115,12 +115,12 @@ const filter = Trace.filter({
 | `resolveMaterials` | `boolean` | `true` | Resolve surface material info on hit |
 | `resolveEntity` | `boolean` | `true` | Populate entity info on hit |
 | `backFaces` | `boolean` | `false` | Collide with back-facing surfaces |
-| `includeTags` | `string[]` | — | [Collision tags](#collision-tags) to include |
-| `excludeTags` | `string[]` | — | [Collision tags](#collision-tags) to exclude |
+| `includeTags` | `string[]` | - | [Collision tags](#collision-tags) to include |
+| `excludeTags` | `string[]` | - | [Collision tags](#collision-tags) to exclude |
 
 <Tip>
   Disable `resolveNormals`, `resolveMaterials`, and `resolveEntity` if
-  you only care about **whether** something was hit — the trace runs
+  you only care about **whether** something was hit - the trace runs
   faster when it doesn't need to fill in extra data.
 </Tip>
 
@@ -179,14 +179,14 @@ Once you have a filter, you can tell it to skip specific entities.
 Trace.ray(start: Vector, end: Vector, filter?): TraceResult
 ```
 
-Casts a single ray from `start` to `end`. The workhorse of the trace API —
+Casts a single ray from `start` to `end`. The workhorse of the trace API -
 use this for hit detection, aim checks, and penetration tests.
 
 <ParamField path="start" type="Vector" required>
   Ray origin, typically the player's eye position.
 </ParamField>
 <ParamField path="end" type="Vector" required>
-  Ray endpoint — the target position.
+  Ray endpoint - the target position.
 </ParamField>
 <ParamField path="filter" type="string | TraceFilter | FilterOptions">
   Collision filter. Defaults to `"bullet"` if omitted.
@@ -311,7 +311,7 @@ Trace.rayAll(start: Vector, end: Vector, filter?, maxHits?: number): TraceResult
 ```
 
 Casts a ray and returns **all** hits along the path, not just the first.
-Useful for penetration simulation — you get every surface the ray passes
+Useful for penetration simulation - you get every surface the ray passes
 through.
 
 <ParamField path="start" type="Vector" required>Ray origin.</ParamField>
@@ -353,7 +353,7 @@ Trace.isVisible(from: Vector, to: Vector): boolean
 
 The **fastest** way to check line of sight. Returns `true` if nothing
 blocks the path between `from` and `to`. Skips normal, material,
-and entity resolution entirely — just a yes/no answer.
+and entity resolution entirely - just a yes/no answer.
 
 <ParamField path="from" type="Vector" required>Start position (e.g. eye position).</ParamField>
 <ParamField path="to" type="Vector" required>Target position (e.g. enemy head).</ParamField>
@@ -373,7 +373,7 @@ if (Trace.isVisible(localPos, enemyPos)) {
 ```
 
 <Tip>
-  Use `isVisible` over `Trace.ray` when you only need a boolean — it's
+  Use `isVisible` over `Trace.ray` when you only need a boolean - it's
   significantly faster because it doesn't resolve any hit data.
 </Tip>
 
@@ -426,7 +426,7 @@ const nearby = Trace.overlapSphere(localPos, 256.0);
 
 for (const overlap of nearby) {
     if (overlap.entity) {
-        console.log(`${overlap.entity.className} — depth: ${overlap.depth}`);
+        console.log(`${overlap.entity.className} - depth: ${overlap.depth}`);
     }
 }
 ```
@@ -473,7 +473,7 @@ and each element of `Trace.rayAll`.
 | Property | Type | Description |
 |:---------|:-----|:------------|
 | `hit` | `boolean` | Whether the trace hit anything |
-| `fraction` | `number` | `0..1` — how far along the path the hit occurred |
+| `fraction` | `number` | `0..1` - how far along the path the hit occurred |
 | `position` | [`Vector`](/api/types/vector) | Impact point in world space |
 | `normal` | [`Vector`](/api/types/vector) | Surface normal at the impact point |
 | `startSolid` | `boolean` | `true` if the trace started inside solid geometry |
@@ -485,7 +485,7 @@ and each element of `Trace.rayAll`.
 | `entity` | `object \| null` | Entity info (see below) |
 | `surface` | `object \| null` | Surface material info (see below) |
 
-**`entity`** — populated when `resolveEntity` is `true` and the trace hit a dynamic entity:
+**`entity`** - populated when `resolveEntity` is `true` and the trace hit a dynamic entity:
 
 | Property | Type | |
 |:---------|:-----|:--|
@@ -493,7 +493,7 @@ and each element of `Trace.rayAll`.
 | `handle` | `number` | Entity handle |
 | `origin` | [`Vector`](/api/types/vector) | Entity origin |
 
-**`surface`** — populated when `resolveMaterials` is `true`:
+**`surface`** - populated when `resolveMaterials` is `true`:
 
 | Property | Type | |
 |:---------|:-----|:--|
@@ -553,7 +553,7 @@ Tags control which collision layers are included or excluded in a
 | Tag | Description |
 |:----|:------------|
 | `"pass_bullets"` | Surfaces that bullets pass through |
-| `"player_clip"` | Player clip brushes — block players, not bullets |
+| `"player_clip"` | Player clip brushes - block players, not bullets |
 | `"npc_clip"` | NPC clip brushes |
 | `"grenade_clip"` | Grenade clip brushes |
 | `"ladder"` | Ladder surfaces |
@@ -567,7 +567,7 @@ Tags control which collision layers are included or excluded in a
 
 ### Fast visibility check
 
-`Trace.isVisible` is the fastest way to check line of sight — it skips
+`Trace.isVisible` is the fastest way to check line of sight - it skips
 normal / material / entity resolution and just returns a boolean.
 
 ```ts

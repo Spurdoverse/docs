@@ -20,7 +20,7 @@ The `fs` module gives scripts a sandboxed file system rooted at `scripts/data`.
 
 <CardGroup cols={2}>
   <Card title="Reading & writing" icon="file-pen" href="#reading--writing">
-    Read, write, and append file contents — binary by default, UTF-8 with an encoding option.
+    Read, write, and append file contents - binary by default, UTF-8 with an encoding option.
   </Card>
   <Card title="Directories" icon="folder" href="#directories">
     Create, remove, and list directory entries.
@@ -54,11 +54,11 @@ Reads the full contents of a file. By default returns raw bytes as a
 and get a `string` instead.
 
 ```ts
-// Binary (default) — returns Uint8Array
+// Binary (default) - returns Uint8Array
 const raw = await fs.readFile("assets/icon.png");
 console.log(`${raw.byteLength} bytes`);
 
-// UTF-8 — returns string
+// UTF-8 - returns string
 const json = await fs.readFile("profiles/player1.json", "utf8");
 const profile = JSON.parse(json);
 console.log(`Welcome back, ${profile.name}!`);
@@ -175,7 +175,7 @@ Returns an array of entry names (files and subdirectories) inside `path`.
 const entries = await fs.readdir("saves");
 // ["slot1.json", "slot2.json", "autosave.json", "backups"]
 
-// Sync — build a script picker
+// Sync - build a script picker
 const files = fs.readdirSync("scripts");
 const jsFiles = files.filter(f => fs.path.extname(f) === ".js");
 ```
@@ -327,7 +327,7 @@ fs.watch(
 ): FSWatcher
 ```
 
-Watches a file or directory for changes. Returns an `FSWatcher` — call
+Watches a file or directory for changes. Returns an `FSWatcher` - call
 `.close()` to stop.
 
 | Event | Trigger |
@@ -362,9 +362,9 @@ const configWatcher = fs.watch("config.json", (event) => {
 
 ---
 
-## Path utilities — `fs.path`
+## Path utilities - `fs.path`
 
-Pure string helpers — they do **not** touch the file system.
+Pure string helpers - they do **not** touch the file system.
 
 | Function | Returns | Example |
 |:---------|:--------|:--------|
@@ -465,7 +465,7 @@ try {
     console.error("Write failed:", err);
 }
 
-// Guard pattern — cleanest when the file is optional
+// Guard pattern - cleanest when the file is optional
 if (await fs.exists("optional.json")) {
     const content = await fs.readFile("optional.json");
 }
@@ -479,7 +479,7 @@ All paths resolve relative to `scripts/data`. Any path that escapes the
 sandbox throws `"path escapes sandbox"`.
 
 <Warning>
-  The following will **always throw** — absolute paths and directory
+  The following will **always throw** - absolute paths and directory
   traversal are blocked at the sandbox boundary:
   ```ts
   await fs.readFile("/etc/passwd");          // absolute path

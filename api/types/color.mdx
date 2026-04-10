@@ -5,7 +5,7 @@ description: "RGBA color type with HSV/HSL conversion, blending, and brightness 
 icon: "palette"
 ---
 
-`Color` represents an RGBA color with four `uint8` components — `r`, `g`,
+`Color` represents an RGBA color with four `uint8` components - `r`, `g`,
 `b`, `a`, each in the range `0–255`. Every render function, ESP element,
 and visual effect uses this type.
 
@@ -21,7 +21,7 @@ and visual effect uses this type.
     RGBA, hex, arrays, objects, HSV, HSL, and float forms.
   </Card>
   <Card title="Arithmetic" icon="calculator" href="#arithmetic">
-    Add, subtract, scale — all return new instances.
+    Add, subtract, scale - all return new instances.
   </Card>
   <Card title="Modification" icon="sliders" href="#modification">
     Alpha override, brightness, and interpolation.
@@ -55,7 +55,7 @@ log(col.r, col.g, col.b, col.a);  // 255, 128, 0, 100
 
 ## Creating colors
 
-Seven forms — pick whatever fits your data source.
+Seven forms - pick whatever fits your data source.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -92,7 +92,7 @@ Creates a new Color. Missing components default to `255`.
     ```ts
     const col = new Color([255, 128, 0, 200]);
 
-    // 3-element arrays work — alpha defaults to 255
+    // 3-element arrays work - alpha defaults to 255
     const opaque = new Color([255, 128, 0]);
     ```
   </Tab>
@@ -155,7 +155,7 @@ const faded  = Color.fromHSV(120, 1, 1, 0.5);  // green, 50% alpha
 ```
 
 <Tip>
-  HSV is ideal for cycling through hues — just animate the `h` parameter
+  HSV is ideal for cycling through hues - just animate the `h` parameter
   from `0` to `360` for a rainbow effect.
 </Tip>
 
@@ -228,7 +228,7 @@ Render.circleFilled(pos, 5, Color.white());
 ```
 
 <Tip>
-  Presets create a new instance every call — safe to modify without
+  Presets create a new instance every call - safe to modify without
   affecting future calls: `const c = Color.red(); c.a = 128;` is fine.
 </Tip>
 
@@ -300,14 +300,14 @@ Color.
 
 ```ts
 const half = Color.red().mul(0.5);
-// (128, 0, 0, 255) — half-intensity red
+// (128, 0, 0, 255) - half-intensity red
 ```
 
 ---
 
 ## Modification
 
-These methods create variations of a color — adjusting alpha, brightness,
+These methods create variations of a color - adjusting alpha, brightness,
 or blending with another color. All return a **new** Color.
 
 {/* ------------------------------------------------------------------ */}
@@ -325,7 +325,7 @@ or a `0.0–1.0` float.
 
 | Param | Type | |
 |:------|:-----|:--|
-| `alpha` | `number` | New alpha — `0–255` (int) or `0.0–1.0` (float) |
+| `alpha` | `number` | New alpha - `0–255` (int) or `0.0–1.0` (float) |
 
 The engine auto-detects: if the value is a float in `[0.0, 1.0]` (and
 not an integer), it's treated as a fraction. Otherwise it's a byte.
@@ -337,7 +337,7 @@ const exact = solid.withAlpha(200);  // int   → a = 200
 ```
 
 <Warning>
-  The value `1` is ambiguous — it could mean "1 out of 255" or "100%
+  The value `1` is ambiguous - it could mean "1 out of 255" or "100%
   opacity". The engine treats integer `1` as the byte value `1` (nearly
   invisible). Use `1.0` for full opacity, or `255` to be explicit.
 </Warning>
@@ -484,7 +484,7 @@ color.toImU32(): number
 ```
 
 Returns the color as an ImGui-compatible packed integer (`ImU32`,
-ABGR byte order). You rarely need this directly — render functions
+ABGR byte order). You rarely need this directly - render functions
 accept Color objects natively.
 
 ```ts
@@ -501,7 +501,7 @@ const imcol = myColor.toImU32();
 color.equals(other: Color): boolean
 ```
 
-Exact equality — all four channels must match. Returns `false` if
+Exact equality - all four channels must match. Returns `false` if
 `other` is not a Color.
 
 | Param | Type | |
@@ -510,7 +510,7 @@ Exact equality — all four channels must match. Returns `false` if
 
 ```ts
 Color.red().equals(new Color(255, 0, 0, 255));  // true
-Color.red().equals(Color.red().withAlpha(128));   // false — alpha differs
+Color.red().equals(Color.red().withAlpha(128));   // false - alpha differs
 ```
 
 {/* ------------------------------------------------------------------ */}

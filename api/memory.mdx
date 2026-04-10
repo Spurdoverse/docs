@@ -14,7 +14,7 @@ Use it to find a module's base address, scan for signatures, and create
 [Pointer](/api/types/pointer) values to navigate from there.
 
 <Note>
-  `ptr(addr)` is also available as a **global shorthand** — you don't need
+  `ptr(addr)` is also available as a **global shorthand** - you don't need
   to write `Memory.ptr(addr)` everywhere.
 </Note>
 
@@ -47,7 +47,7 @@ Memory.ptr(address: number | BigInt | Pointer): Pointer
 ```
 
 Creates a [Pointer](/api/types/pointer) from a raw address. The two forms
-are identical — `ptr()` is the global shorthand.
+are identical - `ptr()` is the global shorthand.
 
 ```ts
 const p = ptr(0x7FFE0000n);
@@ -134,7 +134,7 @@ if (result) {
 Memory.scanAll(moduleName: string, pattern: string): Pointer[]
 ```
 
-Returns an array of [Pointer](/api/types/pointer) values — one for each
+Returns an array of [Pointer](/api/types/pointer) values - one for each
 occurrence of `pattern` in the module. Returns an empty array if none found.
 
 ```ts
@@ -165,7 +165,7 @@ match any byte at that position.
 
 <Tip>
   Patterns are usually copied from a disassembler (IDA, Ghidra, x64dbg).
-  Wildcard the bytes that change between builds — typically relative offsets,
+  Wildcard the bytes that change between builds - typically relative offsets,
   addresses, and immediate values that the linker patches at link time.
 </Tip>
 

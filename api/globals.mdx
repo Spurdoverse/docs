@@ -1,7 +1,7 @@
 ---
 title: "Globals"
 sidebarTitle: "Globals"
-description: "Timers, console output, event system, and the script object — available everywhere without imports."
+description: "Timers, console output, event system, and the script object - available everywhere without imports."
 icon: "globe"
 ---
 
@@ -18,11 +18,11 @@ reacting to game events, and reading per-frame state.
   <Card title="console" icon="terminal" href="#console">
     Log, warn, error, and assert output to the script console.
   </Card>
-  <Card title="Events — on / once / off" icon="bolt" href="#events">
+  <Card title="Events - on / once / off" icon="bolt" href="#events">
     React to ticks, input, and engine events. Returns IDs for cleanup.
   </Card>
   <Card title="script" icon="file-code" href="#script">
-    Metadata about the running script — name, version, author.
+    Metadata about the running script - name, version, author.
   </Card>
 </CardGroup>
 
@@ -31,7 +31,7 @@ reacting to game events, and reading per-frame state.
 ## Timers
 
 Standard browser-style timer API. IDs returned by `setTimeout` and
-`setInterval` are independent — pass the right ID to the right clear function.
+`setInterval` are independent - pass the right ID to the right clear function.
 
 ### setTimeout
 
@@ -175,13 +175,13 @@ Removes a callback by its ID. Returns `true` if found and removed,
 ```ts
 const id = on("tick", () => { /* ... */ });
 
-off(id);   // true  — removed
-off(id);   // false — already gone
+off(id);   // true  - removed
+off(id);   // false - already gone
 ```
 
 <Tip>
   Always store the ID returned by `on()` if you plan to clean up later.
-  Use `once()` when you only need a single invocation — it handles
+  Use `once()` when you only need a single invocation - it handles
   cleanup for you.
 </Tip>
 
@@ -192,7 +192,7 @@ off(id);   // false — already gone
 #### `"render"`
 
 Fires every frame when the overlay is being drawn. **All `Render` module
-calls must happen inside this callback** — drawing outside of it will cause
+calls must happen inside this callback** - drawing outside of it will cause
 flickering or missing visuals because the frame may have already been
 submitted.
 
@@ -208,15 +208,15 @@ on("render", () => {
 <Warning>
   Never call `Render.*` methods from `"tick"`, `setInterval`, or other
   non-render callbacks. The overlay only accepts draw commands during the
-  `"render"` event — anything else will flicker or not appear at all.
+  `"render"` event - anything else will flicker or not appear at all.
 </Warning>
 
 ---
 
 #### `"tick"`
 
-Fires every game tick (128 Hz). The primary place for per-frame **logic** —
-entity reads, state machines, calculations. Do **not** draw here — use
+Fires every game tick (128 Hz). The primary place for per-frame **logic** -
+entity reads, state machines, calculations. Do **not** draw here - use
 `"render"` for that.
 
 ```ts
@@ -417,7 +417,7 @@ import Render   from "@native/render";
 
 let cachedEnemies = [];
 
-// Heavy work in a timer — not every frame
+// Heavy work in a timer - not every frame
 setInterval(() => {
     cachedEnemies = Entities.find("C_CSPlayerPawn")
         .filter(p => p.m_iHealth > 0)

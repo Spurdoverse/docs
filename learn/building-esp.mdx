@@ -8,7 +8,7 @@ icon: "eye"
 In this tutorial we'll build a complete ESP from scratch.
 By the end you'll have animated corner boxes,
 health bars with damage indicators, name tags, and visibility-aware
-coloring — all running in real-time.
+coloring - all running in real-time.
 
 <Frame caption="What we're building: corner box ESP with health bars and name tags.">
   <img src="/images/esp-final.png" alt="Final ESP result" />
@@ -36,7 +36,7 @@ coloring — all running in real-time.
 
 ---
 
-## Step 1 — Project setup
+## Step 1 - Project setup
 
 Every ESP starts the same way: import what you need, hook into the
 tick event, and grab the local player.
@@ -66,11 +66,11 @@ on("tick", () => {
 
 ---
 
-## Step 2 — Bounding box calculation
+## Step 2 - Bounding box calculation
 
 The naïve approach is to hardcode a height offset (`origin.z + 72`),
 but that breaks for crouching players and non-standard models.
-Instead, we use the entity's **collision bounds** — `m_pCollision`
+Instead, we use the entity's **collision bounds** - `m_pCollision`
 gives us the real `mins`/`maxs` of the hitbox.
 
 We project all 8 corners of the 3D box to screen space and find
@@ -109,11 +109,11 @@ function getBoundingBox(entity) {
 
 <Tip>
   The bitmask trick `i & 1`, `i & 2`, `i & 4` generates all 8
-  combinations of min/max for x, y, z — one for each corner of the box.
+  combinations of min/max for x, y, z - one for each corner of the box.
 </Tip>
 
 If **any** corner is behind the camera, `worldToScreen` returns
-`success: false` and we bail out — drawing a partial box looks worse
+`success: false` and we bail out - drawing a partial box looks worse
 than drawing nothing.
 
 Let's plug it in:
@@ -136,11 +136,11 @@ on("tick", () => {
 
 ---
 
-## Step 3 — Box rendering
+## Step 3 - Box rendering
 
 A single `Render.rect` looks flat. For a polished look we'll draw
-three layers — dark outer outline, colored main box, and dark inner
-outline — plus animated corner accents.
+three layers - dark outer outline, colored main box, and dark inner
+outline - plus animated corner accents.
 
 ### Basic triple-outline box
 
@@ -210,13 +210,13 @@ Render.line(box.maxs, new Vector2(box.maxs.x, box.maxs.y - cornerLen), accent, 2
 
 <Tip>
   Adding `enemy.index` to the sine offset makes each player's corners
-  pulse independently — otherwise all boxes breathe in sync which
+  pulse independently - otherwise all boxes breathe in sync which
   looks unnatural.
 </Tip>
 
 ---
 
-## Step 4 — Health bars
+## Step 4 - Health bars
 
 A health bar sits to the left of the bounding box. We'll add:
 - A dark background with outline
@@ -271,7 +271,7 @@ Render.rectFilled(
     hpColor
 );
 
-// damage indicator — white flash showing lost HP
+// damage indicator - white flash showing lost HP
 if (state.hpSmooth > hp + 0.01) {
     const dmgH = h * state.hpSmooth;
     Render.rectFilled(
@@ -292,18 +292,18 @@ if (hp < 1) {
 ```
 
 The `Math.lerp` with `frameTime * 10` creates an exponential decay
-animation — the bar moves fast at first then slows down as it
+animation - the bar moves fast at first then slows down as it
 approaches the target value.
 
 ---
 
-## Step 5 — Name tags & visibility
+## Step 5 - Name tags & visibility
 
 ### Eye position helper
 
 For accurate visibility checks we need the player's **eye position**,
 not just their feet. The view offset is stored as a
-`CNetworkViewOffsetVector` — a packed struct that comes back as raw
+`CNetworkViewOffsetVector` - a packed struct that comes back as raw
 bytes. We read the floats manually:
 
 ```ts
@@ -378,7 +378,7 @@ Render.text(new Vector2(centerX, box.mins.y - 16), name, Color.white());
 
 ## Final result
 
-Here's everything put together — a complete, working ESP script:
+Here's everything put together - a complete, working ESP script:
 
 ```ts
 import Entities from "@native/entities";
@@ -573,7 +573,7 @@ export function onUnload() {
 
 Now that you have a working ESP, try extending it:
 
-- **Weapon name** — read `enemy.m_hActiveWeapon` and display the weapon class below the box
-- **Distance** — show distance in meters between you and each player
-- **Snaplines** — draw lines from the bottom of your screen to each enemy
-- **Team filtering** — compare `m_iTeamNum` to only draw enemies, not teammates
+- **Weapon name** - read `enemy.m_hActiveWeapon` and display the weapon class below the box
+- **Distance** - show distance in meters between you and each player
+- **Snaplines** - draw lines from the bottom of your screen to each enemy
+- **Team filtering** - compare `m_iTeamNum` to only draw enemies, not teammates

@@ -7,13 +7,13 @@ icon: "display"
 
 `Vector2` is a 2D vector with `x`, `y` components. You'll encounter it
 primarily as the return type of
-[Math.worldToScreen](/api/math#worldtoscreen) — screen-space pixel
+[Math.worldToScreen](/api/math#worldtoscreen) - screen-space pixel
 coordinates for ESP overlays and HUD elements.
 
 <Note>
   Unlike [Vector](/api/types/vector), Vector2 has **no z component**.
   Operations like `mul` and `div` accept both a scalar number and another
-  Vector2 — check the overloads below.
+  Vector2 - check the overloads below.
 </Note>
 
 ## Overview
@@ -23,7 +23,7 @@ coordinates for ESP overlays and HUD elements.
     Numbers, arrays, objects, or axis presets.
   </Card>
   <Card title="Arithmetic" icon="calculator" href="#arithmetic">
-    Add, subtract, multiply, divide — all return new instances.
+    Add, subtract, multiply, divide - all return new instances.
   </Card>
   <Card title="Length & distance" icon="ruler" href="#length--distance">
     Magnitude and distance on the 2D plane.
@@ -91,7 +91,7 @@ Creates a new Vector2. Missing components default to `0`.
     ```ts
     const pos = new Vector2({ x: 640, y: 360 });
 
-    // Partial — missing fields default to 0
+    // Partial - missing fields default to 0
     const xOnly = new Vector2({ x: 100 });
     ```
   </Tab>
@@ -131,7 +131,7 @@ Returns a new `(1, 1)` vector.
 Vector2.xAxis(): Vector2
 ```
 
-Returns `(1, 0)` — the horizontal unit vector.
+Returns `(1, 0)` - the horizontal unit vector.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -143,7 +143,7 @@ Returns `(1, 0)` — the horizontal unit vector.
 Vector2.yAxis(): Vector2
 ```
 
-Returns `(0, 1)` — the vertical unit vector.
+Returns `(0, 1)` - the vertical unit vector.
 
 ```ts
 // All four presets
@@ -215,7 +215,7 @@ vec.mul(factor: number): Vector2
 vec.mul(other: Vector2): Vector2
 ```
 
-Overloaded — accepts a **scalar** or a **Vector2** for component-wise
+Overloaded - accepts a **scalar** or a **Vector2** for component-wise
 multiplication.
 
 | Param | Type | |
@@ -243,7 +243,7 @@ vec.div(divisor: number): Vector2
 vec.div(other: Vector2): Vector2
 ```
 
-Overloaded — accepts a **scalar** or a **Vector2** for component-wise
+Overloaded - accepts a **scalar** or a **Vector2** for component-wise
 division.
 
 | Param | Type | |
@@ -363,7 +363,7 @@ const alignment = dir.dot(toTarget);
 vec.cross(other: Vector2): number
 ```
 
-Returns the 2D cross product — a **scalar**, not a vector. Its sign
+Returns the 2D cross product - a **scalar**, not a vector. Its sign
 tells you the winding direction: positive = `other` is counter-clockwise
 from `vec`, negative = clockwise.
 
@@ -380,7 +380,7 @@ b.cross(a);  // -1 (a is CW from b)
 ```
 
 <Note>
-  In 3D the cross product returns a vector. In 2D it returns a scalar —
+  In 3D the cross product returns a vector. In 2D it returns a scalar -
   the z-component of what the 3D cross would be. This is different
   from [Vector.cross](/api/types/vector#cross).
 </Note>

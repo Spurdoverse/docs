@@ -1,7 +1,7 @@
 ---
 title: "Game"
 sidebarTitle: "Game"
-description: "Per-frame timestamps, tick counters, map info, and frame timing — engine state updated every tick."
+description: "Per-frame timestamps, tick counters, map info, and frame timing - engine state updated every tick."
 icon: "gauge-high"
 ---
 
@@ -30,7 +30,7 @@ All fields are **readonly**.
 ```ts
 on("tick", () => {
     const speed = 200 * Game.frameTime;
-    console.log(`Tick #${Game.tickCount} — map: ${Game.shortMapName}`);
+    console.log(`Tick #${Game.tickCount} - map: ${Game.shortMapName}`);
 });
 ```
 

@@ -10,7 +10,7 @@ into GPU memory so you can draw it with [Render.image](/api/render#image)
 and [Render.imageRounded](/api/render#imagerounded).
 
 <Note>
-  Textures load **asynchronously** — they may not be ready on the same
+  Textures load **asynchronously** - they may not be ready on the same
   frame they're created. Always check `isReady` before drawing.
 </Note>
 
@@ -54,7 +54,7 @@ const icon = new Texture("assets/icon.png");
 ```
 
 <Warning>
-  Create textures **once** outside your render callback — not every
+  Create textures **once** outside your render callback - not every
   frame. Repeated construction causes repeated disk reads and GPU
   uploads.
 </Warning>
@@ -115,7 +115,7 @@ const checker = Texture.fromMemory(pixels, 2, 2);
 ```
 
 <Tip>
-  `fromMemory` is useful for procedurally generated textures — gradients,
+  `fromMemory` is useful for procedurally generated textures - gradients,
   noise patterns, or dynamically composited images.
 </Tip>
 

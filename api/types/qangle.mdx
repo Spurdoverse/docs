@@ -1,11 +1,11 @@
 ---
 title: "QAngle"
 sidebarTitle: "QAngle"
-description: "Euler angles for view direction, aim, and rotation — pitch, yaw, roll in degrees."
+description: "Euler angles for view direction, aim, and rotation - pitch, yaw, roll in degrees."
 icon: "compass-drafting"
 ---
 
-`QAngle` represents an Euler rotation as three components — **pitch**
+`QAngle` represents an Euler rotation as three components - **pitch**
 (up/down), **yaw** (left/right), and **roll** (tilt). Every view angle,
 aim calculation, and rotation in the engine uses this type.
 
@@ -20,10 +20,10 @@ aim calculation, and rotation in the engine uses this type.
 
 <CardGroup cols={2}>
   <Card title="Creating angles" icon="plus" href="#creating-angles">
-    Six constructor forms — numbers, arrays, objects, or zero.
+    Six constructor forms - numbers, arrays, objects, or zero.
   </Card>
   <Card title="Arithmetic" icon="calculator" href="#arithmetic">
-    Add, subtract, scale, divide, negate — all return new instances.
+    Add, subtract, scale, divide, negate - all return new instances.
   </Card>
   <Card title="Normalization" icon="arrows-rotate" href="#normalization">
     Wrap overflowed components back into valid ranges.
@@ -62,7 +62,7 @@ log(angle.roll);  // 0
 
 ## Creating angles
 
-Six forms — use whichever reads best in your code.
+Six forms - use whichever reads best in your code.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -94,7 +94,7 @@ Creates a new QAngle. Missing components default to `0`.
     const angle = new QAngle([45, 90, 0]);
     // pitch=45, yaw=90, roll=0
 
-    // Shorter arrays work — missing elements stay 0
+    // Shorter arrays work - missing elements stay 0
     const partial = new QAngle([10]);
     // pitch=10, yaw=0, roll=0
     ```
@@ -104,7 +104,7 @@ Creates a new QAngle. Missing components default to `0`.
     const angle = new QAngle({ pitch: 45, yaw: 90 });
     // pitch=45, yaw=90, roll=0
 
-    // Only set what you need — the rest default to 0
+    // Only set what you need - the rest default to 0
     const yawOnly = new QAngle({ yaw: 180 });
     ```
   </Tab>
@@ -137,7 +137,7 @@ const origin = QAngle.zero();
 
 ## Arithmetic
 
-All arithmetic methods return a **new** QAngle — the original is never
+All arithmetic methods return a **new** QAngle - the original is never
 modified. This makes them safe to use in calculations without cloning
 first.
 
@@ -305,7 +305,7 @@ const clean = raw.normalized();
 ```
 
 <Tip>
-  **normalize() vs normalized()** — the naming follows a common pattern:
+  **normalize() vs normalized()** - the naming follows a common pattern:
 
   | Method | Mutates? | Returns |
   |:-------|:---------|:--------|
@@ -325,7 +325,7 @@ const clean = raw.normalized();
 QAngle.normalizeAngle(deg: number): number
 ```
 
-Static utility — wraps a **single** angle value to `[-180, 180]`.
+Static utility - wraps a **single** angle value to `[-180, 180]`.
 Useful when you need to normalize one component without touching the
 others.
 
@@ -345,7 +345,7 @@ QAngle.normalizeAngle(45);    // 45 (unchanged)
 
 Decompose the angle into perpendicular direction vectors. These are
 instance-method shortcuts for
-[Math.angleVectors](/api/math#anglevectors) — same math, different
+[Math.angleVectors](/api/math#anglevectors) - same math, different
 syntax.
 
 {/* ------------------------------------------------------------------ */}
@@ -358,7 +358,7 @@ syntax.
 angle.forward(): Vector
 ```
 
-Returns the **forward** direction vector — where this angle is pointing.
+Returns the **forward** direction vector - where this angle is pointing.
 This is the direction you'd trace a ray along.
 
 ```ts
@@ -373,7 +373,7 @@ const traceEnd = {
 
 <Tip>
   `angle.forward()` is equivalent to
-  `Math.angleVectors(angle).forward` — use whichever reads better.
+  `Math.angleVectors(angle).forward` - use whichever reads better.
   If you need multiple vectors at once, `Math.angleVectors` is more
   efficient (one decomposition vs three).
 </Tip>
@@ -388,7 +388,7 @@ const traceEnd = {
 angle.right(): Vector
 ```
 
-Returns the **right** direction vector — perpendicular to forward,
+Returns the **right** direction vector - perpendicular to forward,
 pointing to the right side of the view.
 
 ```ts
@@ -412,7 +412,7 @@ const sidePos = {
 angle.up(): Vector
 ```
 
-Returns the **up** direction vector — perpendicular to both forward and
+Returns the **up** direction vector - perpendicular to both forward and
 right, pointing above the view.
 
 ```ts
@@ -441,7 +441,7 @@ instance method.
 |:------|:-----|:--|
 | `other` | `QAngle` | Target angle to compare against |
 
-**Returns** `number` — `0` = identical direction, `180` = opposite.
+**Returns** `number` - `0` = identical direction, `180` = opposite.
 
 ```ts
 const aim = Math.calcAngle(myEyePos, enemy.headPos);
@@ -546,7 +546,7 @@ angle.set(0, 180, 0);
 // angle is now QAngle(0, 180, 0)
 
 angle.set({ yaw: -90 });
-// angle is now QAngle(0, -90, 0) — pitch and roll reset to 0
+// angle is now QAngle(0, -90, 0) - pitch and roll reset to 0
 ```
 
 <Warning>
@@ -635,12 +635,12 @@ shake.length();  // 2.29...
 angle.lengthSqr(): number
 ```
 
-Squared length — `pitch² + yaw² + roll²`. Faster than `length()` when
+Squared length - `pitch² + yaw² + roll²`. Faster than `length()` when
 you only need to compare magnitudes.
 
 ```ts
 if (deltaAngle.lengthSqr() < 0.01) {
-    // Almost no rotation change — skip update
+    // Almost no rotation change - skip update
 }
 ```
 

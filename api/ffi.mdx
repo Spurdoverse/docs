@@ -10,7 +10,7 @@ import FFI from "@native/ffi";
 ```
 
 The `FFI` module lets you load native libraries (`.dll`, `.so`) and call their
-functions directly from JavaScript — no bindings, no wrappers.
+functions directly from JavaScript - no bindings, no wrappers.
 
 <Note>
   Pointers are represented as **BigInt** values. A `0n` BigInt is a null
@@ -85,7 +85,7 @@ const libc   = FFI.open("libc.so.6");
 lib.close(): void
 ```
 
-Unloads the library. Any functions resolved from it become invalid —
+Unloads the library. Any functions resolved from it become invalid -
 calling them after `close()` will crash.
 
 ```ts
@@ -105,7 +105,7 @@ lib.proc(name: string, retType: string, argTypes?: string[]): Function
 ```
 
 Resolves a symbol by name and wraps it as a callable function.
-The quick-and-dirty way — pass types as separate arguments.
+The quick-and-dirty way - pass types as separate arguments.
 
 | Param | Type | |
 |:------|:-----|:--|
@@ -234,7 +234,7 @@ const ok = await readFile(hFile, buf, bufSize, bytesRead, FFI.nullptr);
 ## Structs & unions
 
 Define C-compatible memory layouts. Struct instances are backed by an
-`ArrayBuffer` — fields are live accessors into the buffer, not copies.
+`ArrayBuffer` - fields are live accessors into the buffer, not copies.
 Write a field and the native memory updates immediately.
 
 {/* ------------------------------------------------------------------ */}
@@ -282,7 +282,7 @@ const Player = FFI.struct("Player", {
 ```
 
 <Note>
-  `char[N]` fields are treated as C strings — they read/write as JS
+  `char[N]` fields are treated as C strings - they read/write as JS
   strings, auto null-terminated at `N-1`.
 </Note>
 
@@ -368,16 +368,16 @@ const Value = FFI.union("Value", {
 
 const v = Value.alloc();
 v.asInt = 0x42280000;
-log(v.asFloat); // 42.0 — same bits, different interpretation
+log(v.asFloat); // 42.0 - same bits, different interpretation
 ```
 
-The returned type has `alloc()`, `from()`, and `view()` — same as struct.
+The returned type has `alloc()`, `from()`, and `view()` - same as struct.
 
 ---
 
 ## Memory
 
-Raw memory operations. Use these when you need to go below struct-level —
+Raw memory operations. Use these when you need to go below struct-level -
 reading strings from pointers, allocating scratch buffers, or converting
 between pointer representations.
 
@@ -413,12 +413,12 @@ Frees memory previously allocated by native code (via the C runtime's
 ```ts
 const pStr = someDll.func("string! GetName()")();
 // The `!` suffix means the return value must be freed
-// But with disposable() this is handled automatically — see below
+// But with disposable() this is handled automatically - see below
 ```
 
 <Warning>
   Only use `FFI.free` on pointers returned by native allocators (e.g.
-  `malloc`). **Never** free an `ArrayBuffer` pointer — the JS garbage
+  `malloc`). **Never** free an `ArrayBuffer` pointer - the JS garbage
   collector owns those.
 </Warning>
 
@@ -557,7 +557,7 @@ FFI.callback(signature: string, fn: Function): BigInt
 FFI.callback(retType: string, argTypes: string[], fn: Function): BigInt
 ```
 
-Returns a BigInt pointer to a native-callable trampoline. Two forms —
+Returns a BigInt pointer to a native-callable trampoline. Two forms -
 signature string or explicit types.
 
 <Tabs>
@@ -613,7 +613,7 @@ FFI.freeCallback(cb);
 
 ## Type system
 
-Type names are strings used throughout the FFI API — in signatures,
+Type names are strings used throughout the FFI API - in signatures,
 struct fields, `proc` calls, and `sizeOf`. The engine recognizes
 C-style names, Rust-style names, and Windows typedefs.
 
@@ -721,7 +721,7 @@ The managed handle has:
 <Tip>
   The `!` suffix on a return type (e.g. `string!`) signals that the
   return value is heap-allocated and should be freed. It's a convention,
-  not enforced — pair it with `.disposable()` for safety.
+  not enforced - pair it with `.disposable()` for safety.
 </Tip>
 
 {/* ------------------------------------------------------------------ */}
@@ -778,7 +778,7 @@ FFI.using(() => {
 </Tabs>
 
 <Warning>
-  `FFI.using` is synchronous. Don't `await` inside it — the scope
+  `FFI.using` is synchronous. Don't `await` inside it - the scope
   closes on function return, not on promise resolution.
 </Warning>
 
@@ -851,7 +851,7 @@ returnType [callingConvention] functionName([_Out_|_Inout_] paramType, ..., ...)
 
 ## Complete example
 
-Putting it all together — calling the Windows API to show a message box
+Putting it all together - calling the Windows API to show a message box
 and read the cursor position:
 
 ```ts

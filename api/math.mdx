@@ -1,11 +1,11 @@
 ---
 title: "Math"
 sidebarTitle: "Math"
-description: "Angle math, screen projection, and interpolation — built into the global Math object."
+description: "Angle math, screen projection, and interpolation - built into the global Math object."
 icon: "calculator"
 ---
 
-The engine extends the global `Math` object. No imports needed — just call
+The engine extends the global `Math` object. No imports needed - just call
 `Math.calcAngle(...)` like you'd call `Math.sin(...)`.
 
 <Note>
@@ -26,7 +26,7 @@ The engine extends the global `Math` object. No imports needed — just call
     Clamp, normalize, and compare angles safely.
   </Card>
   <Card title="Interpolation" icon="wave-sine" href="#interpolation--mapping">
-    Lerp, smooth step, remap — smooth everything.
+    Lerp, smooth step, remap - smooth everything.
   </Card>
 </CardGroup>
 
@@ -94,7 +94,7 @@ for (const enemy of Entities.getPlayers({ skipLocal: true })) {
 
 <Warning>
   The returned angle is **not** normalized. Pipe it through
-  [clampAngles](#clampangles) before sending to the engine — it
+  [clampAngles](#clampangles) before sending to the engine - it
   hard-caps pitch to `[-89, 89]` which the engine requires.
   Use [normalizeAngles](#normalizeangles) instead if you only need to
   wrap overflows (e.g. for angle comparisons or delta calculations).
@@ -130,11 +130,11 @@ const traceEnd = eyePos.add(forward.scale(1000));
 ```
 
 <Tip>
-  You rarely need all three vectors. Destructure only what you use —
+  You rarely need all three vectors. Destructure only what you use -
   `const { forward } = ...` is the most common pattern.
 </Tip>
 
-See also: [vectorAngles](#vectorangles) — the inverse operation.
+See also: [vectorAngles](#vectorangles) - the inverse operation.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -146,7 +146,7 @@ See also: [vectorAngles](#vectorangles) — the inverse operation.
 Math.vectorAngles(vec: Vector): QAngle
 ```
 
-The inverse of `angleVectors` — converts a direction vector back to an
+The inverse of `angleVectors` - converts a direction vector back to an
 Euler angle.
 
 | Param | Type | |
@@ -158,7 +158,7 @@ const moveAngle = Math.vectorAngles(entity.getVelocity());
 // moveAngle.yaw → compass direction the entity is walking
 ```
 
-See also: [angleVectors](#anglevectors) — the inverse operation.
+See also: [angleVectors](#anglevectors) - the inverse operation.
 
 ---
 
@@ -337,7 +337,7 @@ Think of it as "how many degrees would I move my crosshair to reach this?"
 | `view` | [QAngle](/api/types#qangle) | Your current view angle |
 | `aim` | [QAngle](/api/types#qangle) | Target angle (from [calcAngle](#calcangle)) |
 
-**Returns** `number` — `0` = perfectly aligned, `180` = opposite direction.
+**Returns** `number` - `0` = perfectly aligned, `180` = opposite direction.
 
 ```ts
 import Entities from "@native/entities";
@@ -375,9 +375,9 @@ Math.clamp(value: number, min: number, max: number): number
 Restricts a value to `[min, max]`. Below min → min. Above max → max.
 
 ```ts
-Math.clamp(1.5,  0, 1);    // 1     — capped at max
-Math.clamp(-3,   0, 100);  // 0     — capped at min
-Math.clamp(50,   0, 100);  // 50    — in range, untouched
+Math.clamp(1.5,  0, 1);    // 1     - capped at max
+Math.clamp(-3,   0, 100);  // 0     - capped at min
+Math.clamp(50,   0, 100);  // 50    - in range, untouched
 
 // Always clamp health fraction before using it
 const fill = Math.clamp(health / maxHealth, 0, 1);
@@ -394,7 +394,7 @@ Math.lerp(a: number, b: number, t: number): number
 ```
 
 Linear interpolation. `t=0` → `a`, `t=1` → `b`, `t=0.5` → midpoint.
-Not clamped — `t` outside `[0, 1]` extrapolates past the endpoints.
+Not clamped - `t` outside `[0, 1]` extrapolates past the endpoints.
 
 ```ts
 Math.lerp(0, 100, 0.25);  // 25
@@ -406,7 +406,7 @@ currentX = Math.lerp(currentX, targetX, 0.3);
 ```
 
 <Tip>
-  `lerp` with a constant `t` each frame gives **exponential decay** — the
+  `lerp` with a constant `t` each frame gives **exponential decay** - the
   object slows as it approaches the target. `0.1–0.3` feels smooth,
   `0.5+` feels snappy.
 </Tip>
@@ -430,9 +430,9 @@ it sits as a `0–1` factor.
 </Note>
 
 ```ts
-Math.inverseLerp(0, 100, 25);   // 0.25  — a quarter through
-Math.inverseLerp(0, 100, 100);  // 1.0   — at the end
-Math.inverseLerp(0, 100, 150);  // 1.5   — past the end (not clamped)
+Math.inverseLerp(0, 100, 25);   // 0.25  - a quarter through
+Math.inverseLerp(0, 100, 100);  // 1.0   - at the end
+Math.inverseLerp(0, 100, 150);  // 1.5   - past the end (not clamped)
 
 // "How far through the animation?"
 const progress = Math.inverseLerp(startTime, endTime, now);
@@ -448,15 +448,15 @@ const progress = Math.inverseLerp(startTime, endTime, now);
 Math.smoothStep(a: number, b: number, t: number): number
 ```
 
-Like `lerp` but with easing — starts slow, speeds up, ends slow.
+Like `lerp` but with easing - starts slow, speeds up, ends slow.
 Internally clamps `t` to `[0, 1]`, then applies `3t² − 2t³`.
 
 ```ts
-Math.smoothStep(0, 1, 0.0);  // 0.0     — start
-Math.smoothStep(0, 1, 0.1);  // 0.028   — slow ramp
-Math.smoothStep(0, 1, 0.5);  // 0.5     — midpoint
-Math.smoothStep(0, 1, 0.9);  // 0.972   — slow finish
-Math.smoothStep(0, 1, 1.0);  // 1.0     — end
+Math.smoothStep(0, 1, 0.0);  // 0.0     - start
+Math.smoothStep(0, 1, 0.1);  // 0.028   - slow ramp
+Math.smoothStep(0, 1, 0.5);  // 0.5     - midpoint
+Math.smoothStep(0, 1, 0.9);  // 0.972   - slow finish
+Math.smoothStep(0, 1, 1.0);  // 1.0     - end
 ```
 
 <Tabs>
@@ -504,7 +504,7 @@ Math.remapVal(val: number, srcMin: number, srcMax: number, dstMin: number, dstMa
 
 Maps a value from one range to another. The Swiss army knife for converting
 game values to visual properties.
-Does **not** clamp — wrap in [clamp](#clamp) if you need bounded output.
+Does **not** clamp - wrap in [clamp](#clamp) if you need bounded output.
 
 <Tabs>
   <Tab title="Health → color">
@@ -557,7 +557,7 @@ Does **not** clamp — wrap in [clamp](#clamp) if you need bounded output.
 ### Putting it together
 
 A typical overlay pipeline chains several interpolation functions.
-Here's a complete example — an ESP name tag that fades and shrinks
+Here's a complete example - an ESP name tag that fades and shrinks
 with distance:
 
 ```ts

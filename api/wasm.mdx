@@ -5,7 +5,7 @@ description: "Run WebAssembly modules inside scripts with full WASI Preview 1 su
 icon: "cube"
 ---
 
-The runtime supports the standard **WebAssembly JavaScript API** — you
+The runtime supports the standard **WebAssembly JavaScript API** - you
 can compile, instantiate, and run `.wasm` modules directly from your
 scripts. The engine implements the full `wasi_snapshot_preview1`
 interface, so WASI-compatible modules work out of the box.
@@ -22,7 +22,7 @@ try {
     console.log("python exited normally");
 } catch (e) {
     if (String(e).includes("__wasi_proc_exit__"))
-        console.log("python called proc_exit — ok");
+        console.log("python called proc_exit - ok");
     else
         console.log("python error:", String(e));
 }
@@ -30,6 +30,6 @@ try {
 
 <Tip>
   For a deeper dive into `WebAssembly.Module`, `WebAssembly.Instance`,
-  imports, memory, and tables — see the
+  imports, memory, and tables - see the
   [MDN WebAssembly guide](https://developer.mozilla.org/en-US/docs/WebAssembly/Guides/Using_the_JavaScript_API).
 </Tip>

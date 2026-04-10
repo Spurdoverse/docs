@@ -1,7 +1,7 @@
 ---
 title: "Entities"
 sidebarTitle: "Entities"
-description: "Query, iterate, and read schema fields from any game entity — players, weapons, projectiles, and everything else."
+description: "Query, iterate, and read schema fields from any game entity - players, weapons, projectiles, and everything else."
 icon: "users"
 ---
 
@@ -10,11 +10,11 @@ import Entities from "@native/entities";
 ```
 
 The `Entities` module exposes the game's entity list. Every entity is backed
-by a **cached snapshot** that is refreshed each frame — reads are fast and
+by a **cached snapshot** that is refreshed each frame - reads are fast and
 safe to call in per-frame callbacks without worrying about memory access.
 
 <Note>
-  Entity objects are **lazy** — they hold an index, not a pointer. The
+  Entity objects are **lazy** - they hold an index, not a pointer. The
   actual data is fetched from the per-frame cache on first property access.
   Always check `.isValid` before reading fields in contexts where an entity
   might have just died or despawned.
@@ -27,7 +27,7 @@ safe to call in per-frame callbacks without worrying about memory access.
     Get all entities, look up by index, or grab players.
   </Card>
   <Card title="Query builder" icon="filter" href="#query-builder">
-    Chain class filters and iterators — forEach, map, filter, first.
+    Chain class filters and iterators - forEach, map, filter, first.
   </Card>
   <Card title="Entity object" icon="cube" href="#entity-object">
     Schema fields, reserved properties, and the raw-buffer API.
@@ -50,7 +50,7 @@ Entities.getByIndex(index: number): Entity
 ```
 
 Returns an `Entity` handle for a given entity list index. The entity may or
-may not be valid — always check `.isValid`.
+may not be valid - always check `.isValid`.
 
 ```ts
 const ent = Entities.getByIndex(1);
@@ -81,7 +81,7 @@ for (const ent of all) {
 ```
 
 <Tip>
-  Prefer `Entities.find()` when you only need a specific class — it avoids
+  Prefer `Entities.find()` when you only need a specific class - it avoids
   allocating the full array and skips irrelevant entities early.
 </Tip>
 
@@ -96,7 +96,7 @@ Entities.getPlayers(options?: { skipLocal?: boolean }): Entity[]
 ```
 
 Returns all **player pawns** in the game (`C_CSPlayerPawn` and
-`C_CSObserverPawn`). Each element is the pawn entity — use `.controller`
+`C_CSObserverPawn`). Each element is the pawn entity - use `.controller`
 to reach the `CCSPlayerController`.
 
 | Option | Type | Default | |
@@ -140,7 +140,7 @@ if (local) {
 
 ## Query builder
 
-`Entities.find()` returns a **Query** — a lazy, chainable object that filters
+`Entities.find()` returns a **Query** - a lazy, chainable object that filters
 entities from the snapshot. Nothing is read until you call a terminal method
 (`toArray`, `forEach`, `first`, `count`, `map`, `some`, `every`).
 
@@ -152,14 +152,14 @@ entities from the snapshot. Nothing is read until you call a terminal method
 // Exact class name match
 Entities.find(className: string): Query
 
-// Options object — className for exact match, parent for inheritance
+// Options object - className for exact match, parent for inheritance
 Entities.find(options: { className?: string, parent?: string }): Query
 ```
 
 | Option | | |
 |:-------|:--|:--|
-| `className` | Exact match — only entities whose class is exactly this | `"C_CSPlayerPawn"` |
-| `parent` | Inheritance match — any entity whose class inherits from this | `"C_BaseEntity"` |
+| `className` | Exact match - only entities whose class is exactly this | `"C_CSPlayerPawn"` |
+| `parent` | Inheritance match - any entity whose class inherits from this | `"C_BaseEntity"` |
 
 <CodeGroup>
 ```ts Exact class
@@ -221,7 +221,7 @@ const nearest = enemies[0];
 
 ## Entity object
 
-Every value returned by the `Entities` API is an **Entity** — a dynamic
+Every value returned by the `Entities` API is an **Entity** - a dynamic
 proxy that reads fields directly from the per-frame entity cache.
 
 ### Reserved properties
@@ -267,16 +267,16 @@ const eyeAngle = player.m_angEyeAngles;       // QAngle
 // Strings
 const name     = player.m_iszPlayerName;      // string (CUtlString)
 
-// Handles — automatically resolved to Entity | null
+// Handles - automatically resolved to Entity | null
 const weapon   = player.m_hActiveWeapon;      // Entity | null
 
-// Inline nested structs — returns a nested object with its own fields
+// Inline nested structs - returns a nested object with its own fields
 const collision = player.m_Collision;
 const mins = collision.m_vMinBounds;          // Vector
 ```
 
 <Warning>
-  Builtin fields (`bool`, `int32`, `float`, etc.) are **writable** — you can
+  Builtin fields (`bool`, `int32`, `float`, etc.) are **writable** - you can
   set them directly: `player.m_iHealth = 100`. All other field types (pointers,
   nested structs, vectors, handles) are read-only.
 </Warning>
@@ -302,7 +302,7 @@ for (const pawn of Entities.getPlayers()) {
 ### CUtlVector fields
 
 Fields of type `CUtlVector` (or `CNetworkUtlVectorBase`) return a
-**UtlVector** object — a lazy wrapper around the native array that
+**UtlVector** object - a lazy wrapper around the native array that
 reads elements on demand.
 
 | Method | Returns | Description |

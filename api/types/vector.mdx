@@ -1,17 +1,17 @@
 ---
 title: "Vector"
 sidebarTitle: "Vector"
-description: "3D vector for positions, velocities, directions — the most used type in the engine."
+description: "3D vector for positions, velocities, directions - the most used type in the engine."
 icon: "location-arrow"
 ---
 
 `Vector` is a 3D vector with `x`, `y`, `z` components. World positions,
-velocities, normals, trace endpoints — almost everything spatial is a
+velocities, normals, trace endpoints - almost everything spatial is a
 Vector. If you're writing game logic, you'll use this type more than
 any other.
 
 <Note>
-  All Vector arithmetic methods return a **new** Vector — the original is
+  All Vector arithmetic methods return a **new** Vector - the original is
   never modified. The exceptions are `normalize()` and direct property
   assignment (`vec.x = 10`), which mutate in place.
 </Note>
@@ -23,7 +23,7 @@ any other.
     Constructor and static factories.
   </Card>
   <Card title="Arithmetic" icon="calculator" href="#arithmetic">
-    Add, subtract, multiply, scale — all return new instances.
+    Add, subtract, multiply, scale - all return new instances.
   </Card>
   <Card title="Length & distance" icon="ruler" href="#length--distance">
     Magnitude, squared variants, and distance between points.
@@ -32,7 +32,7 @@ any other.
     Dot product, cross product.
   </Card>
   <Card title="Normalization" icon="arrows-rotate" href="#normalization">
-    Unit vectors — mutating and non-mutating.
+    Unit vectors - mutating and non-mutating.
   </Card>
   <Card title="Utility" icon="wrench" href="#utility">
     Clone, validity checks, conversion, string output.
@@ -177,8 +177,8 @@ const delta = enemyPos.sub(myPos);
 vec.mul(other: Vector): Vector
 ```
 
-Component-wise multiplication — `x*x`, `y*y`, `z*z`. Returns a new
-Vector. This is **not** dot or cross product — it's the Hadamard product.
+Component-wise multiplication - `x*x`, `y*y`, `z*z`. Returns a new
+Vector. This is **not** dot or cross product - it's the Hadamard product.
 
 | Param | Type | |
 |:------|:-----|:--|
@@ -250,13 +250,13 @@ vec.lengthSqr(): number
 ```
 
 Returns the **squared** length: `x² + y² + z²`. Faster than `length()`
-because it skips the square root — use it when you're comparing
+because it skips the square root - use it when you're comparing
 magnitudes, not when you need the actual value.
 
 ```ts
 // "Is the player moving faster than 200 u/s?"
 if (vel.lengthSqr() > 200 * 200) {
-    // yes — and we didn't pay for a sqrt
+    // yes - and we didn't pay for a sqrt
 }
 ```
 
@@ -265,9 +265,9 @@ if (vel.lengthSqr() > 200 * 200) {
 
   | Need | Use |
   |:-----|:----|
-  | Compare two magnitudes | `lengthSqr()` — both skip sqrt, comparison still valid |
-  | Display speed in HUD | `length()` — you need the actual number |
-  | Threshold check (`> N`) | `lengthSqr()` — compare against `N * N` |
+  | Compare two magnitudes | `lengthSqr()` - both skip sqrt, comparison still valid |
+  | Display speed in HUD | `length()` - you need the actual number |
+  | Threshold check (`> N`) | `lengthSqr()` - compare against `N * N` |
 </Tip>
 
 {/* ------------------------------------------------------------------ */}
@@ -322,7 +322,7 @@ vec.distToSqr(other: Vector): number
 ```
 
 Returns the **squared** distance to another vector. Same speed advantage
-as `lengthSqr` — no square root.
+as `lengthSqr` - no square root.
 
 | Param | Type | |
 |:------|:-----|:--|
@@ -384,7 +384,7 @@ if (alignment > 0.9) {
 vec.cross(other: Vector): Vector
 ```
 
-Returns the cross product — a vector **perpendicular** to both inputs.
+Returns the cross product - a vector **perpendicular** to both inputs.
 The magnitude equals the area of the parallelogram they span.
 
 | Param | Type | |
@@ -395,7 +395,7 @@ The magnitude equals the area of the parallelogram they span.
 const a = new Vector(1, 0, 0);
 const b = new Vector(0, 1, 0);
 
-const up = a.cross(b);  // Vector(0, 0, 1) — Z axis
+const up = a.cross(b);  // Vector(0, 0, 1) - Z axis
 ```
 
 <Warning>
@@ -422,7 +422,7 @@ Scales the vector to length 1 **in place**. Returns `this`.
 ```ts
 const dir = enemyPos.sub(myPos);
 dir.normalize();
-// dir is now a unit vector — length() ≈ 1.0
+// dir is now a unit vector - length() ≈ 1.0
 ```
 
 <Warning>
@@ -451,7 +451,7 @@ const dist = toTarget.length();
 ```
 
 <Tip>
-  **normalize() vs normalized()** — same pattern as QAngle:
+  **normalize() vs normalized()** - same pattern as QAngle:
 
   | Method | Mutates? | Returns |
   |:-------|:---------|:--------|
@@ -511,7 +511,7 @@ not `±Infinity`).
 
 ```ts
 if (!result.isFinite()) {
-    // Something went wrong — don't use this vector
+    // Something went wrong - don't use this vector
 }
 ```
 
@@ -584,7 +584,7 @@ Vector.lerp(a: Vector, b: Vector, t: number): Vector
 ```
 
 Linear interpolation between two vectors. `t=0` returns `a`, `t=1`
-returns `b`, `t=0.5` returns the midpoint. Not clamped — `t` outside
+returns `b`, `t=0.5` returns the midpoint. Not clamped - `t` outside
 `[0, 1]` extrapolates.
 
 | Param | Type | |
@@ -620,7 +620,7 @@ returns `b`, `t=0.5` returns the midpoint. Not clamped — `t` outside
 
 <Tip>
   `Vector.lerp` with a constant `t` each frame gives **exponential
-  decay** — the same smooth-follow behavior as `Math.lerp`. Values
+  decay** - the same smooth-follow behavior as `Math.lerp`. Values
   around `0.1–0.3` feel smooth, `0.5+` feels snappy.
 </Tip>
 
@@ -684,7 +684,7 @@ Real-world patterns that combine Vector methods with the
     const delta = enemyPos.sub(myPos);
     const dist = delta.length();
     const dir = delta.normalized();
-    // delta is preserved — dir is a new unit vector
+    // delta is preserved - dir is a new unit vector
     ```
   </Tab>
   <Tab title="Is enemy behind me?">

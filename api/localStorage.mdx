@@ -1,22 +1,22 @@
 ---
 title: "localStorage"
 sidebarTitle: "localStorage"
-description: "Persistent key-value storage that survives script reloads and restarts — the familiar browser API, but better."
+description: "Persistent key-value storage that survives script reloads and restarts - the familiar browser API, but better."
 icon: "database"
 ---
 
 ```ts
-// No import needed — available globally
+// No import needed - available globally
 localStorage.setItem("key", value);
 ```
 
-Your favorite browser API in a modern version. `localStorage` provides persistent key-value storage that survives script reloads and restarts. Data is encrypted on disk, and each script has its own isolated storage — scripts cannot access each other's data.
+Your favorite browser API in a modern version. `localStorage` provides persistent key-value storage that survives script reloads and restarts. Data is encrypted on disk, and each script has its own isolated storage - scripts cannot access each other's data.
 
-Unlike the browser version, values are serialized using the **structured clone algorithm** (same as IndexedDB), so any JS type is supported — not just strings.
+Unlike the browser version, values are serialized using the **structured clone algorithm** (same as IndexedDB), so any JS type is supported - not just strings.
 
 <Note>
   **Supported value types:** objects, arrays, numbers, strings, booleans, `null`, `Date`, `RegExp`, `Map`, `Set`, `ArrayBuffer`, `TypedArray`.
-  No more `JSON.stringify` / `JSON.parse` wrappers — just store and retrieve.
+  No more `JSON.stringify` / `JSON.parse` wrappers - just store and retrieve.
 </Note>
 
 ## Overview
@@ -138,7 +138,7 @@ localStorage.key(2); // null
 ```
 
 <Warning>
-  `key()` and `length` scan storage internally — avoid calling them in hot loops or inside `on("render", ...)`.
+  `key()` and `length` scan storage internally - avoid calling them in hot loops or inside `on("render", ...)`.
 </Warning>
 
 ---
@@ -161,7 +161,7 @@ console.log(`${localStorage.length} keys in storage`);
 
 ## Property access
 
-You can also use direct property syntax via a `Proxy` — reads, writes, and deletes all work as expected.
+You can also use direct property syntax via a `Proxy` - reads, writes, and deletes all work as expected.
 
 ```ts
 // Write
@@ -183,7 +183,7 @@ for (const key in localStorage) {
   Built-in property names (`setItem`, `getItem`, `removeItem`, `clear`, `key`, `length`)
   cannot be used as storage keys via property syntax. Use `setItem` / `getItem` for these names:
   ```ts
-  // Won't work — "length" is a built-in
+  // Won't work - "length" is a built-in
   localStorage.length = 42;
 
   // Use methods instead
@@ -238,5 +238,5 @@ function getNote(steamId) {
     return notes[steamId] ?? null;
 }
 
-setNote("76561198000000000", "suspicious movement");
+setNote("76561199517768849", "suspicious movement");
 ```

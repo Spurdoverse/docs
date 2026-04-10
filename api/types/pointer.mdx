@@ -6,13 +6,13 @@ icon: "arrow-pointer"
 ---
 
 `Pointer` wraps a single memory address. You get one from `ptr()`, from
-`Memory.scan()`, or by following another pointer — and then use it to
+`Memory.scan()`, or by following another pointer - and then use it to
 navigate and read game memory.
 
 <Note>
   `.address` is always a **BigInt** (`0n`, `0x12345678n`, etc.).
   All methods accept `number`, `BigInt`, or another `Pointer` as an address
-  argument — the engine converts automatically.
+  argument - the engine converts automatically.
 </Note>
 
 ## Overview
@@ -60,7 +60,7 @@ console.log(p.isNull);   // false
 
 ### Pointer.null
 
-A pre-built null pointer — use it as a sentinel or default value.
+A pre-built null pointer - use it as a sentinel or default value.
 
 ```ts
 const empty = Pointer.null;
@@ -135,7 +135,7 @@ ptr.derefRaw(): Pointer   // bypasses cache
 ```
 
 Reads a pointer-sized value from this address and returns it as a new
-`Pointer`. Use `deref` in most cases — `derefRaw` forces a live read.
+`Pointer`. Use `deref` in most cases - `derefRaw` forces a live read.
 
 ```ts
 const entity = ptr(entityListBase).deref();
@@ -145,7 +145,7 @@ if (!entity.isNull) {
 ```
 
 <Tip>
-  **Cached vs raw** — `deref` reads through the SDK cache (fast, data
+  **Cached vs raw** - `deref` reads through the SDK cache (fast, data
   is up-to-date within a frame). `derefRaw` always hits process memory
   directly. Prefer cached reads in per-frame code.
 </Tip>
@@ -164,7 +164,7 @@ ptr.resolveRaw(...offsets: (number | BigInt)[]): Pointer
 ```
 
 Walks a multi-level pointer chain. For each offset except the last, adds the
-offset then dereferences. The final offset is only added — not dereferenced.
+offset then dereferences. The final offset is only added - not dereferenced.
 
 Equivalent to writing a chain of `add` + `deref` calls manually.
 
@@ -193,13 +193,13 @@ const health = ptr(clientBase).resolve(0x2F0, 0x58);
 <br />
 
 ```ts
-// Raw snapshot — read byteCount bytes
+// Raw snapshot - read byteCount bytes
 ptr.read(byteCount: number): Snapshot
 
 // Typed scalar
 ptr.read(type: string): number | BigInt | boolean | string | Pointer
 
-// Typed array — returns a TypedArray
+// Typed array - returns a TypedArray
 ptr.read(type: string, count: number): TypedArray | Pointer[]
 
 // Struct view (from FFI.struct)
@@ -264,7 +264,7 @@ const list = ptr(entityList).read(PlayerInfo, 64);
 
 ## Snapshot
 
-`Snapshot` is what `.read(byteCount)` returns — a frozen copy of raw bytes
+`Snapshot` is what `.read(byteCount)` returns - a frozen copy of raw bytes
 together with helpers to interpret them.
 
 ```ts
@@ -332,7 +332,7 @@ console.log("Health:", hp);
 ### Read multiple fields from one snapshot
 
 ```ts
-// Read once — avoid hammering the read path per field
+// Read once - avoid hammering the read path per field
 const snap = ptr(entityBase).read(0x400);
 
 const info = {

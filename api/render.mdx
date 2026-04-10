@@ -14,7 +14,7 @@ The `Render` module draws primitives on the screen overlay. Everything is drawn 
 <Warning>
   **All draw calls must happen inside the `on("render", ...)` callback.**
   Drawing from `"tick"`, timers, or other events will cause flickering or
-  invisible output — the overlay only accepts commands during the render
+  invisible output - the overlay only accepts commands during the render
   frame. See [Events → render](/api/globals#render) for details.
 </Warning>
 
@@ -58,7 +58,7 @@ Render.getScreenSize(): Vector2
 Returns the current overlay dimensions in pixels as a
 [Vector2](/api/types/vector2) (`x` = width, `y` = height).
 
-Call this once per frame — the size can change if the user resizes the window
+Call this once per frame - the size can change if the user resizes the window
 or switches resolution.
 
 ```ts
@@ -321,7 +321,7 @@ Draws a text string on the screen. The position defines the **top-left** corner 
 ```ts
 import Entities from "@native/entities";
 
-// getBoundingBox defined above — see Box ESP example
+// getBoundingBox defined above - see Box ESP example
 
 on("render", () => {
     for (const enemy of Entities.getPlayers({ skipLocal: true })) {
