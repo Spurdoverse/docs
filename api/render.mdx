@@ -11,6 +11,13 @@ import Render from "@native/render";
 
 The `Render` module draws primitives on the screen overlay. Everything is drawn on top of the game in screen-space pixel coordinates.
 
+<Warning>
+  **All draw calls must happen inside the `on("render", ...)` callback.**
+  Drawing from `"tick"`, timers, or other events will cause flickering or
+  invisible output — the overlay only accepts commands during the render
+  frame. See [Events → render](/api/globals#render) for details.
+</Warning>
+
 <Note>
   **Pro tip:** All position arguments accept both [Vector2](/api/types/vector2) instances and plain `{ x, y }` objects. 
   All color arguments accept [Color](/api/types/color) instances and packed hex integers (e.g. `0xFF0000FF`). If a color is omitted, white is used.
@@ -55,7 +62,7 @@ Call this once per frame — the size can change if the user resizes the window
 or switches resolution.
 
 ```ts
-on("tick", () => {
+on("render", () => {
     const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
     const center = { x: screenWidth / 2, y: screenHeight / 2 };
     Render.circleFilled(center, 3, Color.white());
@@ -125,7 +132,7 @@ Render.rectFilled(min: Vector2, max: Vector2, color?: Color, rounding?: number):
         return { mins: screenMins, maxs: screenMaxs };
     }
 
-    on("tick", () => {
+    on("render", () => {
         for (const enemy of Entities.getPlayers({ skipLocal: true })) {
             if (enemy.m_iHealth <= 0) continue;
 
@@ -181,7 +188,7 @@ Render.circleFilled(center: Vector2, radius: number, color?: Color): void
 
 <CodeGroup>
 ```ts FOV Ring (Outline)
-on("tick", () => {
+on("render", () => {
     const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
     const center = { x: screenWidth / 2, y: screenHeight / 2 };
     const fovRadius = 150;
@@ -193,7 +200,7 @@ on("tick", () => {
 ```ts Head Dot (Filled)
 import Entities from "@native/entities";
 
-on("tick", () => {
+on("render", () => {
     for (const enemy of Entities.getPlayers({ skipLocal: true })) {
         if (enemy.m_iHealth <= 0) continue;
 
@@ -227,7 +234,7 @@ on("tick", () => {
     ```ts
     import Entities from "@native/entities";
 
-    on("tick", () => {
+    on("render", () => {
         const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
         const bottomCenter = { x: screenWidth / 2, y: screenHeight };
 
@@ -316,7 +323,7 @@ import Entities from "@native/entities";
 
 // getBoundingBox defined above — see Box ESP example
 
-on("tick", () => {
+on("render", () => {
     for (const enemy of Entities.getPlayers({ skipLocal: true })) {
         if (enemy.m_iHealth <= 0) continue;
 
@@ -358,7 +365,7 @@ const size = Render.calcTextSize(text, 18);
 console.log(`Text is ${size.x}px wide, ${size.y}px tall`);
 
 // center text on screen
-on("tick", () => {
+on("render", () => {
     const screen = Render.getScreenSize();
     const textSize = Render.calcTextSize(text, 18);
     const pos = new Vector2(
@@ -405,7 +412,7 @@ Render.imageRounded(texture: Texture, min: Vector2, max: Vector2, rounding?: num
 const avatar = new Texture("path/to/avatar.png");
 
 // Inside your tick callback:
-on("tick", () => {
+on("render", () => {
     if (!avatar.isReady) return;
 
     // Draw a 48x48 avatar in the top-left corner as a circle
@@ -424,7 +431,7 @@ A quick example showing how to combine basic primitives to build custom UI eleme
 </Frame>
 
 ```ts
-on("tick", () => {
+on("render", () => {
     const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
     const cx = screenWidth / 2;
     const cy = screenHeight / 2;

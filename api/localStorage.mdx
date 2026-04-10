@@ -1,0 +1,242 @@
+---
+title: "localStorage"
+sidebarTitle: "localStorage"
+description: "Persistent key-value storage that survives script reloads and restarts — the familiar browser API, but better."
+icon: "database"
+---
+
+```ts
+// No import needed — available globally
+localStorage.setItem("key", value);
+```
+
+Your favorite browser API in a modern version. `localStorage` provides persistent key-value storage that survives script reloads and restarts. Data is encrypted on disk, and each script has its own isolated storage — scripts cannot access each other's data.
+
+Unlike the browser version, values are serialized using the **structured clone algorithm** (same as IndexedDB), so any JS type is supported — not just strings.
+
+<Note>
+  **Supported value types:** objects, arrays, numbers, strings, booleans, `null`, `Date`, `RegExp`, `Map`, `Set`, `ArrayBuffer`, `TypedArray`.
+  No more `JSON.stringify` / `JSON.parse` wrappers — just store and retrieve.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Methods" icon="code" href="#methods">
+    setItem, getItem, removeItem, clear, key, length.
+  </Card>
+  <Card title="Property access" icon="arrow-right" href="#property-access">
+    Read and write values using direct property syntax.
+  </Card>
+</CardGroup>
+
+---
+
+## Methods
+
+### localStorage.setItem
+
+<br />
+
+```ts
+localStorage.setItem(key: string, value: any): void
+```
+
+Stores a value under the given key. The value can be any type supported by the structured clone algorithm.
+
+<ParamField path="key" type="string" required>
+  The key to store the value under.
+</ParamField>
+<ParamField path="value" type="any" required>
+  The value to store. Any serializable type.
+</ParamField>
+
+```ts
+localStorage.setItem("name", "Player1");
+localStorage.setItem("score", 42);
+localStorage.setItem("settings", { fov: 90, crosshair: true });
+localStorage.setItem("teammates", new Set(["Alice", "Bob"]));
+```
+
+---
+
+### localStorage.getItem
+
+<br />
+
+```ts
+localStorage.getItem(key: string): any | null
+```
+
+Retrieves a value by key. Returns `null` if the key doesn't exist.
+
+```ts
+const name = localStorage.getItem("name");         // "Player1"
+const score = localStorage.getItem("score");        // 42
+const settings = localStorage.getItem("settings");  // { fov: 90, crosshair: true }
+
+const missing = localStorage.getItem("nope");       // null
+```
+
+---
+
+### localStorage.removeItem
+
+<br />
+
+```ts
+localStorage.removeItem(key: string): void
+```
+
+Removes a key and its value from storage.
+
+```ts
+localStorage.removeItem("name");
+localStorage.getItem("name"); // null
+```
+
+---
+
+### localStorage.clear
+
+<br />
+
+```ts
+localStorage.clear(): void
+```
+
+Removes **all** keys for this script. Other scripts' storage is not affected.
+
+```ts
+localStorage.clear();
+console.log(localStorage.length); // 0
+```
+
+---
+
+### localStorage.key
+
+<br />
+
+```ts
+localStorage.key(index: number): string | null
+```
+
+Returns the key name at the given index. Returns `null` if out of bounds.
+
+<ParamField path="index" type="number" required>
+  Zero-based index into the key list.
+</ParamField>
+
+```ts
+localStorage.setItem("a", 1);
+localStorage.setItem("b", 2);
+
+localStorage.key(0); // "a"
+localStorage.key(1); // "b"
+localStorage.key(2); // null
+```
+
+<Warning>
+  `key()` and `length` scan storage internally — avoid calling them in hot loops or inside `on("render", ...)`.
+</Warning>
+
+---
+
+### localStorage.length
+
+<br />
+
+```ts
+localStorage.length: number  // read-only
+```
+
+Returns the number of stored keys.
+
+```ts
+console.log(`${localStorage.length} keys in storage`);
+```
+
+---
+
+## Property access
+
+You can also use direct property syntax via a `Proxy` — reads, writes, and deletes all work as expected.
+
+```ts
+// Write
+localStorage.config = { fov: 90, sens: 2.5 };
+
+// Read
+console.log(localStorage.config); // { fov: 90, sens: 2.5 }
+
+// Delete
+delete localStorage.config;
+
+// Iterate
+for (const key in localStorage) {
+    console.log(key, localStorage[key]);
+}
+```
+
+<Warning>
+  Built-in property names (`setItem`, `getItem`, `removeItem`, `clear`, `key`, `length`)
+  cannot be used as storage keys via property syntax. Use `setItem` / `getItem` for these names:
+  ```ts
+  // Won't work — "length" is a built-in
+  localStorage.length = 42;
+
+  // Use methods instead
+  localStorage.setItem("length", 42);
+  localStorage.getItem("length"); // 42
+  ```
+</Warning>
+
+---
+
+## Recipes
+
+### Persistent settings
+
+```ts
+// Load saved settings or use defaults
+const defaults = { fov: 90, crosshair: true, sensitivity: 2.0 };
+const settings = localStorage.getItem("settings") ?? defaults;
+
+function updateSetting(key, value) {
+    settings[key] = value;
+    localStorage.setItem("settings", settings);
+}
+
+updateSetting("fov", 110);
+```
+
+### Kill counter across reloads
+
+```ts
+const stats = localStorage.getItem("stats") ?? { kills: 0, deaths: 0 };
+
+function onKill() {
+    stats.kills++;
+    localStorage.setItem("stats", stats);
+}
+
+console.log(`K/D: ${(stats.kills / (stats.deaths || 1)).toFixed(2)}`);
+```
+
+### Per-player notes
+
+```ts
+function setNote(steamId, note) {
+    const notes = localStorage.getItem("notes") ?? {};
+    notes[steamId] = note;
+    localStorage.setItem("notes", notes);
+}
+
+function getNote(steamId) {
+    const notes = localStorage.getItem("notes") ?? {};
+    return notes[steamId] ?? null;
+}
+
+setNote("76561198000000000", "suspicious movement");
+```

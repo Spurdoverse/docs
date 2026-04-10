@@ -53,7 +53,8 @@
               "api/fs",
               "api/memory",
               "api/entities",
-              "api/trace"
+              "api/trace",
+              "api/localStorage"
             ]
           },
           {

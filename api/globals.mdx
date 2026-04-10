@@ -189,23 +189,44 @@ off(id);   // false — already gone
 
 ### Built-in events
 
+#### `"render"`
+
+Fires every frame when the overlay is being drawn. **All `Render` module
+calls must happen inside this callback** — drawing outside of it will cause
+flickering or missing visuals because the frame may have already been
+submitted.
+
+```ts
+import Render from "@native/render";
+
+on("render", () => {
+    const { x: w, y: h } = Render.getScreenSize();
+    Render.text({ x: w / 2, y: 10 }, "Hello!", Color.white(), 18);
+});
+```
+
+<Warning>
+  Never call `Render.*` methods from `"tick"`, `setInterval`, or other
+  non-render callbacks. The overlay only accepts draw commands during the
+  `"render"` event — anything else will flicker or not appear at all.
+</Warning>
+
+---
+
 #### `"tick"`
 
-Fires every game tick (128 Hz). The primary place for per-frame logic —
-entity reads, render calls, state machines.
+Fires every game tick (128 Hz). The primary place for per-frame **logic** —
+entity reads, state machines, calculations. Do **not** draw here — use
+`"render"` for that.
 
 ```ts
 import Entities from "@native/entities";
-import Render   from "@native/render";
 
 on("tick", () => {
     const local = Entities.getLocalPlayer();
     if (!local) return;
 
-    const { success, screen } = Math.worldToScreen(local.m_pGameSceneNode.m_vecAbsOrigin);
-    if (success) {
-        Render.text(screen, `HP: ${local.m_iHealth}`, Color.white());
-    }
+    console.log(`HP: ${local.m_iHealth}, pos: ${local.m_pGameSceneNode.m_vecAbsOrigin}`);
 });
 ```
 
@@ -382,9 +403,9 @@ on("OnKeyDown", (vk) => {
     }
 });
 
-on("tick", () => {
+on("render", () => {
     if (!enabled) return;
-    // ... render / logic
+    // ... draw your visuals here
 });
 ```
 
@@ -396,13 +417,15 @@ import Render   from "@native/render";
 
 let cachedEnemies = [];
 
+// Heavy work in a timer — not every frame
 setInterval(() => {
     cachedEnemies = Entities.find("C_CSPlayerPawn")
         .filter(p => p.m_iHealth > 0)
         .toArray();
 }, 100);
 
-on("tick", () => {
+// Drawing in the render callback
+on("render", () => {
     for (const enemy of cachedEnemies) {
         const { success, screen } = Math.worldToScreen(enemy.m_pGameSceneNode.m_vecAbsOrigin);
         if (success) Render.circleFilled(screen, 4, Color.red());
@@ -419,7 +442,7 @@ import Render from "@native/render";
 let alpha = 0;
 let direction = 1;
 
-on("tick", () => {
+on("render", () => {
     alpha += direction * 120 * Game.frameTime;
 
     if (alpha >= 255) { alpha = 255; direction = -1; }

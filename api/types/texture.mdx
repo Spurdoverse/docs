@@ -66,7 +66,7 @@ const icon = new Texture("assets/icon.png");
     const icon = new Texture("assets/icon.png");
 
     // Draw every frame
-    onRender(() => {
+    on("render", () => {
         if (icon.isReady) {
             Render.image(icon, pos, size, Color.white());
         }
@@ -75,7 +75,7 @@ const icon = new Texture("assets/icon.png");
   </Tab>
   <Tab title="Wrong">
     ```ts
-    onRender(() => {
+    on("render", () => {
         // BAD: loads from disk every frame!
         const icon = new Texture("assets/icon.png");
         Render.image(icon, pos, size, Color.white());
@@ -198,7 +198,7 @@ documentation.
     ```ts
     const icon = new Texture("assets/weapon.png");
 
-    onRender(() => {
+    on("render", () => {
         if (!icon.isReady) return;
 
         const { success, screen } = Math.worldToScreen(pos);
@@ -212,7 +212,7 @@ documentation.
     ```ts
     const avatar = new Texture("assets/avatar.png");
 
-    onRender(() => {
+    on("render", () => {
         if (!avatar.isReady) return;
 
         const size = new Vector2(48, 48);
@@ -225,7 +225,7 @@ documentation.
     ```ts
     const icon = new Texture("assets/shield.png");
 
-    onRender(() => {
+    on("render", () => {
         if (!icon.isReady) return;
 
         // Tint with team color
@@ -238,7 +238,7 @@ documentation.
     ```ts
     const logo = new Texture("assets/logo.png");
 
-    onRender(() => {
+    on("render", () => {
         if (!logo.isReady) return;
 
         const drawHeight = 64;
