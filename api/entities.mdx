@@ -246,7 +246,11 @@ console.log(ent.address);   // 0x12345678n
 
 ---
 
-### .isEnemy
+### Entity methods
+
+Available on all entities.
+
+#### .isEnemy
 
 <br />
 
@@ -266,7 +270,7 @@ if (enemy && enemy.isEnemy(local)) {
 
 ---
 
-### .getOrigin
+#### .getOrigin
 
 <br />
 
@@ -283,7 +287,7 @@ console.log(`Position: ${pos.x}, ${pos.y}, ${pos.z}`);
 
 ---
 
-### .getVelocity
+#### .getVelocity
 
 <br />
 
@@ -301,7 +305,7 @@ console.log(`Speed: ${speed.toFixed(0)}`);
 
 ---
 
-### .getBoundingBox
+#### .getBoundingBox
 
 <br />
 
@@ -329,16 +333,40 @@ for (const pawn of Entities.getPlayers({ skipLocal: true })) {
 
 ---
 
-### .getEyePosition
+### Player methods
+
+Available on player pawns (`C_CSPlayerPawn`, `C_CSObserverPawn`).
+
+#### .controller
 
 <br />
 
 ```ts
-entity.getEyePosition(): Vector
+pawn.controller: Entity
 ```
 
-Returns the eye position (origin + view offset). Available on pawns,
-weapons, and props (`C_BaseModelEntity` and subclasses).
+The `CCSPlayerController` linked to this pawn.
+
+```ts
+for (const pawn of Entities.getPlayers()) {
+    const ctrl = pawn.controller;
+    if (ctrl) {
+        console.log(ctrl.m_iszPlayerName, pawn.m_iHealth);
+    }
+}
+```
+
+---
+
+#### .getEyePosition
+
+<br />
+
+```ts
+pawn.getEyePosition(): Vector
+```
+
+Returns the eye position (origin + view offset).
 
 ```ts
 const local = Entities.getLocalPlayer();
@@ -347,16 +375,15 @@ const eyePos = local.getEyePosition();
 
 ---
 
-### .isVisible
+#### .isVisible
 
 <br />
 
 ```ts
-entity.isVisible(other: Entity): boolean
+pawn.isVisible(other: Entity): boolean
 ```
 
-Traces from this entity's eye position to `other`'s origin. Available
-on pawns, weapons, and props (`C_BaseModelEntity` and subclasses).
+Traces from this entity's eye position to `other`'s origin.
 
 ```ts
 const local = Entities.getLocalPlayer();
@@ -372,29 +399,11 @@ Entities.find("C_CSPlayerPawn")
 
 ---
 
-### .controller
+### Weapon methods
 
-<br />
+Available on weapons (`C_BasePlayerWeapon`).
 
-```ts
-pawn.controller: Entity
-```
-
-The `CCSPlayerController` linked to this pawn. Available on
-`C_CSPlayerPawn` and `C_CSObserverPawn`.
-
-```ts
-for (const pawn of Entities.getPlayers()) {
-    const ctrl = pawn.controller;
-    if (ctrl) {
-        console.log(ctrl.m_iszPlayerName, pawn.m_iHealth);
-    }
-}
-```
-
----
-
-### .getWeaponData
+#### .getWeaponData
 
 <br />
 
@@ -403,7 +412,7 @@ weapon.getWeaponData(): CCSWeaponBaseVData
 ```
 
 Returns weapon VData — `damage`, `range`, `spread`, `weaponType`,
-`price`, and all schema fields. Available on `C_BasePlayerWeapon`.
+`price`, and all schema fields.
 
 ```ts
 const local = Entities.getLocalPlayer();
