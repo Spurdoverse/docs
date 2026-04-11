@@ -246,20 +246,71 @@ console.log(ent.address);   // 0x12345678n
 
 ---
 
-### Helper methods
+### .isEnemy
 
-Methods available on entities depending on their class. The engine resolves
-methods through the full inheritance chain — a `C_CSPlayerPawn` has access
-to all `C_BaseEntity`, `C_BaseModelEntity`, and its own methods.
+<br />
 
-#### C_BaseEntity (all entities)
+```ts
+entity.isEnemy(other: Entity): boolean
+```
 
-| Method | Returns | |
-|:-------|:--------|:--|
-| `.isEnemy(other)` | `boolean` | Whether `other` is an enemy (respects `mp_teammates_are_enemies`) |
-| `.getOrigin()` | [`Vector`](/api/types/vector) | World-space position |
-| `.getVelocity()` | [`Vector`](/api/types/vector) | Current velocity |
-| `.getBoundingBox()` | `[Vector2, Vector2] \| null` | Screen-space `[mins, maxs]`, or `null` if behind camera |
+Returns whether `other` is an enemy. Respects `mp_teammates_are_enemies`.
+
+```ts
+const local = Entities.getLocalPlayer();
+const enemy = Entities.find("C_CSPlayerPawn").first();
+if (enemy && enemy.isEnemy(local)) {
+    console.log("Enemy!");
+}
+```
+
+---
+
+### .getOrigin
+
+<br />
+
+```ts
+entity.getOrigin(): Vector
+```
+
+Returns the entity's world-space position.
+
+```ts
+const pos = entity.getOrigin();
+console.log(`Position: ${pos.x}, ${pos.y}, ${pos.z}`);
+```
+
+---
+
+### .getVelocity
+
+<br />
+
+```ts
+entity.getVelocity(): Vector
+```
+
+Returns the entity's current velocity.
+
+```ts
+const vel = player.getVelocity();
+const speed = vel.length2D();
+console.log(`Speed: ${speed.toFixed(0)}`);
+```
+
+---
+
+### .getBoundingBox
+
+<br />
+
+```ts
+entity.getBoundingBox(): [Vector2, Vector2] | null
+```
+
+Returns screen-space `[mins, maxs]` for the entity, or `null` if it's
+behind the camera.
 
 ```ts
 const local = Entities.getLocalPlayer();
@@ -276,12 +327,36 @@ for (const pawn of Entities.getPlayers({ skipLocal: true })) {
 }
 ```
 
-#### C_BaseModelEntity (pawns, weapons, props)
+---
 
-| Method | Returns | |
-|:-------|:--------|:--|
-| `.getEyePosition()` | [`Vector`](/api/types/vector) | Eye position (origin + view offset) |
-| `.isVisible(other)` | `boolean` | Traces from eye position to `other`'s origin |
+### .getEyePosition
+
+<br />
+
+```ts
+entity.getEyePosition(): Vector
+```
+
+Returns the eye position (origin + view offset). Available on pawns,
+weapons, and props (`C_BaseModelEntity` and subclasses).
+
+```ts
+const local = Entities.getLocalPlayer();
+const eyePos = local.getEyePosition();
+```
+
+---
+
+### .isVisible
+
+<br />
+
+```ts
+entity.isVisible(other: Entity): boolean
+```
+
+Traces from this entity's eye position to `other`'s origin. Available
+on pawns, weapons, and props (`C_BaseModelEntity` and subclasses).
 
 ```ts
 const local = Entities.getLocalPlayer();
@@ -295,11 +370,18 @@ Entities.find("C_CSPlayerPawn")
     });
 ```
 
-#### C_CSPlayerPawn / C_CSObserverPawn
+---
 
-| Property | Type | |
-|:---------|:-----|:--|
-| `.controller` | `Entity` | The `CCSPlayerController` linked to this pawn |
+### .controller
+
+<br />
+
+```ts
+pawn.controller: Entity
+```
+
+The `CCSPlayerController` linked to this pawn. Available on
+`C_CSPlayerPawn` and `C_CSObserverPawn`.
 
 ```ts
 for (const pawn of Entities.getPlayers()) {
@@ -310,11 +392,18 @@ for (const pawn of Entities.getPlayers()) {
 }
 ```
 
-#### C_BasePlayerWeapon
+---
 
-| Method | Returns | |
-|:-------|:--------|:--|
-| `.getWeaponData()` | `CCSWeaponBaseVData` | Weapon VData — `damage`, `range`, `spread`, `weaponType`, `price`, and all schema fields |
+### .getWeaponData
+
+<br />
+
+```ts
+weapon.getWeaponData(): CCSWeaponBaseVData
+```
+
+Returns weapon VData — `damage`, `range`, `spread`, `weaponType`,
+`price`, and all schema fields. Available on `C_BasePlayerWeapon`.
 
 ```ts
 const local = Entities.getLocalPlayer();
