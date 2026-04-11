@@ -39,18 +39,41 @@ and [Render.imageRounded](/api/render#imagerounded).
 <br />
 
 ```ts
-new Texture(path: string): Texture
+new Texture(path: string, width?: number, height?: number): Texture
 ```
 
 Loads an image from a file path. The texture starts loading immediately
 but may not be ready until a later frame.
 
+For **SVG** files you can optionally specify render dimensions.
+PNG/JPG images always use the dimensions from the file itself — `width`
+and `height` are ignored.
+
 | Param | Type | |
 |:------|:-----|:--|
 | `path` | `string` | Path to the image file |
+| `width` | `number?` | Render width for SVG. `0` = auto (proportional to height) |
+| `height` | `number?` | Render height for SVG. `0` = auto (proportional to width) |
+
+<Tip>
+  If neither `width` nor `height` is provided for an SVG, it renders at
+  its intrinsic size × 4.
+</Tip>
 
 ```ts
 const icon = new Texture("assets/icon.png");
+
+// SVG — intrinsic size × 4
+const svg1 = new Texture("icon.svg");
+
+// SVG — exact size
+const svg2 = new Texture("icon.svg", 128, 128);
+
+// SVG — width 256, height proportional
+const svg3 = new Texture("icon.svg", 256);
+
+// SVG — height 64, width proportional
+const svg4 = new Texture("icon.svg", 0, 64);
 ```
 
 <Warning>

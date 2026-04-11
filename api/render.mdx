@@ -300,7 +300,7 @@ on("render", () => {
 <br />
 
 ```ts
-Render.text(pos: Vector2, text: string, color?: Color, fontSize?: number): void
+Render.text(pos: Vector2, text: string, color?: Color, fontSize?: number, fontName?: string): void
 ```
 
 Draws a text string on the screen. The position defines the **top-left** corner of the rendered text block.
@@ -316,6 +316,9 @@ Draws a text string on the screen. The position defines the **top-left** corner 
 </ParamField>
 <ParamField path="fontSize" type="number" default="14">
   Font size in pixels.
+</ParamField>
+<ParamField path="fontName" type="string" default='"segoe"'>
+  Font name. See [available fonts](#available-fonts).
 </ParamField>
 
 ```ts
@@ -346,7 +349,7 @@ on("render", () => {
 <br />
 
 ```ts
-Render.calcTextSize(text: string, fontSize?: number): Vector2
+Render.calcTextSize(text: string, fontSize?: number, fontName?: string): Vector2
 ```
 
 Returns the pixel dimensions of a text string without drawing it.
@@ -358,23 +361,45 @@ Use this to center or align text precisely.
 <ParamField path="fontSize" type="number" default="14">
   Font size in pixels. Must match the size you pass to `Render.text`.
 </ParamField>
+<ParamField path="fontName" type="string" default='"segoe"'>
+  Font name. Must match the font you pass to `Render.text`. See [available fonts](#available-fonts).
+</ParamField>
 
 ```ts
 const text = "Hello World";
 const size = Render.calcTextSize(text, 18);
 console.log(`Text is ${size.x}px wide, ${size.y}px tall`);
 
+// measure with a specific font
+const size2 = Render.calcTextSize(text, 18, "verdana");
+
 // center text on screen
 on("render", () => {
     const screen = Render.getScreenSize();
-    const textSize = Render.calcTextSize(text, 18);
+    const textSize = Render.calcTextSize(text, 18, "segoe-semibold");
     const pos = new Vector2(
         screen.x / 2 - textSize.x / 2,
         screen.y / 2 - textSize.y / 2
     );
-    Render.text(pos, text, Color.white(), 18);
+    Render.text(pos, text, Color.white(), 18, "segoe-semibold");
 });
 ```
+
+---
+
+### Available fonts {#available-fonts}
+
+| Name | Description |
+|:-----|:------------|
+| `"segoe"` | Segoe UI Regular (default) |
+| `"segoe-semibold"` | Segoe UI Semibold |
+| `"segoe-bold"` | Segoe UI Bold |
+| `"dewi"` | RF Dewi Expanded |
+| `"dewi-semibold"` | RF Dewi Semibold |
+| `"tahoma"` | Tahoma |
+| `"verdana"` | Verdana |
+| `"arial"` | Arial |
+| `"weapons"` | Weapon icons |
 
 ---
 
