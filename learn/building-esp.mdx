@@ -18,7 +18,7 @@ coloring - all running in real-time.
 
 <Steps>
   <Step title="Project setup">
-    Import modules and set up the tick loop.
+    Import modules and set up the render loop.
   </Step>
   <Step title="Bounding box">
     Calculate screen-space bounding boxes from collision data.
@@ -39,7 +39,7 @@ coloring - all running in real-time.
 ## Step 1 - Project setup
 
 Every ESP starts the same way: import what you need, hook into the
-tick event, and grab the local player.
+render event, and grab the local player.
 
 ```ts
 import Entities from "@native/entities";
@@ -47,7 +47,7 @@ import Render   from "@native/render";
 import Trace    from "@native/trace";
 import Game     from "@native/game";
 
-on("tick", () => {
+on("render", () => {
     const local = Entities.getLocalPlayer();
     if (!local) return;
 
@@ -119,7 +119,7 @@ than drawing nothing.
 Let's plug it in:
 
 ```ts
-on("tick", () => {
+on("render", () => {
     const local = Entities.getLocalPlayer();
     if (!local) return;
 
@@ -341,7 +341,7 @@ function getState(index) {
     return playerState[index];
 }
 
-// in the tick loop:
+// in the render loop:
 const eyePos = getEyePos(local);
 const enemyPos = enemy.m_pGameSceneNode.m_vecAbsOrigin;
 
@@ -446,7 +446,7 @@ function getState(index) {
     return playerState[index];
 }
 
-on("tick", () => {
+on("render", () => {
     const local = Entities.getLocalPlayer();
     if (!local) return;
 
