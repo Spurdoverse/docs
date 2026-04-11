@@ -416,7 +416,7 @@ Returns weapon VData — `damage`, `range`, `spread`, `weaponType`,
 
 ```ts
 const local = Entities.getLocalPlayer();
-const weapon = local?.m_hActiveWeapon;
+const weapon = local?.m_pWeaponServices?.m_hActiveWeapon;
 
 if (weapon) {
     const data = weapon.getWeaponData();
