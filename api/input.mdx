@@ -1,0 +1,256 @@
+---
+title: "Input"
+sidebarTitle: "Input"
+description: "Simulate keyboard and mouse input, and read game input state."
+icon: "keyboard"
+---
+
+```ts
+import Input from "@native/input";
+```
+
+The `Input` module lets you simulate keyboard and mouse actions and read
+the current game input state. Mouse movements, key presses, and button
+clicks are injected at the engine level.
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Actions" icon="computer-mouse" href="#actions">
+    Simulate mouse movement, key presses, and mouse clicks.
+  </Card>
+  <Card title="Game state" icon="gamepad" href="#game-state">
+    Read-only cached input state — view angles, movement, mouse delta.
+  </Card>
+</CardGroup>
+
+---
+
+## Actions
+
+### Input.moveMouse
+
+<br />
+
+```ts
+Input.moveMouse(dx: number, dy: number): void
+```
+
+Applies a raw mouse delta. Values are in pixels.
+
+<ParamField path="dx" type="number" required>
+  Horizontal delta (positive = right).
+</ParamField>
+<ParamField path="dy" type="number" required>
+  Vertical delta (positive = down).
+</ParamField>
+
+```ts
+// Nudge the crosshair 10px right
+Input.moveMouse(10, 0);
+```
+
+---
+
+### Input.moveToAngle
+
+<br />
+
+```ts
+Input.moveToAngle(pitch: number, yaw: number): void
+```
+
+Converts a target angle into the appropriate mouse delta using the
+current sensitivity settings, then applies it.
+
+<ParamField path="pitch" type="number" required>
+  Target pitch (vertical angle).
+</ParamField>
+<ParamField path="yaw" type="number" required>
+  Target yaw (horizontal angle).
+</ParamField>
+
+```ts
+// Smoothly aim toward a target angle
+const target = Math.calcAngle(myPos, enemyPos);
+Input.moveToAngle(target.x, target.y);
+```
+
+---
+
+### Input.keyDown
+
+<br />
+
+```ts
+Input.keyDown(vk: number): void
+```
+
+Holds down a key by its virtual key code.
+
+<ParamField path="vk" type="number" required>
+  Virtual key code (e.g. `0x57` for W).
+</ParamField>
+
+```ts
+Input.keyDown(0x57); // hold W
+```
+
+---
+
+### Input.keyUp
+
+<br />
+
+```ts
+Input.keyUp(vk: number): void
+```
+
+Releases a previously held key.
+
+<ParamField path="vk" type="number" required>
+  Virtual key code.
+</ParamField>
+
+```ts
+Input.keyUp(0x57); // release W
+```
+
+---
+
+### Input.keyPress
+
+<br />
+
+```ts
+Input.keyPress(vk: number): void
+```
+
+Performs a full key press — down followed by up.
+
+<ParamField path="vk" type="number" required>
+  Virtual key code.
+</ParamField>
+
+```ts
+Input.keyPress(0x52); // tap R (reload)
+```
+
+---
+
+### Input.mouseDown
+
+<br />
+
+```ts
+Input.mouseDown(btn?: number): void
+```
+
+Holds down a mouse button.
+
+<ParamField path="btn" type="number" default="0">
+  Mouse button index (`0` = left, `1` = right, `2` = middle).
+</ParamField>
+
+```ts
+Input.mouseDown();  // hold left click
+Input.mouseDown(1); // hold right click
+```
+
+---
+
+### Input.mouseUp
+
+<br />
+
+```ts
+Input.mouseUp(btn?: number): void
+```
+
+Releases a mouse button.
+
+<ParamField path="btn" type="number" default="0">
+  Mouse button index.
+</ParamField>
+
+```ts
+Input.mouseUp(); // release left click
+```
+
+---
+
+### Input.mouseClick
+
+<br />
+
+```ts
+Input.mouseClick(btn?: number): void
+```
+
+Performs a full mouse click — down followed by up.
+
+<ParamField path="btn" type="number" default="0">
+  Mouse button index.
+</ParamField>
+
+```ts
+Input.mouseClick();  // left click
+Input.mouseClick(1); // right click
+```
+
+---
+
+### Input.isKeyDown
+
+<br />
+
+```ts
+Input.isKeyDown(vk: number): boolean
+```
+
+Returns the current state of a key.
+
+<ParamField path="vk" type="number" required>
+  Virtual key code.
+</ParamField>
+
+```ts
+if (Input.isKeyDown(0x10)) { // Shift
+    console.log("Shift is held");
+}
+```
+
+---
+
+## Game state
+
+`Input.state` exposes read-only, per-frame cached input values from the
+engine. All properties are updated automatically each tick.
+
+```ts
+const state = Input.state;
+```
+
+| Property | Type | |
+|:---------|:-----|:--|
+| `viewAngles` | [`QAngle`](/api/types/qangle) | Current view angles |
+| `thirdPersonAngles` | [`QAngle`](/api/types/qangle) | Third-person camera angles |
+| `forwardMove` | `number` | W/S movement value |
+| `leftMove` | `number` | A/D movement value |
+| `upMove` | `number` | Jump/crouch movement value |
+| `mouseDeltaX` | `number` | Game mouse delta X |
+| `mouseDeltaY` | `number` | Game mouse delta Y |
+| `inThirdPerson` | `boolean` | Whether third-person mode is active |
+
+```ts
+on("render", () => {
+    const { viewAngles, forwardMove, leftMove } = Input.state;
+
+    console.log(`Looking: pitch=${viewAngles.x.toFixed(1)} yaw=${viewAngles.y.toFixed(1)}`);
+    console.log(`Moving: forward=${forwardMove} left=${leftMove}`);
+
+    if (Input.state.inThirdPerson) {
+        console.log("Third person active");
+    }
+});
+```

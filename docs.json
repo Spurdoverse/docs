@@ -53,6 +53,8 @@
               "api/fs",
               "api/memory",
               "api/entities",
+              "api/input",
+              "api/convars",
               "api/trace",
               "api/localStorage"
             ]

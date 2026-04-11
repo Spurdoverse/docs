@@ -30,7 +30,7 @@ safe to call in per-frame callbacks without worrying about memory access.
     Chain class filters and iterators - forEach, map, filter, first.
   </Card>
   <Card title="Entity object" icon="cube" href="#entity-object">
-    Schema fields, reserved properties, and the raw-buffer API.
+    Reserved properties, helper methods, schema fields, and raw-buffer API.
   </Card>
   <Card title="Supported field types" icon="code" href="#supported-field-types">
     How the engine maps every C++ type to a JS value.
@@ -234,6 +234,7 @@ These are always present regardless of the entity's class:
 | `isValid` | `boolean` | `true` if entity exists in the current snapshot. Readonly. |
 | `className` | `string` | Class name, e.g. `"C_CSPlayerPawn"`. Readonly. |
 | `address` | `BigInt` | In-process memory address of the entity object. Readonly. |
+| `isAlive` | `boolean` | `true` when `m_lifeState == ALIVE` and `m_iHealth > 0`. Readonly. |
 
 ```ts
 const ent = Entities.getByIndex(42);
@@ -241,6 +242,91 @@ console.log(ent.index);     // 42
 console.log(ent.className); // "C_CSPlayerPawn"
 console.log(ent.isValid);   // true / false
 console.log(ent.address);   // 0x12345678n
+```
+
+---
+
+### Helper methods
+
+Methods available on entities depending on their class. The engine resolves
+methods through the full inheritance chain — a `C_CSPlayerPawn` has access
+to all `C_BaseEntity`, `C_BaseModelEntity`, and its own methods.
+
+#### C_BaseEntity (all entities)
+
+| Method | Returns | |
+|:-------|:--------|:--|
+| `.isEnemy(other)` | `boolean` | Whether `other` is an enemy (respects `mp_teammates_are_enemies`) |
+| `.getOrigin()` | [`Vector`](/api/types/vector) | World-space position |
+| `.getVelocity()` | [`Vector`](/api/types/vector) | Current velocity |
+| `.getBoundingBox()` | `[Vector2, Vector2] \| null` | Screen-space `[mins, maxs]`, or `null` if behind camera |
+
+```ts
+const local = Entities.getLocalPlayer();
+
+for (const pawn of Entities.getPlayers({ skipLocal: true })) {
+    if (!pawn.isAlive) continue;
+    if (!pawn.isEnemy(local)) continue;
+
+    const box = pawn.getBoundingBox();
+    if (box) {
+        const [mins, maxs] = box;
+        Render.rect(mins, maxs, Color.red());
+    }
+}
+```
+
+#### C_BaseModelEntity (pawns, weapons, props)
+
+| Method | Returns | |
+|:-------|:--------|:--|
+| `.getEyePosition()` | [`Vector`](/api/types/vector) | Eye position (origin + view offset) |
+| `.isVisible(other)` | `boolean` | Traces from eye position to `other`'s origin |
+
+```ts
+const local = Entities.getLocalPlayer();
+
+Entities.find("C_CSPlayerPawn")
+    .filter(p => p.isAlive && p.isEnemy(local))
+    .forEach(enemy => {
+        if (local.isVisible(enemy)) {
+            console.log("Enemy visible!", enemy.controller?.m_iszPlayerName);
+        }
+    });
+```
+
+#### C_CSPlayerPawn / C_CSObserverPawn
+
+| Property | Type | |
+|:---------|:-----|:--|
+| `.controller` | `Entity` | The `CCSPlayerController` linked to this pawn |
+
+```ts
+for (const pawn of Entities.getPlayers()) {
+    const ctrl = pawn.controller;
+    if (ctrl) {
+        console.log(ctrl.m_iszPlayerName, pawn.m_iHealth);
+    }
+}
+```
+
+#### C_BasePlayerWeapon
+
+| Method | Returns | |
+|:-------|:--------|:--|
+| `.getWeaponData()` | `CCSWeaponBaseVData` | Weapon VData — `damage`, `range`, `spread`, `weaponType`, `price`, and all schema fields |
+
+```ts
+const local = Entities.getLocalPlayer();
+const weapon = local?.m_hActiveWeapon;
+
+if (weapon) {
+    const data = weapon.getWeaponData();
+    console.log(`Damage: ${data.m_nDamage}`);
+    console.log(`Range: ${data.m_flRange}`);
+    console.log(`Price: ${data.m_nPrice}`);
+    console.log(`Type: ${data.m_WeaponType}`);
+}
 ```
 
 ---
@@ -280,22 +366,6 @@ const mins = collision.m_vMinBounds;          // Vector
   set them directly: `player.m_iHealth = 100`. All other field types (pointers,
   nested structs, vectors, handles) are read-only.
 </Warning>
-
----
-
-### `.controller` (player pawns only)
-
-Available on `C_CSPlayerPawn` and `C_CSObserverPawn`. Returns the
-`CCSPlayerController` entity linked to this pawn.
-
-```ts
-for (const pawn of Entities.getPlayers()) {
-    const ctrl = pawn.controller;
-    if (ctrl) {
-        console.log(ctrl.m_iszPlayerName, pawn.m_iHealth);
-    }
-}
-```
 
 ---
 

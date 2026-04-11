@@ -1,0 +1,120 @@
+---
+title: "Convars"
+sidebarTitle: "Convars"
+description: "Read console variable values from the engine."
+icon: "terminal"
+---
+
+```ts
+import Convars from "@native/convars";
+```
+
+The `Convars` module reads console variable (cvar) values from the engine.
+
+---
+
+## Methods
+
+### Convars.get
+
+<br />
+
+```ts
+Convars.get(name: string): boolean | number | string | Color | Vector
+```
+
+Returns the convar value with its natural type.
+
+<ParamField path="name" type="string" required>
+  Console variable name.
+</ParamField>
+
+```ts
+const sens = Convars.get("sensitivity");    // number
+const cheats = Convars.get("sv_cheats");    // boolean
+```
+
+---
+
+### Convars.getFloat
+
+<br />
+
+```ts
+Convars.getFloat(name: string): number
+```
+
+Returns the convar value as a float.
+
+<ParamField path="name" type="string" required>
+  Console variable name.
+</ParamField>
+
+```ts
+const sens = Convars.getFloat("sensitivity"); // 2.5
+const vol = Convars.getFloat("volume");       // 0.8
+```
+
+---
+
+### Convars.getInt
+
+<br />
+
+```ts
+Convars.getInt(name: string): number
+```
+
+Returns the convar value as an integer.
+
+<ParamField path="name" type="string" required>
+  Console variable name.
+</ParamField>
+
+```ts
+const rate = Convars.getInt("cl_updaterate");  // 128
+const team = Convars.getInt("mp_autoteambalance"); // 1
+```
+
+---
+
+### Convars.getBool
+
+<br />
+
+```ts
+Convars.getBool(name: string): boolean
+```
+
+Returns the convar value as a boolean.
+
+<ParamField path="name" type="string" required>
+  Console variable name.
+</ParamField>
+
+```ts
+if (Convars.getBool("sv_cheats")) {
+    console.log("Cheats enabled");
+}
+```
+
+---
+
+### Convars.getString
+
+<br />
+
+```ts
+Convars.getString(name: string): string
+```
+
+Returns the convar value as a string.
+
+<ParamField path="name" type="string" required>
+  Console variable name.
+</ParamField>
+
+```ts
+const mapGroup = Convars.getString("game_type");
+const hostname = Convars.getString("hostname");
+```
