@@ -1,16 +1,14 @@
-/* Code blocks: wrap instead of horizontal scroll */
+/* Code blocks: allow horizontal scroll for long lines */
 pre.shiki {
-  white-space: pre-wrap !important;
-  word-break: break-word !important;
-  overflow-x: hidden !important;
+  white-space: pre !important;
+  overflow-x: auto !important;
 }
 
 pre.shiki code {
-  white-space: pre-wrap !important;
-  word-break: break-word !important;
+  white-space: pre !important;
 }
 
 .code-block pre {
-  white-space: pre-wrap !important;
-  overflow-x: hidden !important;
+  white-space: pre !important;
+  overflow-x: auto !important;
 }
