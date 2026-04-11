@@ -58,6 +58,7 @@ Input.moveMouse(10, 0);
 
 ```ts
 Input.moveToAngle(pitch: number, yaw: number): void
+Input.moveToAngle(angle: QAngle): void
 ```
 
 Converts a target angle into the appropriate mouse delta using the
@@ -70,10 +71,19 @@ current sensitivity settings, then applies it.
   Target yaw (horizontal angle).
 </ParamField>
 
+Or pass a [`QAngle`](/api/types/qangle) directly:
+
+<ParamField path="angle" type="QAngle" required>
+  Target angle.
+</ParamField>
+
 ```ts
-// Smoothly aim toward a target angle
+// With pitch/yaw
+Input.moveToAngle(-5.2, 130.0);
+
+// With QAngle
 const target = Math.calcAngle(myPos, enemyPos);
-Input.moveToAngle(target.x, target.y);
+Input.moveToAngle(target);
 ```
 
 ---
@@ -246,7 +256,7 @@ const state = Input.state;
 on("render", () => {
     const { viewAngles, forwardMove, leftMove } = Input.state;
 
-    console.log(`Looking: pitch=${viewAngles.x.toFixed(1)} yaw=${viewAngles.y.toFixed(1)}`);
+    console.log(`Looking: pitch=${viewAngles.pitch.toFixed(1)} yaw=${viewAngles.yaw.toFixed(1)}`);
     console.log(`Moving: forward=${forwardMove} left=${leftMove}`);
 
     if (Input.state.inThirdPerson) {
