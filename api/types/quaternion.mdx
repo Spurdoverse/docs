@@ -527,7 +527,8 @@ q.toString();
         const bone = entity.getBone(hb.bone);
         if (bone) {
             const center = hb.start.add(hb.end).scale(0.5);
-            Render.circle3D(center, 4, Color.red());
+            const { success, screen } = Math.worldToScreen(center);
+            if (success) Render.circleFilled(screen, 4, Color.red());
         }
     }
     ```
