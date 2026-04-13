@@ -1,0 +1,548 @@
+---
+title: "Quaternion"
+sidebarTitle: "Quaternion"
+description: "Rotations as unit quaternions - bone orientation, hitbox transforms, and gimbal-lock-free composition."
+icon: "rotate"
+---
+
+`Quaternion` represents a 3D rotation as four components `(x, y, z, w)`.
+Bone orientations, hitbox transforms, and any rotation that needs to
+compose or interpolate cleanly use this type instead of
+[`QAngle`](/api/types/qangle).
+
+<Note>
+  Identity is `(0, 0, 0, 1)`. A unit quaternion has
+  `x² + y² + z² + w² = 1`. After repeated multiplication, call
+  [`normalize()`](#normalize) to correct drift.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Creating quaternions" icon="plus" href="#creating-quaternions">
+    Identity, explicit components, array, or object forms.
+  </Card>
+  <Card title="Arithmetic" icon="calculator" href="#arithmetic">
+    Hamilton product, scalar scaling, conjugate, inverse.
+  </Card>
+  <Card title="Rotation" icon="arrows-rotate" href="#rotation">
+    Rotate vectors, interpolate between orientations.
+  </Card>
+  <Card title="Conversion" icon="arrows-left-right" href="#conversion">
+    To and from Euler angles and axis-angle form.
+  </Card>
+</CardGroup>
+
+---
+
+## Components
+
+| Component | Type | |
+|:----------|:-----|:--|
+| `x` | `number` | Imaginary i |
+| `y` | `number` | Imaginary j |
+| `z` | `number` | Imaginary k |
+| `w` | `number` | Real part |
+
+All four are **read/write** properties:
+
+```ts
+const q = new Quaternion(0, 0, 0, 1);
+q.w = Math.cos(angle / 2);
+```
+
+---
+
+## Creating quaternions
+
+### Constructor
+
+<br />
+
+```ts
+new Quaternion(): Quaternion
+new Quaternion(x: number, y: number, z: number, w: number): Quaternion
+new Quaternion(arr: [number, number, number, number]): Quaternion
+new Quaternion(obj: { x: number, y: number, z: number, w: number }): Quaternion
+```
+
+Creates a new Quaternion. The no-argument form returns identity
+`(0, 0, 0, 1)`.
+
+<Tabs>
+  <Tab title="Identity">
+    ```ts
+    const q = new Quaternion();
+    // (0, 0, 0, 1) - no rotation
+    ```
+  </Tab>
+  <Tab title="Components">
+    ```ts
+    const q = new Quaternion(0, 0, 0.7071, 0.7071);
+    // 90° rotation around Z
+    ```
+  </Tab>
+  <Tab title="Array / object">
+    ```ts
+    const a = new Quaternion([0, 0, 0.7071, 0.7071]);
+    const b = new Quaternion({ x: 0, y: 0, z: 0.7071, w: 0.7071 });
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+### Quaternion.identity
+
+<br />
+
+```ts
+Quaternion.identity(): Quaternion
+```
+
+Returns a new identity quaternion `(0, 0, 0, 1)`. Equivalent to
+`new Quaternion()` but reads better as a named factory.
+
+```ts
+let accumulated = Quaternion.identity();
+```
+
+---
+
+### Quaternion.fromAxisAngle
+
+<br />
+
+```ts
+Quaternion.fromAxisAngle(axis: Vector, degrees: number): Quaternion
+```
+
+Builds a rotation of `degrees` around `axis`. The axis does not need to
+be pre-normalized.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `axis` | `Vector` | Rotation axis |
+| `degrees` | `number` | Rotation amount in degrees |
+
+```ts
+const spin = Quaternion.fromAxisAngle(new Vector(0, 0, 1), 90);
+// 90° yaw around the world Z axis
+```
+
+---
+
+### Quaternion.fromEulerAngles
+
+<br />
+
+```ts
+Quaternion.fromEulerAngles(angle: QAngle): Quaternion
+```
+
+Converts a [`QAngle`](/api/types/qangle) (pitch / yaw / roll in degrees)
+into a quaternion.
+
+```ts
+const view = new QAngle(10, 90, 0);
+const q = Quaternion.fromEulerAngles(view);
+```
+
+---
+
+## Arithmetic
+
+All arithmetic methods return a **new** Quaternion - the original is
+never modified. Exceptions are noted inline.
+
+### add
+
+<br />
+
+```ts
+q.add(other: Quaternion): Quaternion
+```
+
+Component-wise addition. Rarely useful on its own - quaternions compose
+via multiplication, not addition - but exposed for completeness.
+
+---
+
+### sub
+
+<br />
+
+```ts
+q.sub(other: Quaternion): Quaternion
+```
+
+Component-wise subtraction.
+
+---
+
+### mul
+
+<br />
+
+```ts
+q.mul(other: Quaternion): Quaternion
+q.mul(scalar: number): Quaternion
+```
+
+**Quaternion × Quaternion** - Hamilton product. Composes rotations:
+`a.mul(b)` applies `b` first, then `a`.
+
+**Quaternion × number** - scales each component by the scalar.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `other` | `Quaternion \| number` | Rotation to compose, or scalar |
+
+```ts
+const yaw  = Quaternion.fromAxisAngle(new Vector(0, 0, 1), 90);
+const roll = Quaternion.fromAxisAngle(new Vector(1, 0, 0), 30);
+
+// Apply roll first, then yaw
+const combined = yaw.mul(roll);
+```
+
+<Warning>
+  Quaternion multiplication is **not** commutative. `a.mul(b)` is
+  generally different from `b.mul(a)`.
+</Warning>
+
+---
+
+### div
+
+<br />
+
+```ts
+q.div(other: Quaternion): Quaternion
+q.div(scalar: number): Quaternion
+```
+
+Quaternion division (`a * b⁻¹`) or component-wise scalar division.
+
+---
+
+### dot
+
+<br />
+
+```ts
+q.dot(other: Quaternion): number
+```
+
+Dot product of the four components. `1` means identical orientation,
+`-1` means opposite hemisphere (but same rotation - quaternions are
+double-covers).
+
+---
+
+### conjugate
+
+<br />
+
+```ts
+q.conjugate(): Quaternion
+```
+
+Returns `(-x, -y, -z, w)`. For a unit quaternion this equals
+[`inverse()`](#inverse) and is faster.
+
+---
+
+### inverse
+
+<br />
+
+```ts
+q.inverse(): Quaternion
+```
+
+Full inverse - `conjugate / lengthSqr`. Equals `conjugate()` when `q` is
+already unit-length.
+
+```ts
+const undo = rotation.inverse();
+const local = world.mul(undo);
+```
+
+---
+
+### normalize
+
+<br />
+
+```ts
+q.normalize(): this   // mutates in place
+```
+
+Scales the quaternion to unit length. **Mutates the original** and
+returns `this` for chaining.
+
+```ts
+accumulated.mul(delta).normalize();
+```
+
+---
+
+### normalized
+
+<br />
+
+```ts
+q.normalized(): Quaternion
+```
+
+Returns a **new** unit-length quaternion. The original is untouched.
+
+---
+
+### length
+
+<br />
+
+```ts
+q.length(): number
+```
+
+Euclidean length - `√(x² + y² + z² + w²)`. Unit quaternions return `1`.
+
+---
+
+### lengthSqr
+
+<br />
+
+```ts
+q.lengthSqr(): number
+```
+
+Squared length. Faster than `length()` when comparing magnitudes.
+
+---
+
+## Rotation
+
+### rotate
+
+<br />
+
+```ts
+q.rotate(vec: Vector): Vector
+```
+
+Rotates `vec` by this quaternion. Returns a new Vector.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `vec` | `Vector` | Vector to rotate |
+
+```ts
+const bone = entity.getBone(0);
+if (bone) {
+    const localOffset = new Vector(10, 0, 0);
+    const worldOffset = bone.rotation.rotate(localOffset);
+    const worldPos = bone.position.add(worldOffset);
+}
+```
+
+---
+
+### Quaternion.slerp
+
+<br />
+
+```ts
+Quaternion.slerp(a: Quaternion, b: Quaternion, t: number): Quaternion
+```
+
+**Spherical** linear interpolation between `a` and `b`. Constant angular
+velocity - use this for smooth camera or bone interpolation.
+
+| Param | Type | |
+|:------|:-----|:--|
+| `a` | `Quaternion` | Start |
+| `b` | `Quaternion` | End |
+| `t` | `number` | `0`..`1` |
+
+```ts
+const blended = Quaternion.slerp(prev, current, 0.25);
+```
+
+---
+
+### Quaternion.lerp
+
+<br />
+
+```ts
+Quaternion.lerp(a: Quaternion, b: Quaternion, t: number): Quaternion
+```
+
+Component-wise linear interpolation, then normalize. Cheaper than
+`slerp` and visually indistinguishable for small `t` - prefer it for
+per-frame smoothing. Result is normalized for you.
+
+---
+
+## Conversion
+
+### toEulerAngles
+
+<br />
+
+```ts
+q.toEulerAngles(): QAngle
+```
+
+Converts this quaternion to a [`QAngle`](/api/types/qangle)
+(pitch / yaw / roll in degrees).
+
+```ts
+const bone = entity.getBone(0);
+if (bone) {
+    const angles = bone.rotation.toEulerAngles();
+    console.log(angles.yaw);
+}
+```
+
+---
+
+### toAxisAngle
+
+<br />
+
+```ts
+q.toAxisAngle(): { axis: Vector, degrees: number }
+```
+
+Returns the rotation as an axis + angle pair.
+
+```ts
+const { axis, degrees } = q.toAxisAngle();
+console.log(`Rotating ${degrees.toFixed(1)}° around (${axis.x}, ${axis.y}, ${axis.z})`);
+```
+
+---
+
+## Utility
+
+### equals
+
+<br />
+
+```ts
+q.equals(other: Quaternion): boolean
+```
+
+Exact component-wise equality. Returns `false` if `other` is not a
+Quaternion.
+
+<Warning>
+  This is **exact** float comparison. Two quaternions representing the
+  same rotation may differ by floating-point noise, or by sign (both
+  `q` and `-q` are the same rotation).
+</Warning>
+
+---
+
+### clone
+
+<br />
+
+```ts
+q.clone(): Quaternion
+```
+
+Returns an independent copy.
+
+---
+
+### set
+
+<br />
+
+```ts
+q.set(x: number, y: number, z: number, w: number): this
+q.set(arr: [number, number, number, number]): this
+q.set(obj: { x: number, y: number, z: number, w: number }): this
+q.set(other: Quaternion): this
+```
+
+Overwrites all components in place and returns `this`.
+
+---
+
+### setIdentity
+
+<br />
+
+```ts
+q.setIdentity(): this   // mutates in place
+```
+
+Resets this quaternion to `(0, 0, 0, 1)`. Returns `this` for chaining.
+
+---
+
+### toArray
+
+<br />
+
+```ts
+q.toArray(): [number, number, number, number]
+```
+
+Returns `[x, y, z, w]` as a plain array.
+
+---
+
+### toString
+
+<br />
+
+```ts
+q.toString(): string
+```
+
+Human-readable representation.
+
+```ts
+q.toString();
+// "Quaternion(0.000, 0.000, 0.707, 0.707)"
+```
+
+---
+
+## Common patterns
+
+<Tabs>
+  <Tab title="Rotate a hitbox offset">
+    ```ts
+    const hb = entity.getHitbox(0);
+    if (hb) {
+        const bone = entity.getBone(hb.bone);
+        if (bone) {
+            const center = hb.start.add(hb.end).scale(0.5);
+            Render.circle3D(center, 4, Color.red());
+        }
+    }
+    ```
+  </Tab>
+  <Tab title="Smooth bone blending">
+    ```ts
+    // Ease current bone orientation toward target each frame
+    const blended = Quaternion.slerp(cachedRot, bone.rotation, 0.2);
+    cachedRot.set(blended);
+    ```
+  </Tab>
+  <Tab title="View angle as quaternion">
+    ```ts
+    const q = Quaternion.fromEulerAngles(myViewAngle);
+    const forward = q.rotate(new Vector(1, 0, 0));
+    ```
+  </Tab>
+</Tabs>

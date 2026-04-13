@@ -65,6 +65,7 @@
               "api/types/vector",
               "api/types/vector2",
               "api/types/qangle",
+              "api/types/quaternion",
               "api/types/color",
               "api/types/texture",
               "api/types/pointer"

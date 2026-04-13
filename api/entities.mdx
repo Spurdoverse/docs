@@ -333,6 +333,148 @@ for (const pawn of Entities.getPlayers({ skipLocal: true })) {
 
 ---
 
+#### .getModelName
+
+<br />
+
+```ts
+entity.getModelName(): string | null
+```
+
+Returns the path to the entity's model (for example
+`"characters/models/ctm_fbi/ctm_fbi.vmdl"`). Returns
+`null` if the scene node or model is invalid.
+
+<Tip>
+  The string is read once per model and cached - further calls just
+  return a copy from local memory, so it's cheap to call every frame.
+</Tip>
+
+```ts
+const local = Entities.getLocalPlayer();
+const model = local?.getModelName();
+if (model) console.log(model);
+```
+
+---
+
+#### .getBones
+
+<br />
+
+```ts
+entity.getBones(): Bone[] | null
+```
+
+Returns every bone on the entity as an array. Returns `null` if the
+scene, model, or bone array is invalid.
+
+**Bone shape**
+
+| Field | Type | |
+|:------|:-----|:--|
+| `index` | `number` | Position in the bone array |
+| `position` | [`Vector`](/api/types/vector) | World-space position |
+| `scale` | `number` | Usually `1.0` |
+| `rotation` | [`Quaternion`](/api/types/quaternion) | World-space orientation |
+
+```ts
+const bones = entity.getBones();
+bones?.forEach(b => Render.circle3D(b.position, 2, Color.white()));
+```
+
+---
+
+#### .getBone
+
+<br />
+
+```ts
+entity.getBone(id: number): Bone | null
+```
+
+Returns a single bone by index. Faster than
+[`getBones()`](#getbones) - reads only the 32 bytes for that bone
+rather than the full bone array. Returns `null` if the index is out of
+range or the model is invalid.
+
+```ts
+const head = entity.getBone(8);
+if (head) Render.circle3D(head.position, 4, Color.red());
+```
+
+---
+
+#### .getHitboxes
+
+<br />
+
+```ts
+entity.getHitboxes(): Hitbox[] | null
+```
+
+Returns every hitbox on the entity. Returns `null` on error, or an empty
+array `[]` if the model has no hitboxes.
+
+**Hitbox shape**
+
+Static fields (cached per model):
+
+| Field | Type | |
+|:------|:-----|:--|
+| `name` | `string` | Hitbox name |
+| `surfaceProperty` | `string` | Surface property name |
+| `boneName` | `string` | Name of the bone this hitbox is attached to |
+| `mins` | [`Vector`](/api/types/vector) | Local-space bounds min (relative to bone) |
+| `maxs` | [`Vector`](/api/types/vector) | Local-space bounds max |
+| `shapeRadius` | `number` | Capsule radius |
+| `boneNameHash` | `number` | Hash of `boneName` |
+| `groupId` | `number` | `EHitGroup` |
+| `shapeType` | `number` | `EHitboxShape` - `0` = box, `1` = capsule, ... |
+| `translationOnly` | `boolean` | |
+| `crc` | `number` | |
+| `hitBoxIndex` | `number` | |
+
+Dynamic fields (recomputed each call):
+
+| Field | Type | |
+|:------|:-----|:--|
+| `bone` | `number` | Bone array index (after remapping) |
+| `start` | [`Vector`](/api/types/vector) | World-space = `bone.pos + bone.rotation.rotate(mins)` |
+| `end` | [`Vector`](/api/types/vector) | World-space = `bone.pos + bone.rotation.rotate(maxs)` |
+
+```ts
+for (const hb of entity.getHitboxes() ?? []) {
+    Render.line3D(hb.start, hb.end, Color.yellow());
+}
+```
+
+---
+
+#### .getHitbox
+
+<br />
+
+```ts
+entity.getHitbox(id: number): Hitbox | null
+```
+
+Returns a single hitbox by index (`0 .. hitboxes.length - 1`). Faster
+than [`getHitboxes()`](#gethitboxes) - reads only the one bone needed
+to resolve `start` / `end`, not the full bone array. Returns `null` if
+`id` is out of range, or if the bone or model is invalid.
+
+```ts
+// Head hitbox world-space center
+const head = entity.getHitbox(0);
+if (head) {
+    const center = head.start.add(head.end).scale(0.5);
+    Render.circle3D(center, 4, Color.red());
+}
+```
+
+---
+
 ### Player methods
 
 Available on player pawns (`C_CSPlayerPawn`, `C_CSObserverPawn`).
@@ -557,7 +699,7 @@ The engine maps every C++ schema type to a JavaScript value automatically.
 | `double`, `float64` | `number` | |
 | `Vector`, `VectorWS` | [`Vector`](/api/types/vector) | |
 | `QAngle`, `QAngle_t` | [`QAngle`](/api/types/qangle) | |
-| `Quaternion`, `Quaternion_t` | `{ x, y, z, w }` | |
+| `Quaternion`, `Quaternion_t` | [`Quaternion`](/api/types/quaternion) | |
 | `GameTick_t` | `number` | Stored as float |
 | `CUtlString`, `CUtlSymbolLarge` | `string` | |
 | `CUtlVector`, `CNetworkUtlVectorBase` | `UtlVector` | See [CUtlVector fields](#cutlvector-fields) |
