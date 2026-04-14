@@ -531,17 +531,20 @@ enemies.text({
 });
 ```
 
-### Toggle an element from an event
+### Toggle an element with a keybind
 
 ```ts
+const VK_INSERT = 0x2D;
+
 const flag = enemies.text({
     name:    "lowhp_flag",
     preview: "LOW HP",
     render:  (e, ctx) => ctx.hp <= 20 ? "LOW HP" : null,
 });
 
-on("round_start", () => { flag.enabled = true;  });
-on("round_end",   () => { flag.enabled = false; });
+on("OnKeyDown", (vk) => {
+    if (vk === VK_INSERT) flag.enabled = !flag.enabled;
+});
 ```
 
 ### Dropped weapons — name label
