@@ -1,0 +1,358 @@
+---
+title: "ESP"
+sidebarTitle: "ESP"
+description: "Register visual overlays that draw on top of entities — the user places and styles them in the builder menu."
+icon: "eye"
+---
+
+```ts
+import esp from "@native/esp";
+```
+
+The `ESP` module is a declarative layer for drawing per-entity overlays
+(text, bars, icons) without ever touching `on("render", ...)`. You
+register **elements** on a **class** of entities; each frame the engine
+iterates entities of that class and calls your `render(e, ctx)` function
+to decide what to draw. The user arranges and styles your elements in
+the in-game builder menu — you only decide *what* they show.
+
+<Note>
+  **`Color` is global** — no import needed. Every color shortcut
+  (`Color.red()`, `Color.rgb(...)`, etc.) works directly inside `render`
+  returns.
+</Note>
+
+<Warning>
+  **`render` must be a pure function of `(e, ctx)`.** It is called every
+  frame on every matching entity — do not mutate global state inside it.
+  Each return value fully describes the element's state for that frame.
+</Warning>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Classes" icon="layer-group" href="#classes">
+    Group entities by kind (`enemy`, `team`, `dropped`, `projectile`).
+  </Card>
+  <Card title="Elements" icon="tag" href="#elements">
+    Register text, bars, or icons with a `render` callback.
+  </Card>
+  <Card title="Render returns" icon="code" href="#render-returns">
+    What `render` is allowed to return — strings, numbers, or objects.
+  </Card>
+  <Card title="Runtime control" icon="sliders" href="#runtime-control">
+    Mutate element visibility, name, and preview at runtime.
+  </Card>
+</CardGroup>
+
+---
+
+## Classes
+
+### esp.class
+
+<br />
+
+```ts
+esp.class(kind: "enemy" | "team" | "dropped" | "projectile", opts?: {
+    context?: (e: Entity) => any
+}): Class
+```
+
+Creates (or returns an existing) entity class. Calling `esp.class` again
+with the same `kind` returns the same instance — you can attach more
+elements to it or replace its `context`.
+
+<ParamField path="kind" type='"enemy" | "team" | "dropped" | "projectile"' required>
+  Which entities to iterate.
+</ParamField>
+<ParamField path="opts.context" type="(e: Entity) => any">
+  Runs **once per entity per frame**, before any element's `render`.
+  The returned value is passed as `ctx` to every element on that entity.
+  Use it to hoist shared work (HP clamp, alive check, distance calc).
+</ParamField>
+
+```ts
+const enemies = esp.class("enemy", {
+    context: (e) => ({
+        hp: e.m_iHealth | 0,
+        alive: (e.m_iHealth | 0) > 0,
+    }),
+});
+```
+
+You can also swap `context` later:
+
+```ts
+enemies.context = (e) => ({ /* ... */ });
+```
+
+---
+
+## Elements
+
+A class exposes three element factories. Each returns an
+[`Element`](#runtime-control) handle for runtime control.
+
+### class.text
+
+<br />
+
+```ts
+class.text(def: ElementDef): Element
+```
+
+Registers a text element drawn on each entity of the class.
+
+### class.bar
+
+<br />
+
+```ts
+class.bar(def: ElementDef): Element
+```
+
+Registers a bar element (health, armor, progress).
+
+### class.icon
+
+<br />
+
+```ts
+class.icon(def: ElementDef): Element
+```
+
+Reserved — always return `null` from `render` for now.
+
+### ElementDef
+
+| Property  | Type | Required | |
+|:----------|:-----|:--------:|:--|
+| `name`    | `string` | ✅ | Stable ID, persists user layout across reloads |
+| `render`  | `(e, ctx) => Result` | ✅ | Called every frame for every entity |
+| `preview` | `Result` | — | Value shown in the builder menu |
+| `area`    | `"top" \| "bottom" \| "left" \| "right" \| "center"` | — | Initial slot (user can drag) |
+
+```ts
+enemies.text({
+    name: "hp",
+    preview: "100",
+    area: "top",
+    render: (e, ctx) => `${ctx.hp}`,
+});
+```
+
+---
+
+## Render returns
+
+Anywhere `render` or `preview` is expected, you may return:
+
+- `null` / `undefined` / `false` — hide the element this frame.
+- A **shortcut** value (`string` / `number`).
+- A full **descriptor object** to override specific visual fields.
+
+Fields you return **override** the user's menu settings for that frame.
+Fields you omit stay at whatever the user configured.
+
+<Note>
+  There is no "clear override" call — simply stop returning the field
+  and the user's configuration takes over again on the next frame.
+</Note>
+
+### Text result
+
+```ts
+type TextResult =
+    | string
+    | number
+    | null | undefined | false
+    | {
+        visible?:   boolean;
+        text?:      string;
+        color?:     Color;
+        colorAlt?:  Color;                        // auto-enables gradient
+        colorMode?: "solid" | "gradient";
+        fontSize?:  number;
+        font?:      "segoe" | "tahoma" | "verdana" | "arial" | "icon";
+        outline?:   boolean;
+    };
+```
+
+```ts
+enemies.text({
+    name: "hp_text",
+    preview: "HP 100",
+    render: (e, ctx) => {
+        if (!ctx.alive) return null;
+        const label = `HP ${ctx.hp}`;
+        if (ctx.hp < 30) {
+            return { text: label, color: Color.red(), fontSize: 18, outline: true };
+        }
+        return label;                              // string shortcut
+    },
+});
+```
+
+### Bar result
+
+```ts
+type BarResult =
+    | number                                       // 0..1, fill value
+    | null | undefined | false
+    | {
+        value?:       number;                      // 0..1
+        visible?:     boolean;
+        color?:       Color;
+        colorAlt?:    Color;                       // auto-enables gradient
+        colorMode?:   "solid" | "gradient" | "value";
+        size?:        number;                      // thickness
+        rounding?:    number;
+        separated?:   boolean;                     // split into segments
+        divisions?:   number;                      // segment count
+        reverse?:     boolean;
+        outline?:     boolean;
+        outlineSize?: number;
+    };
+```
+
+```ts
+enemies.bar({
+    name: "hp_bar",
+    preview: 0.7,
+    render: (e, ctx) => (ctx.alive ? ctx.hp / 100 : null),
+});
+```
+
+### Icon result
+
+Reserved. Always return `null`.
+
+---
+
+## Preview
+
+`preview` accepts the same shapes as `render` and is shown in the
+builder menu so the user can see what your element will look like
+before any entity is around.
+
+```ts
+enemies.text({ name: "hp",     preview: "100",                                render: /* ... */ });
+enemies.bar ({ name: "hp_bar", preview: 0.7,                                  render: /* ... */ });
+enemies.bar ({ name: "fancy",  preview: { value: 0.5, color: Color.green() }, render: /* ... */ });
+```
+
+---
+
+## Runtime control
+
+Each `.text` / `.bar` / `.icon` call returns an `Element` handle:
+
+```ts
+const el = enemies.text({ name: "hp", render: /* ... */ });
+```
+
+| Property         | Type      | Access | |
+|:-----------------|:----------|:------:|:--|
+| `name`           | `string`  | r/w    | Label shown in the builder menu |
+| `preview`        | `Result`  | r/w    | Preview value |
+| `enabled`        | `boolean` | r/w    | Script-side forced disable (overrides user toggle) |
+| `enabledByUser`  | `boolean` | r      | What the user toggled in the menu |
+| `destroyed`      | `boolean` | r      | `true` after [`destroy()`](#element-destroy) |
+
+### element.destroy
+
+<br />
+
+```ts
+el.destroy(): void
+```
+
+Permanently removes the element. Idempotent — safe to call multiple
+times. After destruction:
+
+- getters return `""` / `false`
+- setters are silently ignored
+- no exceptions are thrown (convenient for hot-reload)
+
+```ts
+el.enabled = false;     // temporarily hide
+el.destroy();           // remove completely
+```
+
+---
+
+## Error handling
+
+- Exception in `render` → the element is hidden for that frame; it is
+  retried on the next frame.
+- Exception in `context` → `ctx` is `undefined` for **all** elements on
+  that entity for that frame.
+
+A single throwing function never takes down other elements.
+
+---
+
+## Entity
+
+The `e` passed to `render` and `context` is a standard entity proxy —
+all schema fields resolve lazily by name:
+
+```ts
+e.m_iHealth
+e.m_vecAbsOrigin
+e.m_sName
+// ...
+```
+
+See [Entities](/api/entities) for the full list of supported fields and
+proxy behavior.
+
+---
+
+## Full example
+
+```ts
+import esp from "@native/esp";
+
+const LOW_HP = 20;
+
+const enemies = esp.class("enemy", {
+    context: (e) => ({
+        hp: e.m_iHealth | 0,
+        alive: (e.m_iHealth | 0) > 0,
+    }),
+});
+
+// Player name, hidden when dead
+enemies.text({
+    name: "name",
+    preview: "Enemy",
+    area: "top",
+    render: (e, ctx) => {
+        if (!ctx.alive) return null;
+        return e.controller?.m_iszPlayerName;
+    },
+});
+
+// HP text with color override when critical
+enemies.text({
+    name: "hp_text",
+    preview: "HP 100",
+    render: (e, ctx) => {
+        if (!ctx.alive) return null;
+        const label = `HP ${ctx.hp}`;
+        if (ctx.hp < LOW_HP) {
+            return { text: label, color: Color.red(), outline: true };
+        }
+        return label;
+    },
+});
+
+// Simple HP bar
+enemies.bar({
+    name: "hp_bar",
+    preview: 0.7,
+    render: (e, ctx) => (ctx.alive ? ctx.hp / 100 : null),
+});
+```

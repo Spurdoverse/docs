@@ -48,6 +48,7 @@
             "pages": [
               "api/math",
               "api/render",
+              "api/esp",
               "api/game",
               "api/ffi",
               "api/fs",
