@@ -1,7 +1,7 @@
 ---
 title: "ESP"
 sidebarTitle: "ESP"
-description: "Register visual overlays that draw on top of entities — the user places and styles them in the builder menu."
+description: "Declarative per-entity overlays — register text, bars, and icons that the user lays out in the builder menu."
 icon: "eye"
 ---
 
@@ -9,39 +9,29 @@ icon: "eye"
 import esp from "@native/esp";
 ```
 
-The `ESP` module is a declarative layer for drawing per-entity overlays
-(text, bars, icons) without ever touching `on("render", ...)`. You
-register **elements** on a **class** of entities; each frame the engine
-iterates entities of that class and calls your `render(e, ctx)` function
-to decide what to draw. The user arranges and styles your elements in
-the in-game builder menu — you only decide *what* they show.
+The `esp` module is a **declarative** layer for drawing overlays on
+entities. You never touch `on("render", ...)` - instead you register
+**elements** on an entity **class**, and each frame the engine calls
+your `render(e, ctx)` function per entity to decide what to draw.
 
-<Note>
-  **`Color` is global** — no import needed. Every color shortcut
-  (`Color.red()`, `Color.rgb(...)`, etc.) works directly inside `render`
-  returns.
-</Note>
-
-<Warning>
-  **`render` must be a pure function of `(e, ctx)`.** It is called every
-  frame on every matching entity — do not mutate global state inside it.
-  Each return value fully describes the element's state for that frame.
-</Warning>
+The user controls **where** and **how** elements are styled via the
+in-game builder menu; your code only decides **what** they show and
+when they are visible.
 
 ## Overview
 
 <CardGroup cols={2}>
   <Card title="Classes" icon="layer-group" href="#classes">
-    Group entities by kind (`enemy`, `team`, `dropped`, `projectile`).
+    Pick which entities to draw on: `enemy`, `team`, `dropped`, `projectile`.
   </Card>
   <Card title="Elements" icon="tag" href="#elements">
-    Register text, bars, or icons with a `render` callback.
+    Register text, bars, and icons with a per-frame `render`.
   </Card>
   <Card title="Render returns" icon="code" href="#render-returns">
-    What `render` is allowed to return — strings, numbers, or objects.
+    Shortcuts and descriptor objects your `render` can return.
   </Card>
   <Card title="Runtime control" icon="sliders" href="#runtime-control">
-    Mutate element visibility, name, and preview at runtime.
+    Mutate element visibility, label, and preview on the fly.
   </Card>
 </CardGroup>
 
@@ -49,124 +39,196 @@ the in-game builder menu — you only decide *what* they show.
 
 ## Classes
 
+A **class** is a group of entities the engine iterates for you. You
+attach elements to it and they are drawn on every matching entity.
+
 ### esp.class
 
 <br />
 
 ```ts
-esp.class(kind: "enemy" | "team" | "dropped" | "projectile", opts?: {
-    context?: (e: Entity) => any
-}): Class
+esp.class(kind: Kind, opts?: { context?: (e: Entity) => any }): Class
 ```
 
-Creates (or returns an existing) entity class. Calling `esp.class` again
-with the same `kind` returns the same instance — you can attach more
-elements to it or replace its `context`.
+Creates the class, or returns the existing one if it was already
+created with the same `kind`. This makes the call **idempotent** - safe
+to run on every script reload without duplicating elements.
 
 <ParamField path="kind" type='"enemy" | "team" | "dropped" | "projectile"' required>
-  Which entities to iterate.
+  Which entities to iterate every frame.
+  - `enemy` - enemy player pawns
+  - `team` - teammate player pawns (not including local)
+  - `dropped` - dropped weapons and grenades
+  - `projectile` - in-flight grenades, molotovs, smokes
 </ParamField>
 <ParamField path="opts.context" type="(e: Entity) => any">
   Runs **once per entity per frame**, before any element's `render`.
-  The returned value is passed as `ctx` to every element on that entity.
-  Use it to hoist shared work (HP clamp, alive check, distance calc).
+  Its return value is passed as `ctx` to every element on that entity.
+  Use it to hoist shared work like HP parsing, alive checks, or
+  distance math so the element `render`s stay cheap.
 </ParamField>
 
 ```ts
 const enemies = esp.class("enemy", {
     context: (e) => ({
-        hp: e.m_iHealth | 0,
+        hp:    e.m_iHealth | 0,
         alive: (e.m_iHealth | 0) > 0,
     }),
 });
 ```
 
-You can also swap `context` later:
+<Tip>
+  You can replace `context` at any time without re-registering elements:
+
+  ```ts
+  enemies.context = (e) => ({ /* new logic */ });
+  ```
+</Tip>
+
+---
+
+## The render callback
+
+Every element takes a `render(e, ctx)` function. It runs **every frame
+for every entity** of the class.
+
+<ParamField path="e" type="Entity">
+  The entity currently being drawn. This is the exact same proxy
+  documented in [Entities](/api/entities) - all schema fields, reserved
+  properties (`isValid`, `className`, `controller`, ...), helper
+  methods (`getBoundingBox`, `isEnemy`, ...) and raw-buffer reads are
+  available.
+</ParamField>
+<ParamField path="ctx" type="any">
+  Whatever the class's `context(e)` returned for this entity on this
+  frame. If no `context` was supplied, `ctx` is `undefined`. Shared
+  across every element on the same entity, so do heavy/shared work
+  once in `context` rather than re-doing it in each `render`.
+</ParamField>
 
 ```ts
-enemies.context = (e) => ({ /* ... */ });
+const enemies = esp.class("enemy", {
+    context: (e) => ({
+        hp:    e.m_iHealth | 0,          // computed once per entity per frame
+        alive: (e.m_iHealth | 0) > 0,
+    }),
+});
+
+enemies.text({
+    name: "hp",
+    render: (e, ctx) => {
+        // `e` is the full Entity proxy — same as Entities.getByIndex(...)
+        const name = e.controller?.m_iszPlayerName;
+        // `ctx` is whatever `context` returned for this entity this frame
+        return ctx.alive ? `${name} ${ctx.hp}` : null;
+    },
+});
 ```
 
 ---
 
 ## Elements
 
-A class exposes three element factories. Each returns an
-[`Element`](#runtime-control) handle for runtime control.
+A class has three element factories. Each returns an
+[`Element`](#runtime-control) handle.
 
 ### class.text
 
 <br />
 
 ```ts
-class.text(def: ElementDef): Element
+class.text(def: ElementDef<TextResult>): Element
 ```
 
-Registers a text element drawn on each entity of the class.
+Registers a text element drawn on every entity of the class.
+
+<ParamField path="def.name" type="string" required>
+  Stable ID. Used as the key in the user's saved layout - keep it
+  constant across reloads or the user will lose their placement.
+</ParamField>
+<ParamField path="def.render" type="(e: Entity, ctx: any) => TextResult" required>
+  Called every frame for every entity. See [Text result](#text-result)
+  for accepted return shapes.
+</ParamField>
+<ParamField path="def.preview" type="TextResult">
+  Value shown in the builder menu before a real entity is available.
+  Accepts the same shapes as `render`.
+</ParamField>
+<ParamField path="def.area" type='"top" | "bottom" | "left" | "right" | "center"'>
+  Initial slot for the element. The user can drag it elsewhere; this
+  is only the first-time default.
+</ParamField>
+
+```ts
+enemies.text({
+    name:    "hp_text",
+    preview: "HP 100",
+    area:    "top",
+    render:  (e, ctx) => ctx.alive ? `HP ${ctx.hp}` : null,
+});
+```
+
+---
 
 ### class.bar
 
 <br />
 
 ```ts
-class.bar(def: ElementDef): Element
+class.bar(def: ElementDef<BarResult>): Element
 ```
 
-Registers a bar element (health, armor, progress).
+Registers a bar element (health, armor, progress, etc.).
+
+Same fields as [`class.text`](#classtext). The `render` return type is
+a [Bar result](#bar-result).
+
+```ts
+enemies.bar({
+    name:    "hp_bar",
+    preview: 0.7,
+    render:  (e, ctx) => ctx.alive ? ctx.hp / 100 : null,
+});
+```
+
+---
 
 ### class.icon
 
 <br />
 
 ```ts
-class.icon(def: ElementDef): Element
+class.icon(def: ElementDef<IconResult>): Element
 ```
 
-Reserved — always return `null` from `render` for now.
-
-### ElementDef
-
-| Property  | Type | Required | |
-|:----------|:-----|:--------:|:--|
-| `name`    | `string` | ✅ | Stable ID, persists user layout across reloads |
-| `render`  | `(e, ctx) => Result` | ✅ | Called every frame for every entity |
-| `preview` | `Result` | — | Value shown in the builder menu |
-| `area`    | `"top" \| "bottom" \| "left" \| "right" \| "center"` | — | Initial slot (user can drag) |
-
-```ts
-enemies.text({
-    name: "hp",
-    preview: "100",
-    area: "top",
-    render: (e, ctx) => `${ctx.hp}`,
-});
-```
+Reserved for future use. **Always return `null`** from `render` for now.
 
 ---
 
 ## Render returns
 
-Anywhere `render` or `preview` is expected, you may return:
+Every `render` (and `preview`) return value is one of three things:
 
-- `null` / `undefined` / `false` — hide the element this frame.
-- A **shortcut** value (`string` / `number`).
-- A full **descriptor object** to override specific visual fields.
-
-Fields you return **override** the user's menu settings for that frame.
-Fields you omit stay at whatever the user configured.
+| Return | Effect |
+|:-------|:-------|
+| `null` / `undefined` / `false` | Hide the element this frame. |
+| A **shortcut** (`string`, `number`) | Shorthand for the common field. |
+| A **descriptor object** | Fine-grained per-field override. |
 
 <Note>
-  There is no "clear override" call — simply stop returning the field
-  and the user's configuration takes over again on the next frame.
+  Fields you return **override** the user's menu settings for that
+  frame. Fields you omit keep whatever the user configured.
+  There is no "clear override" call - stop returning the field and the
+  user's value takes over on the next frame.
 </Note>
 
 ### Text result
 
 ```ts
 type TextResult =
-    | string
-    | number
-    | null | undefined | false
+    | string                                      // text shortcut
+    | number                                      // coerced via toString()
+    | null | undefined | false                    // hide this frame
     | {
         visible?:   boolean;
         text?:      string;
@@ -179,50 +241,122 @@ type TextResult =
     };
 ```
 
-```ts
+| Field | Type | |
+|:------|:-----|:--|
+| `visible` | `boolean` | Force show / hide without touching other fields. |
+| `text` | `string` | Text to draw. |
+| `color` | [`Color`](/api/types/color) | Primary color. |
+| `colorAlt` | [`Color`](/api/types/color) | Gradient endpoint. Setting it auto-switches `colorMode` to `"gradient"`. |
+| `colorMode` | `"solid" \| "gradient"` | Override the user's color mode. |
+| `fontSize` | `number` | Pixel height. |
+| `font` | `"segoe" \| "tahoma" \| "verdana" \| "arial" \| "icon"` | Font family. |
+| `outline` | `boolean` | Black outline around glyphs. |
+
+<CodeGroup>
+```ts String shortcut
 enemies.text({
-    name: "hp_text",
-    preview: "HP 100",
+    name: "hp",
+    render: (e, ctx) => `HP ${ctx.hp}`,
+});
+```
+
+```ts Conditional color
+enemies.text({
+    name: "hp",
     render: (e, ctx) => {
         if (!ctx.alive) return null;
-        const label = `HP ${ctx.hp}`;
-        if (ctx.hp < 30) {
-            return { text: label, color: Color.red(), fontSize: 18, outline: true };
-        }
-        return label;                              // string shortcut
+        return {
+            text:    `HP ${ctx.hp}`,
+            color:   ctx.hp < 30 ? Color.red() : Color.white(),
+            outline: true,
+        };
     },
 });
 ```
+
+```ts Gradient
+enemies.text({
+    name: "name",
+    render: (e) => ({
+        text:     e.controller?.m_iszPlayerName,
+        color:    Color.cyan(),
+        colorAlt: Color.white(),   // auto-enables gradient
+        fontSize: 16,
+    }),
+});
+```
+</CodeGroup>
+
+---
 
 ### Bar result
 
 ```ts
 type BarResult =
     | number                                       // 0..1, fill value
-    | null | undefined | false
+    | null | undefined | false                     // hide this frame
     | {
         value?:       number;                      // 0..1
         visible?:     boolean;
         color?:       Color;
         colorAlt?:    Color;                       // auto-enables gradient
         colorMode?:   "solid" | "gradient" | "value";
-        size?:        number;                      // thickness
-        rounding?:    number;
-        separated?:   boolean;                     // split into segments
+        size?:        number;                      // thickness in px
+        rounding?:    number;                      // corner radius
+        separated?:   boolean;                     // draw as segments
         divisions?:   number;                      // segment count
-        reverse?:     boolean;
+        reverse?:     boolean;                     // fill from the other side
         outline?:     boolean;
         outlineSize?: number;
     };
 ```
 
-```ts
+| Field | Type | |
+|:------|:-----|:--|
+| `value` | `number` | Fill ratio in `[0, 1]`. |
+| `visible` | `boolean` | Force show / hide. |
+| `color` | [`Color`](/api/types/color) | Primary color. |
+| `colorAlt` | [`Color`](/api/types/color) | Gradient endpoint. |
+| `colorMode` | `"solid" \| "gradient" \| "value"` | `"value"` interpolates red→green by `value`. |
+| `size` | `number` | Thickness in pixels. |
+| `rounding` | `number` | Corner radius. |
+| `separated` | `boolean` | Split the bar into discrete segments. |
+| `divisions` | `number` | Segment count when `separated` is `true`. |
+| `reverse` | `boolean` | Fill from the opposite edge. |
+| `outline` / `outlineSize` | `boolean` / `number` | Outline around the bar. |
+
+<CodeGroup>
+```ts Number shortcut
 enemies.bar({
     name: "hp_bar",
-    preview: 0.7,
-    render: (e, ctx) => (ctx.alive ? ctx.hp / 100 : null),
+    render: (e, ctx) => ctx.alive ? ctx.hp / 100 : null,
 });
 ```
+
+```ts Value-based gradient
+enemies.bar({
+    name: "hp_bar",
+    render: (e, ctx) => {
+        if (!ctx.alive) return null;
+        return { value: ctx.hp / 100, colorMode: "value", rounding: 2 };
+    },
+});
+```
+
+```ts Segmented armor bar
+enemies.bar({
+    name: "armor_bar",
+    render: (e) => ({
+        value:     (e.m_ArmorValue | 0) / 100,
+        color:     Color.rgb(80, 180, 255),
+        separated: true,
+        divisions: 4,
+    }),
+});
+```
+</CodeGroup>
+
+---
 
 ### Icon result
 
@@ -232,33 +366,42 @@ Reserved. Always return `null`.
 
 ## Preview
 
-`preview` accepts the same shapes as `render` and is shown in the
-builder menu so the user can see what your element will look like
-before any entity is around.
+`preview` is shown in the builder menu so the user can see the element
+before a real entity exists. It accepts the same shapes as `render`.
 
 ```ts
-enemies.text({ name: "hp",     preview: "100",                                render: /* ... */ });
+enemies.text({ name: "hp",     preview: "HP 100",                             render: /* ... */ });
 enemies.bar ({ name: "hp_bar", preview: 0.7,                                  render: /* ... */ });
 enemies.bar ({ name: "fancy",  preview: { value: 0.5, color: Color.green() }, render: /* ... */ });
 ```
+
+<Tip>
+  Make `preview` look like a **realistic** render output. If the real
+  element shows `HP 100`, don't set `preview: "X"` - the user can't
+  judge size / position from it.
+</Tip>
 
 ---
 
 ## Runtime control
 
-Each `.text` / `.bar` / `.icon` call returns an `Element` handle:
+Every `.text` / `.bar` / `.icon` call returns an `Element` handle for
+live mutation.
 
 ```ts
-const el = enemies.text({ name: "hp", render: /* ... */ });
+const hp = enemies.text({ name: "hp", render: /* ... */ });
+
+hp.name    = "Health";       // label shown in the builder menu
+hp.enabled = false;          // script-side force-disable
 ```
 
-| Property         | Type      | Access | |
-|:-----------------|:----------|:------:|:--|
-| `name`           | `string`  | r/w    | Label shown in the builder menu |
-| `preview`        | `Result`  | r/w    | Preview value |
-| `enabled`        | `boolean` | r/w    | Script-side forced disable (overrides user toggle) |
-| `enabledByUser`  | `boolean` | r      | What the user toggled in the menu |
-| `destroyed`      | `boolean` | r      | `true` after [`destroy()`](#element-destroy) |
+| Property | Type | Access | |
+|:---------|:-----|:------:|:--|
+| `name` | `string` | r/w | Label shown in the builder menu. Changing it does **not** change the internal ID. |
+| `preview` | `TextResult \| BarResult` | r/w | Preview value. Accepts the same shapes as `render`. |
+| `enabled` | `boolean` | r/w | Script-side force-disable. When `false`, the element is hidden even if the user enabled it. |
+| `enabledByUser` | `boolean` | r | Whether the user toggled it on in the menu. |
+| `destroyed` | `boolean` | r | `true` after [`destroy()`](#elementdestroy). |
 
 ### element.destroy
 
@@ -268,74 +411,147 @@ const el = enemies.text({ name: "hp", render: /* ... */ });
 el.destroy(): void
 ```
 
-Permanently removes the element. Idempotent — safe to call multiple
-times. After destruction:
+Permanently removes the element. **Idempotent** - safe to call multiple
+times, including after a previous `destroy()`.
 
+After destruction:
 - getters return `""` / `false`
 - setters are silently ignored
-- no exceptions are thrown (convenient for hot-reload)
+- no exceptions are ever thrown
 
 ```ts
-el.enabled = false;     // temporarily hide
-el.destroy();           // remove completely
+const handle = enemies.text({ name: "debug", render: () => "x" });
+
+// later...
+handle.destroy();
+handle.name = "ignored"; // no-op
+handle.destroy();        // no-op
 ```
+
+<Tip>
+  Idempotent destroy makes `esp` safe for hot-reload flows: re-running
+  the script simply re-registers everything without leaking elements.
+</Tip>
 
 ---
 
 ## Error handling
 
-- Exception in `render` → the element is hidden for that frame; it is
-  retried on the next frame.
-- Exception in `context` → `ctx` is `undefined` for **all** elements on
-  that entity for that frame.
+Exceptions inside `render` and `context` are caught by the bridge so one
+broken function never takes down the rest.
 
-A single throwing function never takes down other elements.
+| Throw site | Effect |
+|:-----------|:-------|
+| `render` throws | Element is hidden for this frame only. Retried next frame. |
+| `context` throws | `ctx` is `undefined` for **all** elements on that entity this frame. |
+
+```ts
+enemies.text({
+    name: "dist",
+    render: (e) => {
+        // If m_pGameSceneNode is missing, this throws - the element
+        // simply hides for the frame and is retried next tick.
+        const o = e.m_pGameSceneNode.m_vecAbsOrigin;
+        const m = Math.sqrt(o.x * o.x + o.y * o.y + o.z * o.z) / 52.49;
+        return `DIST ${m.toFixed(1)}m`;
+    },
+});
+```
 
 ---
 
-## Full example
+## Recipes
+
+### Enemy HP ESP with critical-state color
 
 ```ts
-import esp from "@native/esp";
-
-const LOW_HP = 20;
-
 const enemies = esp.class("enemy", {
+    context: (e) => ({ hp: e.m_iHealth | 0, alive: (e.m_iHealth | 0) > 0 }),
+});
+
+enemies.text({
+    name:    "hp_text",
+    preview: "HP 100",
+    area:    "top",
+    render:  (e, ctx) => {
+        if (!ctx.alive) return null;
+        const label = `HP ${ctx.hp}`;
+        return ctx.hp < 30
+            ? { text: label, color: Color.red(), outline: true }
+            : label;
+    },
+});
+
+enemies.bar({
+    name:    "hp_bar",
+    preview: 0.7,
+    render:  (e, ctx) => ctx.alive ? ctx.hp / 100 : null,
+});
+```
+
+### Teammates — name + value-gradient HP bar
+
+```ts
+const team = esp.class("team", {
     context: (e) => ({
-        hp: e.m_iHealth | 0,
+        hp:    e.m_iHealth | 0,
         alive: (e.m_iHealth | 0) > 0,
     }),
 });
 
-// Player name, hidden when dead
-enemies.text({
-    name: "name",
-    preview: "Enemy",
-    area: "top",
-    render: (e, ctx) => {
-        if (!ctx.alive) return null;
-        return e.controller?.m_iszPlayerName;
-    },
+team.text({
+    name:    "name",
+    preview: "Teammate",
+    render:  (e, ctx) => ctx.alive ? e.controller?.m_iszPlayerName : null,
 });
 
-// HP text with color override when critical
+team.bar({
+    name:    "hp_bar",
+    preview: { value: 0.8, colorMode: "value", rounding: 1 },
+    render:  (e, ctx) => ctx.alive
+        ? { value: ctx.hp / 100, colorMode: "value", rounding: 1 }
+        : null,
+});
+```
+
+### Distance text — only within range
+
+```ts
 enemies.text({
-    name: "hp_text",
-    preview: "HP 100",
-    render: (e, ctx) => {
-        if (!ctx.alive) return null;
-        const label = `HP ${ctx.hp}`;
-        if (ctx.hp < LOW_HP) {
-            return { text: label, color: Color.red(), outline: true };
-        }
-        return label;
+    name:    "dist",
+    preview: "15m",
+    area:    "bottom",
+    render:  (e) => {
+        const o = e.m_pGameSceneNode?.m_vecAbsOrigin;
+        if (!o) return null;
+        const meters = Math.sqrt(o.x * o.x + o.y * o.y + o.z * o.z) / 52.49;
+        if (meters > 30) return null;
+        return `${meters.toFixed(1)}m`;
     },
 });
+```
 
-// Simple HP bar
-enemies.bar({
-    name: "hp_bar",
-    preview: 0.7,
-    render: (e, ctx) => (ctx.alive ? ctx.hp / 100 : null),
+### Toggle an element from an event
+
+```ts
+const flag = enemies.text({
+    name:    "lowhp_flag",
+    preview: "LOW HP",
+    render:  (e, ctx) => ctx.hp <= 20 ? "LOW HP" : null,
+});
+
+on("round_start", () => { flag.enabled = true;  });
+on("round_end",   () => { flag.enabled = false; });
+```
+
+### Dropped weapons — name label
+
+```ts
+const dropped = esp.class("dropped");
+
+dropped.text({
+    name:    "weapon_name",
+    preview: "ak47",
+    render:  (e) => e.className.replace(/^C_Weapon/, "").toLowerCase(),
 });
 ```
