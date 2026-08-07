@@ -6,8 +6,17 @@ icon: "microchip"
 ---
 
 ```ts
-import FFI from "@native/ffi";
+import FFI from "@native/ffi";  // requires "ffi" permission
 ```
+
+<Note>
+  Requires the **`ffi`** permission in your
+  [manifest](/api/manifest#permissions):
+
+  ```json
+  { "permissions": ["ffi"] }
+  ```
+</Note>
 
 The `FFI` module lets you load native libraries (`.dll`, `.so`) and call their
 functions directly from JavaScript - no bindings, no wrappers.
@@ -193,7 +202,7 @@ const { sleep, getTickCount } = k32.funcs({
 });
 
 sleep(100);
-log(getTickCount());
+console.log(getTickCount());
 ```
 
 <Tip>
@@ -315,7 +324,7 @@ The returned type object has these methods:
     ```ts
     // Read a Vec3 directly from a pointer
     const pos = Vec3.view(entityBaseAddr + 0x138);
-    log(pos.x, pos.y, pos.z);
+    console.log(pos.x, pos.y, pos.z);
     ```
   </Tab>
   <Tab title="decode">
@@ -368,7 +377,7 @@ const Value = FFI.union("Value", {
 
 const v = Value.alloc();
 v.asInt = 0x42280000;
-log(v.asFloat); // 42.0 - same bits, different interpretation
+console.log(v.asFloat); // 42.0 - same bits, different interpretation
 ```
 
 The returned type has `alloc()`, `from()`, and `view()` - same as struct.
@@ -517,7 +526,7 @@ Returns the current C `errno` value. Check it right after a native call.
 ```ts
 const fd = openFunc(path, flags);
 if (fd < 0) {
-    log("error:", FFI.errno());
+    console.log("error:", FFI.errno());
 }
 ```
 
@@ -573,7 +582,7 @@ signature string or explicit types.
   <Tab title="Explicit types">
     ```ts
     const cb = FFI.callback("bool", ["pointer", "uint32"], (hwnd, msg) => {
-        log("window message:", msg);
+        console.log("window message:", msg);
         return true;
     });
     ```
@@ -742,7 +751,7 @@ throws.
 FFI.using(() => {
     const name = safeName(playerId);
     // name.$val is the string
-    log(name.$val);
+    console.log(name.$val);
     // name.close() is called automatically when this block exits
 });
 ```
@@ -807,12 +816,12 @@ const getExitCode = lib.func("bool GetExitCodeProcess(pointer, _Out_ uint32*)");
 
 const code = [0];
 getExitCode(hProcess, code);
-log(code[0]); // the exit code
+console.log(code[0]); // the exit code
 
 // Or with object style:
 const code2 = { $: 0 };
 getExitCode(hProcess, code2);
-log(code2.$); // same result
+console.log(code2.$); // same result
 ```
 
 | Annotation | Behavior |

@@ -10,7 +10,7 @@ icon: "database"
 localStorage.setItem("key", value);
 ```
 
-Your favorite browser API in a modern version. `localStorage` provides persistent key-value storage that survives script reloads and restarts. Data is encrypted on disk, and each script has its own isolated storage - scripts cannot access each other's data.
+Your favorite browser API in a modern version. `localStorage` provides persistent key-value storage that survives script reloads and restarts. Each script has its own isolated storage - scripts cannot access each other's data.
 
 Unlike the browser version, values are serialized using the **structured clone algorithm** (same as IndexedDB), so any JS type is supported - not just strings.
 

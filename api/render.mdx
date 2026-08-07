@@ -355,6 +355,12 @@ Render.calcTextSize(text: string, fontSize?: number, fontName?: string): Vector2
 Returns the pixel dimensions of a text string without drawing it.
 Use this to center or align text precisely.
 
+<Note>
+  The measurement is exact on every call, including the first one, and costs
+  nothing worth measuring - it walks the font's glyph table directly and caches
+  the result. It is safe to call in `render` for every entity on screen.
+</Note>
+
 <ParamField path="text" type="string" required>
   The string to measure.
 </ParamField>
@@ -364,6 +370,12 @@ Use this to center or align text precisely.
 <ParamField path="fontName" type="string" default='"segoe"'>
   Font name. Must match the font you pass to `Render.text`. See [available fonts](#available-fonts).
 </ParamField>
+
+<Tip>
+  Pass the **same** `fontSize` and `fontName` you will pass to `Render.text` -
+  measuring with one and drawing with another is the only way to get a mismatch.
+  Both default to `14` and `"segoe"`.
+</Tip>
 
 ```ts
 const text = "Hello World";

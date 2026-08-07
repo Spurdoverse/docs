@@ -6,8 +6,17 @@ icon: "keyboard"
 ---
 
 ```ts
-import Input from "@native/input";
+import Input from "@native/input";  // requires "input" permission
 ```
+
+<Note>
+  Requires the **`input`** permission in your
+  [manifest](/api/manifest#permissions):
+
+  ```json
+  { "permissions": ["input"] }
+  ```
+</Note>
 
 The `Input` module lets you simulate keyboard and mouse actions and read
 the current game input state. Mouse movements, key presses, and button

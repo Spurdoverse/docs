@@ -1,0 +1,297 @@
+---
+title: "Web APIs"
+sidebarTitle: "Web APIs"
+description: "The browser-standard globals available to scripts - and the ones that are not."
+icon: "globe-pointer"
+---
+
+Scripts run in a **Web Worker-shaped** environment: standard JavaScript plus the
+browser APIs that make sense without a document. There is `self`, there is no
+`window` and no `document`, so libraries that feature-detect their way into a
+browser build land on the right path without then reaching for a DOM.
+
+Everything on this page is global - no import needed. These are the specs'
+APIs, so [MDN](https://developer.mozilla.org/en-US/docs/Web/API) is the reference
+for the details; this page is about what exists here and where it differs.
+
+<Note>
+  HTTP and sockets have a page of their own: [Networking](/api/networking) -
+  `fetch`, `WebSocket`, `EventSource`, `XMLHttpRequest`.
+</Note>
+
+## Events
+
+Full WHATWG event system, the same objects a browser gives you.
+
+```ts
+addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.code === "Insert") toggle();
+});
+```
+
+`Event`, `CustomEvent`, `UIEvent`, `MouseEvent`, `WheelEvent`, `KeyboardEvent`,
+`ErrorEvent`, `MessageEvent`, `PromiseRejectionEvent`, `EventTarget`.
+
+`addEventListener` supports the usual options - `{ once, capture, passive, signal }` -
+and `preventDefault()` / `stopImmediatePropagation()` behave as specified. You
+can build your own emitters:
+
+```ts
+class Bus extends EventTarget {}
+
+const bus = new Bus();
+bus.addEventListener("hit", (e: CustomEvent) => console.log(e.detail));
+bus.dispatchEvent(new CustomEvent("hit", { detail: { damage: 42 } }));
+```
+
+See [Globals](/api/globals#events) for the list of events the host fires.
+
+## AbortController
+
+```ts
+const controller = new AbortController();
+
+addEventListener("tick", onTick, { signal: controller.signal });
+addEventListener("render", onRender, { signal: controller.signal });
+
+// one call removes both
+controller.abort();
+```
+
+`AbortSignal.timeout(ms)`, `AbortSignal.any([...])`, `signal.throwIfAborted()`
+and `signal.reason` all work. Aborting rejects with a `DOMException` named
+`AbortError`, exactly like in a browser.
+
+## URL & URLSearchParams
+
+```ts
+const url = new URL("https://example.com/a/b?x=1#frag");
+url.searchParams.append("y", "2");
+console.log(url.href);      // https://example.com/a/b?x=1&y=2#frag
+console.log(url.pathname);  // /a/b
+```
+
+Relative resolution, credentials, ports, dot segments and query editing are all
+supported. There is no IDNA/punycode conversion for non-ASCII hostnames.
+
+## Encoding
+
+```ts
+const bytes = new TextEncoder().encode("привет");   // Uint8Array
+const text  = new TextDecoder().decode(bytes);      // "привет"
+
+btoa("hello");            // base64
+atob("aGVsbG8=");
+```
+
+`TextEncoder` is UTF-8 only, as specified, and has `encodeInto`. `TextDecoder`
+handles a small set of encodings - enough for text that is not UTF-8 without
+pretending to be a full ICU:
+
+| Encoding | Labels accepted |
+|:---------|:----------------|
+| `utf-8` | `utf-8`, `utf8`, `unicode-1-1-utf-8` |
+| `utf-16le` | `utf-16`, `utf-16le`, `ucs-2`, `unicode` |
+| `utf-16be` | `utf-16be` |
+| `windows-1251` | `windows-1251`, `cp1251`, `x-cp1251` |
+| `windows-1252` | `windows-1252`, `cp1252`, `latin1`, `iso-8859-1`, `ascii`, `us-ascii` |
+| `koi8-r` | `koi8-r`, `koi8`, `koi8-u` |
+
+Anything else throws a `RangeError` rather than quietly returning the wrong
+text. `fatal` and `ignoreBOM` are supported, and so is streaming - a code point
+split across two chunks survives it:
+
+```ts
+const decoder = new TextDecoder("windows-1251");
+let out = "";
+for await (const chunk of response.body)
+    out += decoder.decode(chunk, { stream: true });
+out += decoder.decode();       // flush whatever was left over
+```
+
+## Streams
+
+`ReadableStream`, `WritableStream`, `TransformStream`, both queuing strategies,
+`TextEncoderStream` / `TextDecoderStream`, and BYOB readers. This is what
+[response bodies](/api/networking#streaming) are, and what streaming parsers
+expect to find.
+
+```ts
+const res = await fetch(url);
+
+const lines = res.body
+    .pipeThrough(new DecompressionStream("gzip"))
+    .pipeThrough(new TextDecoderStream());
+
+for await (const piece of lines)
+    console.log(piece);
+```
+
+`tee()`, `pipeTo`, `pipeThrough`, async iteration and `getReader({ mode: "byob" })`
+all work. A BYOB read copies into the buffer you hand it rather than filling it
+in place, which costs one copy and is otherwise invisible.
+
+### Compression
+
+```ts
+new CompressionStream("gzip" | "deflate" | "deflate-raw")
+new DecompressionStream("gzip" | "deflate" | "deflate-raw" | "br")
+```
+
+Both are `TransformStream`s, so they slot into any pipeline. Brotli is
+decode-only - the spec asks for no encoder, and nothing here needs one.
+
+```ts
+// gzip a payload before uploading it
+const gz = new Blob([JSON.stringify(payload)]).stream()
+    .pipeThrough(new CompressionStream("gzip"));
+
+await fetch(url, { method: "POST", body: gz, duplex: "half",
+    headers: { "content-encoding": "gzip" } });
+```
+
+## Blob, File & FileReader
+
+```ts
+const blob = new Blob([bytes], { type: "image/png" });
+blob.size;                       // byte length
+await blob.text();               // string
+await blob.bytes();              // Uint8Array
+blob.slice(0, 1024);             // a Blob over that byte range
+blob.stream();                   // ReadableStream
+
+const file = new File([bytes], "shot.png", { type: "image/png" });
+file.name; file.lastModified;
+
+const url = URL.createObjectURL(blob);   // fetchable, see Networking
+URL.revokeObjectURL(url);
+```
+
+`FileReader` is here too - `readAsText` (with a charset from the blob's own type,
+or one you pass), `readAsArrayBuffer`, `readAsDataURL`, `readAsBinaryString` -
+with the event order older upload code waits for. New code should just `await
+blob.text()`.
+
+## structuredClone
+
+```ts
+const copy = structuredClone(config);
+```
+
+Deep copy with cycle support for objects, arrays, `Map`, `Set`, `Date`,
+`RegExp`, `ArrayBuffer`, typed arrays and errors. Functions throw a
+`DataCloneError`, and class instances lose their prototype - same as a browser.
+
+## crypto
+
+```ts
+crypto.randomUUID();                        // "f47ac10b-58cc-4372-..."
+crypto.getRandomValues(new Uint32Array(4)); // filled from the system CSPRNG
+```
+
+### crypto.subtle
+
+The full `SubtleCrypto` surface - `digest`, `generateKey`, `importKey`,
+`exportKey`, `sign`, `verify`, `encrypt`, `decrypt`, `deriveBits`, `deriveKey`,
+`wrapKey`, `unwrapKey` - so `jose` and friends sign and verify tokens for real.
+
+| Kind | Algorithms |
+|:-----|:-----------|
+| Digest | SHA-1, SHA-256, SHA-384, SHA-512 |
+| MAC | HMAC with any of those |
+| Symmetric | AES-GCM, AES-CBC, AES-CTR |
+| Derivation | PBKDF2, HKDF, ECDH |
+| Signatures | RSASSA-PKCS1-v1_5, RSA-PSS, ECDSA |
+| Encryption | RSA-OAEP |
+| Curves | P-256, P-384, P-521 |
+| Key formats | `raw`, `jwk`, `spki`, `pkcs8` |
+
+```ts
+// sign a payload with HMAC
+const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+
+const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
+
+// encrypt with AES-GCM
+const iv = crypto.getRandomValues(new Uint8Array(12));
+const aes = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true,
+    ["encrypt", "decrypt"]);
+
+const sealed = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aes, plaintext);
+```
+
+Not there: Ed25519, X25519, SHA-3, and AES-KW as an algorithm of its own
+(`wrapKey`/`unwrapKey` go through the cipher path instead).
+
+<Warning>
+  Unlike a request, `crypto.subtle` work happens **on the script thread**. It is
+  invisible for hashes, HMAC and AES, but `generateKey` on RSA costs tens of
+  milliseconds and RSA-4096 far more - long enough to see. Generate a key once and
+  keep it, rather than per call.
+</Warning>
+
+## Timing & scheduling
+
+```ts
+performance.now();          // monotonic ms since host start
+performance.timeOrigin;     // unix ms of that origin
+
+queueMicrotask(() => { /* before the next task */ });
+
+const id = requestAnimationFrame((t) => { /* runs in the render step */ });
+cancelAnimationFrame(id);
+
+requestIdleCallback(() => { /* low priority work */ });
+```
+
+`requestAnimationFrame` is driven by the same frame as the `render` event, so a
+callback scheduled from it can draw.
+
+## MessageChannel
+
+```ts
+const { port1, port2 } = new MessageChannel();
+
+port2.onmessage = (e) => console.log("got", e.data);
+port1.postMessage({ hello: "world" });   // delivered on a microtask
+```
+
+Messages are structured-cloned and delivered asynchronously. Useful on its own,
+and it is what schedulers inside some libraries expect to find.
+
+## navigator
+
+`userAgent`, `platform`, `language`, `languages`, `hardwareConcurrency`,
+`onLine`. Enough for libraries that sniff the environment; nothing behind it is
+real hardware detection.
+
+## Not available
+
+Reaching for any of these will throw a `ReferenceError` - the honest list saves
+an hour of debugging:
+
+| Missing | Consequence |
+|:--------|:------------|
+| `document`, `window`, DOM | No `three.js`, `chart.js`, UI frameworks with a renderer |
+| `DOMParser`, `XPath` | No XML/HTML parsing built in - use a library |
+| `IndexedDB` | No `dexie`, `idb` - use [`localStorage`](/api/localStorage) instead |
+| `sessionStorage` | Only `localStorage`, which is persistent |
+| `Worker`, `SharedWorker` | No worker threads; use `setInterval` to slice heavy work |
+| Cookie jar | Set `cookie` per request yourself - see [Networking](/api/networking#limits) |
+| Node built-ins (`fs`, `path`, `os`, ...) | Use [`@native/fs`](/api/fs) instead |
+
+`WebAssembly` **is** available - see [WASM](/api/wasm) - which is the practical
+escape hatch when JS is not fast enough.
+
+<Tip>
+  Not sure whether something exists in the build you are running? Ask it
+  directly:
+
+  ```ts
+  console.log(["fetch", "WebSocket", "EventSource", "crypto", "ReadableStream", "WebAssembly"]
+      .map((k) => `${k}: ${typeof globalThis[k]}`)
+      .join("\n"));
+  ```
+</Tip>

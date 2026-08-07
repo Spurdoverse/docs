@@ -9,11 +9,14 @@ icon: "folder-open"
 import fs from "@native/fs";  // requires "filesystem" permission
 ```
 
-The `fs` module gives scripts a sandboxed file system rooted at `scripts/data`.
+The `fs` module gives each script a sandboxed file system rooted at its own
+`data/` folder - `<your script>/data`. Scripts cannot see each other's files.
 
 <Note>
-  All paths are **relative to `scripts/data`**. Absolute paths or anything that
-  escapes the sandbox (e.g. `../../secret`) will throw `"path escapes sandbox"`.
+  All paths are **relative to your script's `data/` folder**. Absolute paths or
+  anything that escapes the sandbox (e.g. `../../secret`) will throw
+  `"path escapes sandbox"`. The folder is excluded from the file watcher, so
+  writing to it does not trigger a reload.
 </Note>
 
 ## Overview

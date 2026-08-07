@@ -18,8 +18,8 @@ reacting to game events, and reading per-frame state.
   <Card title="console" icon="terminal" href="#console">
     Log, warn, error, and assert output to the script console.
   </Card>
-  <Card title="Events - on / once / off" icon="bolt" href="#events">
-    React to ticks, input, and engine events. Returns IDs for cleanup.
+  <Card title="Events" icon="bolt" href="#events">
+    addEventListener for ticks, input, and engine events.
   </Card>
   <Card title="script" icon="file-code" href="#script">
     Metadata about the running script - name, version, author.
@@ -91,22 +91,26 @@ setTimeout(() => clearInterval(id), 5000);
 ```
 
 <Warning>
-  Always cancel intervals you no longer need. Intervals keep firing even if
-  the entities or objects they reference have become invalid, and they
-  accumulate across script reloads until explicitly cleared.
+  Cancel intervals you no longer need. They keep firing even if the entities
+  or objects they reference have become invalid, and an interval that runs
+  heavy work every few milliseconds costs the same as doing it in `tick`.
 </Warning>
+
+<Note>
+  Timers **do not** survive a reload: every timer belonging to a script is
+  dropped when it unloads, so a forgotten `setInterval` cannot pile up across
+  hot reloads. Clearing them in `onUnload` is still good hygiene, not damage
+  control.
+</Note>
 
 ---
 
 ## console
 
-Standard console output. All methods accept any number of arguments
-and format them automatically.
-
 ```ts
 console.log(...args: any[]): void      // general output
-console.warn(...args: any[]): void     // yellow warning
-console.error(...args: any[]): void    // red error
+console.warn(...args: any[]): void     // warning
+console.error(...args: any[]): void    // error
 console.assert(cond: any, ...args: any[]): void  // logs if cond is falsy
 ```
 
@@ -114,80 +118,179 @@ console.assert(cond: any, ...args: any[]): void  // logs if cond is falsy
 console.log("Player HP:", player.m_iHealth);
 console.warn("Entity not found for index", idx);
 console.error("Critical failure:", err);
-console.assert(player.isValid, "Player should be valid");
 
 // Multiple values are space-joined
 console.log("pos:", pos.x, pos.y, pos.z);
+```
+
+### Objects print as objects
+
+Values are formatted by an inspector, not by `toString()`, so structures are
+readable without wrapping everything in `JSON.stringify`:
+
+```ts
+console.log({ name: "bot", pos: { x: 1, y: 2 }, tags: ["a", "b"] });
+// { name: 'bot', pos: { x: 1, y: 2 }, tags: [ 'a', 'b' ] }
+
+console.log(new Map([["k", 1]]));      // Map(1) { 'k' => 1 }
+console.log(new Uint8Array([1, 2, 3])); // Uint8Array(3) [ 1, 2, 3 ]
+console.log(vec);                       // Vector(1, 2, 3)
+```
+
+Nesting is cut off after two levels (`[Object]`), long arrays and strings are
+truncated with a note, and cycles print as `[Circular]` instead of hanging.
+
+<Note>
+  Getters are shown as `[Getter]` and **never invoked**. Reading a property off
+  an entity is a memory read, and logging must not have side effects - so
+  `console.log(player)` will not silently read every field of the entity.
+</Note>
+
+### Extras
+
+```ts
+console.dir(value, { depth: 4 });   // deeper inspection
+console.inspect(value, depth);      // the formatted string, no output
+console.table(rows);                // aligned grid
+console.group("label"); console.groupEnd();
+console.time("t"); console.timeEnd("t");
+console.count("hits"); console.countReset("hits");
+console.trace("got here");
+```
+
+Printf-style placeholders work too: `%s %d %i %f %o %O %j %%`.
+
+```ts
+console.log("%s took %d ms", name, elapsed);
 ```
 
 ---
 
 ## Events
 
-### on
+Events use the standard `addEventListener` API. Everything a browser gives you
+works here - `once`, `signal`, `preventDefault`, custom `EventTarget`s - see
+[Web APIs](/api/web#events).
+
+### addEventListener
+
+<br />
+
+```ts
+addEventListener(type: string, listener: (event: Event) => void, options?: {
+    once?: boolean;
+    capture?: boolean;
+    passive?: boolean;
+    signal?: AbortSignal;
+}): void
+
+removeEventListener(type: string, listener: (event: Event) => void): void
+```
+
+```ts
+addEventListener("tick", () => {
+    // called every tick
+});
+
+addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.code === "Insert") toggle();
+}, { once: true });
+```
+
+The cleanest way to unregister a whole script's worth of listeners is one
+`AbortController`:
+
+```ts
+const controller = new AbortController();
+const { signal } = controller;
+
+addEventListener("tick", onTick, { signal });
+addEventListener("render", onRender, { signal });
+addEventListener("keydown", onKey, { signal });
+
+export function onUnload() {
+    controller.abort();   // removes all three
+}
+```
+
+<Note>
+  A listener that throws does not take the script down: the error is reported
+  through the `error` event and the remaining listeners still run.
+</Note>
+
+---
+
+### on / once / off (legacy)
 
 <br />
 
 ```ts
 on(event: string, callback: (...args: any[]) => void): number
-```
-
-Registers a callback for a named event. Returns a numeric **ID** that
-can be passed to [`off`](#off) to unregister.
-
-```ts
-const id = on("tick", () => {
-    // called every tick (128 Hz)
-});
-```
-
----
-
-### once
-
-<br />
-
-```ts
 once(event: string, callback: (...args: any[]) => void): number
-```
-
-Like `on`, but the callback fires **once** and is automatically removed.
-
-```ts
-once("tick", () => {
-    console.log("only the first tick");
-});
-```
-
----
-
-### off
-
-<br />
-
-```ts
 off(id: number): boolean
 ```
 
-Removes a callback by its ID. Returns `true` if found and removed,
-`false` if already removed or invalid.
+The original API, still fully supported. Handlers receive **positional
+arguments** instead of an event object, and `on` returns a numeric ID for
+`off`. Old event names (`"OnKeyDown"`, `"OnMouseMove"`, ...) keep working and
+resolve to the same events as the modern names.
 
 ```ts
-const id = on("tick", () => { /* ... */ });
+const id = on("OnKeyDown", (vk) => console.log(vk));
+off(id);
+```
 
-off(id);   // true  - removed
-off(id);   // false - already gone
+```ts
+// emit your own event - reaches both listener styles
+emit("my-event", 1, 2);
 ```
 
 <Tip>
-  Always store the ID returned by `on()` if you plan to clean up later.
-  Use `once()` when you only need a single invocation - it handles
-  cleanup for you.
+  Prefer `addEventListener` in new scripts: typed event objects, `signal`
+  cleanup, and the same names you already know from the web.
 </Tip>
 
 ---
 
 ### Built-in events
+
+| Modern name | Legacy name | Event class |
+|:------------|:------------|:------------|
+| `tick` | `tick` | `Event` |
+| `render` | `render` | `Event` |
+| `unload` | - | `Event` |
+| `keydown` / `keyup` | `OnKeyDown` / `OnKeyUp` | `KeyboardEvent` |
+| `mousemove` | `OnMouseMove` | `MouseEvent` |
+| `mousedown` / `mouseup` | `OnMouseClick` | `MouseEvent` |
+| `wheel` | `OnMouseScroll` | `WheelEvent` |
+| `error` | - | `ErrorEvent` |
+
+Input events carry the fields you would expect in a browser:
+
+```ts
+addEventListener("keydown", (e: KeyboardEvent) => {
+    e.key;        // "w" - layout aware
+    e.code;       // "KeyW" - physical key
+    e.keyCode;    // 87 - Windows virtual key code
+    e.shiftKey;   // modifiers
+    e.getModifierState("Control");
+});
+
+addEventListener("mousemove", (e: MouseEvent) => {
+    e.x; e.y;                       // absolute cursor position
+    e.movementX; e.movementY;       // delta since the last event
+    e.buttons;                      // bitmask: 1 left, 2 right, 4 middle
+});
+
+addEventListener("wheel", (e: WheelEvent) => {
+    e.deltaY;   // positive when scrolling down, like the web
+});
+```
+
+The legacy sections below describe the positional arguments the `on()` API
+passes for the same events.
+
+---
 
 #### `"render"`
 
@@ -208,14 +311,16 @@ on("render", () => {
 <Warning>
   Never call `Render.*` methods from `"tick"`, `setInterval`, or other
   non-render callbacks. The overlay only accepts draw commands during the
-  `"render"` event - anything else will flicker or not appear at all.
+  `"render"` event; anywhere else the call does nothing and logs
+  `render.text() outside of a 'render' listener does nothing` once.
 </Warning>
 
 ---
 
 #### `"tick"`
 
-Fires every game tick (128 Hz). The primary place for per-frame **logic** -
+Fires on the script loop, which targets **128 Hz** independently of the
+server tickrate and of your framerate. The primary place for **logic** -
 entity reads, state machines, calculations. Do **not** draw here - use
 `"render"` for that.
 
@@ -360,6 +465,54 @@ export function onUnload() {
   `onUnload` must be a **named export** at the module level. It will not
   fire if declared as a local variable or inside a nested function.
 </Warning>
+
+There is also an `unload` **event**, fired just before `onUnload` is called.
+Use whichever fits - the event works with `AbortController` cleanup, the export
+does not need a listener:
+
+```ts
+addEventListener("unload", () => {
+    console.log("going away");
+});
+```
+
+---
+
+## Execution budget
+
+Script code runs on one shared worker thread, so a listener that never returns
+would freeze every script at once. Two thresholds guard against that:
+
+| Situation | Threshold | What happens |
+|:----------|:----------|:-------------|
+| One event, timer or callback | 250 ms | Warning in the log, nothing is interrupted |
+| One event, timer or callback | 2 s | JS is unwound, the script is stopped and marked as errored |
+| Top-level code at load | 2 s / 15 s | Same, with a larger budget for setup work |
+
+Only **JavaScript** time counts. A slow native call - reading a big file,
+scanning a whole module, an FFI call into blocking code - pauses the clock, so
+you are never punished for the host being slow:
+
+```ts
+import Memory from "@native/memory";
+
+addEventListener("tick", () => {
+    // The scan itself may take a second; the budget does not tick during it.
+    const addr = Memory.scan("client.dll", "48 8B 05 ? ? ? ? 48 85 C0");
+});
+```
+
+<Warning>
+  A script blocked *inside* a native call still holds the worker thread - there
+  is no way to interrupt native code. Never call into something that can block
+  forever through `@native/ffi`.
+</Warning>
+
+<Tip>
+  The 250 ms warning means you dropped a frame. If you see it every few
+  seconds, move the work into a `setInterval` at a lower rate, or cache the
+  result - see the throttling recipe below.
+</Tip>
 
 ---
 

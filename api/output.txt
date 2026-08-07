@@ -1,7 +1,128 @@
 ---
+title: "Convars"
+sidebarTitle: "Convars"
+description: "Read console variable values from the engine."
+icon: "terminal"
+---
+
+```ts
+import Convars from "@native/convars";
+```
+
+The `Convars` module reads console variable (cvar) values from the engine.
+
+---
+
+## Methods
+
+### Convars.get
+
+<br />
+
+```ts
+Convars.get(name: string): boolean | number | string | Color | Vector
+```
+
+Returns the convar value with its natural type.
+
+<ParamField path="name" type="string" required>
+  Console variable name.
+</ParamField>
+
+```ts
+const sens = Convars.get("sensitivity");    // number
+const cheats = Convars.get("sv_cheats");    // boolean
+```
+
+---
+
+### Convars.getFloat
+
+<br />
+
+```ts
+Convars.getFloat(name: string): number
+```
+
+Returns the convar value as a float.
+
+<ParamField path="name" type="string" required>
+  Console variable name.
+</ParamField>
+
+```ts
+const sens = Convars.getFloat("sensitivity"); // 2.5
+const vol = Convars.getFloat("volume");       // 0.8
+```
+
+---
+
+### Convars.getInt
+
+<br />
+
+```ts
+Convars.getInt(name: string): number
+```
+
+Returns the convar value as an integer.
+
+<ParamField path="name" type="string" required>
+  Console variable name.
+</ParamField>
+
+```ts
+const alpha = Convars.getInt("cl_crosshairalpha"); // 200
+const team = Convars.getInt("mp_autoteambalance"); // 1
+```
+
+---
+
+### Convars.getBool
+
+<br />
+
+```ts
+Convars.getBool(name: string): boolean
+```
+
+Returns the convar value as a boolean.
+
+<ParamField path="name" type="string" required>
+  Console variable name.
+</ParamField>
+
+```ts
+if (Convars.getBool("sv_cheats")) {
+    console.log("Cheats enabled");
+}
+```
+
+---
+
+### Convars.getString
+
+<br />
+
+```ts
+Convars.getString(name: string): string
+```
+
+Returns the convar value as a string.
+
+<ParamField path="name" type="string" required>
+  Console variable name.
+</ParamField>
+
+```ts
+const mapGroup = Convars.getString("game_type");
+const hostname = Convars.getString("hostname");
+```
+
+---
 title: "Entities"
 sidebarTitle: "Entities"
-description: "Query, iterate, and read schema fields from any game entity — players, weapons, projectiles, and everything else."
+description: "Query, iterate, and read schema fields from any game entity - players, weapons, projectiles, and everything else."
 icon: "users"
 ---
 
@@ -10,11 +131,11 @@ import Entities from "@native/entities";
 ```
 
 The `Entities` module exposes the game's entity list. Every entity is backed
-by a **cached snapshot** that is refreshed each frame — reads are fast and
+by a **cached snapshot** that is refreshed each frame - reads are fast and
 safe to call in per-frame callbacks without worrying about memory access.
 
 <Note>
-  Entity objects are **lazy** — they hold an index, not a pointer. The
+  Entity objects are **lazy** - they hold an index, not a pointer. The
   actual data is fetched from the per-frame cache on first property access.
   Always check `.isValid` before reading fields in contexts where an entity
   might have just died or despawned.
@@ -27,10 +148,10 @@ safe to call in per-frame callbacks without worrying about memory access.
     Get all entities, look up by index, or grab players.
   </Card>
   <Card title="Query builder" icon="filter" href="#query-builder">
-    Chain class filters and iterators — forEach, map, filter, first.
+    Chain class filters and iterators - forEach, map, filter, first.
   </Card>
   <Card title="Entity object" icon="cube" href="#entity-object">
-    Schema fields, reserved properties, and the raw-buffer API.
+    Reserved properties, helper methods, schema fields, and raw-buffer API.
   </Card>
   <Card title="Supported field types" icon="code" href="#supported-field-types">
     How the engine maps every C++ type to a JS value.
@@ -50,7 +171,7 @@ Entities.getByIndex(index: number): Entity
 ```
 
 Returns an `Entity` handle for a given entity list index. The entity may or
-may not be valid — always check `.isValid`.
+may not be valid - always check `.isValid`.
 
 ```ts
 const ent = Entities.getByIndex(1);
@@ -81,7 +202,7 @@ for (const ent of all) {
 ```
 
 <Tip>
-  Prefer `Entities.find()` when you only need a specific class — it avoids
+  Prefer `Entities.find()` when you only need a specific class - it avoids
   allocating the full array and skips irrelevant entities early.
 </Tip>
 
@@ -96,7 +217,7 @@ Entities.getPlayers(options?: { skipLocal?: boolean }): Entity[]
 ```
 
 Returns all **player pawns** in the game (`C_CSPlayerPawn` and
-`C_CSObserverPawn`). Each element is the pawn entity — use `.controller`
+`C_CSObserverPawn`). Each element is the pawn entity - use `.controller`
 to reach the `CCSPlayerController`.
 
 | Option | Type | Default | |
@@ -140,7 +261,7 @@ if (local) {
 
 ## Query builder
 
-`Entities.find()` returns a **Query** — a lazy, chainable object that filters
+`Entities.find()` returns a **Query** - a lazy, chainable object that filters
 entities from the snapshot. Nothing is read until you call a terminal method
 (`toArray`, `forEach`, `first`, `count`, `map`, `some`, `every`).
 
@@ -152,14 +273,14 @@ entities from the snapshot. Nothing is read until you call a terminal method
 // Exact class name match
 Entities.find(className: string): Query
 
-// Options object — className for exact match, parent for inheritance
+// Options object - className for exact match, parent for inheritance
 Entities.find(options: { className?: string, parent?: string }): Query
 ```
 
 | Option | | |
 |:-------|:--|:--|
-| `className` | Exact match — only entities whose class is exactly this | `"C_CSPlayerPawn"` |
-| `parent` | Inheritance match — any entity whose class inherits from this | `"C_BaseEntity"` |
+| `className` | Exact match - only entities whose class is exactly this | `"C_CSPlayerPawn"` |
+| `parent` | Inheritance match - any entity whose class inherits from this | `"C_BaseEntity"` |
 
 <CodeGroup>
 ```ts Exact class
@@ -221,7 +342,7 @@ const nearest = enemies[0];
 
 ## Entity object
 
-Every value returned by the `Entities` API is an **Entity** — a dynamic
+Every value returned by the `Entities` API is an **Entity** - a dynamic
 proxy that reads fields directly from the per-frame entity cache.
 
 ### Reserved properties
@@ -234,6 +355,7 @@ These are always present regardless of the entity's class:
 | `isValid` | `boolean` | `true` if entity exists in the current snapshot. Readonly. |
 | `className` | `string` | Class name, e.g. `"C_CSPlayerPawn"`. Readonly. |
 | `address` | `BigInt` | In-process memory address of the entity object. Readonly. |
+| `isAlive` | `boolean` | `true` when `m_lifeState == ALIVE` and `m_iHealth > 0`. Readonly. |
 
 ```ts
 const ent = Entities.getByIndex(42);
@@ -241,6 +363,189 @@ console.log(ent.index);     // 42
 console.log(ent.className); // "C_CSPlayerPawn"
 console.log(ent.isValid);   // true / false
 console.log(ent.address);   // 0x12345678n
+```
+
+---
+
+### Entity methods
+
+Available on all entities.
+
+#### .isEnemy
+
+<br />
+
+```ts
+entity.isEnemy(other: Entity): boolean
+```
+
+Returns whether `other` is an enemy. Respects `mp_teammates_are_enemies`.
+
+```ts
+const local = Entities.getLocalPlayer();
+const enemy = Entities.find("C_CSPlayerPawn").first();
+if (enemy && enemy.isEnemy(local)) {
+    console.log("Enemy!");
+}
+```
+
+---
+
+#### .getOrigin
+
+<br />
+
+```ts
+entity.getOrigin(): Vector
+```
+
+Returns the entity's world-space position.
+
+```ts
+const pos = entity.getOrigin();
+console.log(`Position: ${pos.x}, ${pos.y}, ${pos.z}`);
+```
+
+---
+
+#### .getVelocity
+
+<br />
+
+```ts
+entity.getVelocity(): Vector
+```
+
+Returns the entity's current velocity.
+
+```ts
+const vel = player.getVelocity();
+const speed = vel.length2D();
+console.log(`Speed: ${speed.toFixed(0)}`);
+```
+
+---
+
+#### .getBoundingBox
+
+<br />
+
+```ts
+entity.getBoundingBox(): [Vector2, Vector2] | null
+```
+
+Returns screen-space `[mins, maxs]` for the entity, or `null` if it's
+behind the camera.
+
+```ts
+const local = Entities.getLocalPlayer();
+
+for (const pawn of Entities.getPlayers({ skipLocal: true })) {
+    if (!pawn.isAlive) continue;
+    if (!pawn.isEnemy(local)) continue;
+
+    const box = pawn.getBoundingBox();
+    if (box) {
+        const [mins, maxs] = box;
+        Render.rect(mins, maxs, Color.red());
+    }
+}
+```
+
+---
+
+### Player methods
+
+Available on player pawns (`C_CSPlayerPawn`, `C_CSObserverPawn`).
+
+#### .controller
+
+<br />
+
+```ts
+pawn.controller: Entity
+```
+
+The `CCSPlayerController` linked to this pawn.
+
+```ts
+for (const pawn of Entities.getPlayers()) {
+    const ctrl = pawn.controller;
+    if (ctrl) {
+        console.log(ctrl.m_iszPlayerName, pawn.m_iHealth);
+    }
+}
+```
+
+---
+
+#### .getEyePosition
+
+<br />
+
+```ts
+pawn.getEyePosition(): Vector
+```
+
+Returns the eye position (origin + view offset).
+
+```ts
+const local = Entities.getLocalPlayer();
+const eyePos = local.getEyePosition();
+```
+
+---
+
+#### .isVisible
+
+<br />
+
+```ts
+pawn.isVisible(other: Entity): boolean
+```
+
+Traces from this entity's eye position to `other`'s origin.
+
+```ts
+const local = Entities.getLocalPlayer();
+
+Entities.find("C_CSPlayerPawn")
+    .filter(p => p.isAlive && p.isEnemy(local))
+    .forEach(enemy => {
+        if (local.isVisible(enemy)) {
+            console.log("Enemy visible!", enemy.controller?.m_iszPlayerName);
+        }
+    });
+```
+
+---
+
+### Weapon methods
+
+Available on weapons (`C_BasePlayerWeapon`).
+
+#### .getWeaponData
+
+<br />
+
+```ts
+weapon.getWeaponData(): CCSWeaponBaseVData
+```
+
+Returns weapon VData — `damage`, `range`, `spread`, `weaponType`,
+`price`, and all schema fields.
+
+```ts
+const local = Entities.getLocalPlayer();
+const weapon = local?.m_pWeaponServices?.m_hActiveWeapon;
+
+if (weapon) {
+    const data = weapon.getWeaponData();
+    console.log(`Damage: ${data.m_nDamage}`);
+    console.log(`Range: ${data.m_flRange}`);
+    console.log(`Price: ${data.m_nPrice}`);
+    console.log(`Type: ${data.m_WeaponType}`);
+}
 ```
 
 ---
@@ -267,42 +572,26 @@ const eyeAngle = player.m_angEyeAngles;       // QAngle
 // Strings
 const name     = player.m_iszPlayerName;      // string (CUtlString)
 
-// Handles — automatically resolved to Entity | null
+// Handles - automatically resolved to Entity | null
 const weapon   = player.m_hActiveWeapon;      // Entity | null
 
-// Inline nested structs — returns a nested object with its own fields
+// Inline nested structs - returns a nested object with its own fields
 const collision = player.m_Collision;
 const mins = collision.m_vMinBounds;          // Vector
 ```
 
 <Warning>
-  Builtin fields (`bool`, `int32`, `float`, etc.) are **writable** — you can
+  Builtin fields (`bool`, `int32`, `float`, etc.) are **writable** - you can
   set them directly: `player.m_iHealth = 100`. All other field types (pointers,
   nested structs, vectors, handles) are read-only.
 </Warning>
 
 ---
 
-### `.controller` (player pawns only)
-
-Available on `C_CSPlayerPawn` and `C_CSObserverPawn`. Returns the
-`CCSPlayerController` entity linked to this pawn.
-
-```ts
-for (const pawn of Entities.getPlayers()) {
-    const ctrl = pawn.controller;
-    if (ctrl) {
-        console.log(ctrl.m_iszPlayerName, pawn.m_iHealth);
-    }
-}
-```
-
----
-
 ### CUtlVector fields
 
 Fields of type `CUtlVector` (or `CNetworkUtlVectorBase`) return a
-**UtlVector** object — a lazy wrapper around the native array that
+**UtlVector** object - a lazy wrapper around the native array that
 reads elements on demand.
 
 | Method | Returns | Description |
@@ -475,7 +764,7 @@ import FFI from "@native/ffi";
 ```
 
 The `FFI` module lets you load native libraries (`.dll`, `.so`) and call their
-functions directly from JavaScript — no bindings, no wrappers.
+functions directly from JavaScript - no bindings, no wrappers.
 
 <Note>
   Pointers are represented as **BigInt** values. A `0n` BigInt is a null
@@ -550,7 +839,7 @@ const libc   = FFI.open("libc.so.6");
 lib.close(): void
 ```
 
-Unloads the library. Any functions resolved from it become invalid —
+Unloads the library. Any functions resolved from it become invalid -
 calling them after `close()` will crash.
 
 ```ts
@@ -570,7 +859,7 @@ lib.proc(name: string, retType: string, argTypes?: string[]): Function
 ```
 
 Resolves a symbol by name and wraps it as a callable function.
-The quick-and-dirty way — pass types as separate arguments.
+The quick-and-dirty way - pass types as separate arguments.
 
 | Param | Type | |
 |:------|:-----|:--|
@@ -699,7 +988,7 @@ const ok = await readFile(hFile, buf, bufSize, bytesRead, FFI.nullptr);
 ## Structs & unions
 
 Define C-compatible memory layouts. Struct instances are backed by an
-`ArrayBuffer` — fields are live accessors into the buffer, not copies.
+`ArrayBuffer` - fields are live accessors into the buffer, not copies.
 Write a field and the native memory updates immediately.
 
 {/* ------------------------------------------------------------------ */}
@@ -747,7 +1036,7 @@ const Player = FFI.struct("Player", {
 ```
 
 <Note>
-  `char[N]` fields are treated as C strings — they read/write as JS
+  `char[N]` fields are treated as C strings - they read/write as JS
   strings, auto null-terminated at `N-1`.
 </Note>
 
@@ -833,16 +1122,16 @@ const Value = FFI.union("Value", {
 
 const v = Value.alloc();
 v.asInt = 0x42280000;
-log(v.asFloat); // 42.0 — same bits, different interpretation
+log(v.asFloat); // 42.0 - same bits, different interpretation
 ```
 
-The returned type has `alloc()`, `from()`, and `view()` — same as struct.
+The returned type has `alloc()`, `from()`, and `view()` - same as struct.
 
 ---
 
 ## Memory
 
-Raw memory operations. Use these when you need to go below struct-level —
+Raw memory operations. Use these when you need to go below struct-level -
 reading strings from pointers, allocating scratch buffers, or converting
 between pointer representations.
 
@@ -878,12 +1167,12 @@ Frees memory previously allocated by native code (via the C runtime's
 ```ts
 const pStr = someDll.func("string! GetName()")();
 // The `!` suffix means the return value must be freed
-// But with disposable() this is handled automatically — see below
+// But with disposable() this is handled automatically - see below
 ```
 
 <Warning>
   Only use `FFI.free` on pointers returned by native allocators (e.g.
-  `malloc`). **Never** free an `ArrayBuffer` pointer — the JS garbage
+  `malloc`). **Never** free an `ArrayBuffer` pointer - the JS garbage
   collector owns those.
 </Warning>
 
@@ -1022,7 +1311,7 @@ FFI.callback(signature: string, fn: Function): BigInt
 FFI.callback(retType: string, argTypes: string[], fn: Function): BigInt
 ```
 
-Returns a BigInt pointer to a native-callable trampoline. Two forms —
+Returns a BigInt pointer to a native-callable trampoline. Two forms -
 signature string or explicit types.
 
 <Tabs>
@@ -1078,7 +1367,7 @@ FFI.freeCallback(cb);
 
 ## Type system
 
-Type names are strings used throughout the FFI API — in signatures,
+Type names are strings used throughout the FFI API - in signatures,
 struct fields, `proc` calls, and `sizeOf`. The engine recognizes
 C-style names, Rust-style names, and Windows typedefs.
 
@@ -1186,7 +1475,7 @@ The managed handle has:
 <Tip>
   The `!` suffix on a return type (e.g. `string!`) signals that the
   return value is heap-allocated and should be freed. It's a convention,
-  not enforced — pair it with `.disposable()` for safety.
+  not enforced - pair it with `.disposable()` for safety.
 </Tip>
 
 {/* ------------------------------------------------------------------ */}
@@ -1243,7 +1532,7 @@ FFI.using(() => {
 </Tabs>
 
 <Warning>
-  `FFI.using` is synchronous. Don't `await` inside it — the scope
+  `FFI.using` is synchronous. Don't `await` inside it - the scope
   closes on function return, not on promise resolution.
 </Warning>
 
@@ -1316,7 +1605,7 @@ returnType [callingConvention] functionName([_Out_|_Inout_] paramType, ..., ...)
 
 ## Complete example
 
-Putting it all together — calling the Windows API to show a message box
+Putting it all together - calling the Windows API to show a message box
 and read the cursor position:
 
 ```ts
@@ -1361,7 +1650,7 @@ The `fs` module gives scripts a sandboxed file system rooted at `scripts/data`.
 
 <CardGroup cols={2}>
   <Card title="Reading & writing" icon="file-pen" href="#reading--writing">
-    Read, write, and append file contents as UTF-8 strings.
+    Read, write, and append file contents - binary by default, UTF-8 with an encoding option.
   </Card>
   <Card title="Directories" icon="folder" href="#directories">
     Create, remove, and list directory entries.
@@ -1383,16 +1672,30 @@ The `fs` module gives scripts a sandboxed file system rooted at `scripts/data`.
 <br />
 
 ```ts
-fs.readFile(path: string): Promise<string>
-fs.readFileSync(path: string): string
+fs.readFile(path: string): Promise<Uint8Array>
+fs.readFile(path: string, encoding: "utf8"): Promise<string>
+
+fs.readFileSync(path: string): Uint8Array
+fs.readFileSync(path: string, encoding: "utf8"): string
 ```
 
-Returns the full UTF-8 contents of a file.
+Reads the full contents of a file. By default returns raw bytes as a
+`Uint8Array`. Pass `"utf8"` as the second argument to decode the file
+and get a `string` instead.
 
 ```ts
-const json = await fs.readFile("profiles/player1.json");
+// Binary (default) - returns Uint8Array
+const raw = await fs.readFile("assets/icon.png");
+console.log(`${raw.byteLength} bytes`);
+
+// UTF-8 - returns string
+const json = await fs.readFile("profiles/player1.json", "utf8");
 const profile = JSON.parse(json);
 console.log(`Welcome back, ${profile.name}!`);
+
+// Sync variants work the same way
+const data = fs.readFileSync("data.bin");           // Uint8Array
+const text = fs.readFileSync("config.json", "utf8"); // string
 ```
 
 ---
@@ -1402,15 +1705,21 @@ console.log(`Welcome back, ${profile.name}!`);
 <br />
 
 ```ts
-fs.writeFile(path: string, data: string): Promise<true>
-fs.writeFileSync(path: string, data: string): true
+fs.writeFile(path: string, data: string | Uint8Array | ArrayBuffer): Promise<true>
+fs.writeFileSync(path: string, data: string | Uint8Array | ArrayBuffer): true
 ```
 
 Writes `data` to a file, **replacing** it if it already exists.
+Accepts a UTF-8 string, a `Uint8Array`, or an `ArrayBuffer`.
 
 ```ts
+// String
 const save = { level: 12, hp: 85, inventory: ["sword", "shield", "potion"] };
 await fs.writeFile("saves/slot1.json", JSON.stringify(save, null, 2));
+
+// Binary
+const bytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47]);
+await fs.writeFile("output.bin", bytes);
 ```
 
 ---
@@ -1420,11 +1729,12 @@ await fs.writeFile("saves/slot1.json", JSON.stringify(save, null, 2));
 <br />
 
 ```ts
-fs.appendFile(path: string, data: string): Promise<true>
-fs.appendFileSync(path: string, data: string): true
+fs.appendFile(path: string, data: string | Uint8Array | ArrayBuffer): Promise<true>
+fs.appendFileSync(path: string, data: string | Uint8Array | ArrayBuffer): true
 ```
 
 Appends `data` to the end of a file. Creates the file if it doesn't exist.
+Accepts a UTF-8 string, a `Uint8Array`, or an `ArrayBuffer`.
 
 ```ts
 async function log(message: string) {
@@ -1495,7 +1805,7 @@ Returns an array of entry names (files and subdirectories) inside `path`.
 const entries = await fs.readdir("saves");
 // ["slot1.json", "slot2.json", "autosave.json", "backups"]
 
-// Sync — build a script picker
+// Sync - build a script picker
 const files = fs.readdirSync("scripts");
 const jsFiles = files.filter(f => fs.path.extname(f) === ".js");
 ```
@@ -1647,7 +1957,7 @@ fs.watch(
 ): FSWatcher
 ```
 
-Watches a file or directory for changes. Returns an `FSWatcher` — call
+Watches a file or directory for changes. Returns an `FSWatcher` - call
 `.close()` to stop.
 
 | Event | Trigger |
@@ -1682,9 +1992,9 @@ const configWatcher = fs.watch("config.json", (event) => {
 
 ---
 
-## Path utilities — `fs.path`
+## Path utilities - `fs.path`
 
-Pure string helpers — they do **not** touch the file system.
+Pure string helpers - they do **not** touch the file system.
 
 | Function | Returns | Example |
 |:---------|:--------|:--------|
@@ -1785,7 +2095,7 @@ try {
     console.error("Write failed:", err);
 }
 
-// Guard pattern — cleanest when the file is optional
+// Guard pattern - cleanest when the file is optional
 if (await fs.exists("optional.json")) {
     const content = await fs.readFile("optional.json");
 }
@@ -1799,7 +2109,7 @@ All paths resolve relative to `scripts/data`. Any path that escapes the
 sandbox throws `"path escapes sandbox"`.
 
 <Warning>
-  The following will **always throw** — absolute paths and directory
+  The following will **always throw** - absolute paths and directory
   traversal are blocked at the sandbox boundary:
   ```ts
   await fs.readFile("/etc/passwd");          // absolute path
@@ -1810,7 +2120,7 @@ sandbox throws `"path escapes sandbox"`.
 ---
 title: "Game"
 sidebarTitle: "Game"
-description: "Per-frame timestamps, tick counters, map info, and frame timing — engine state updated every tick."
+description: "Per-frame timestamps, tick counters, map info, and frame timing - engine state updated every tick."
 icon: "gauge-high"
 ---
 
@@ -1839,7 +2149,7 @@ All fields are **readonly**.
 ```ts
 on("tick", () => {
     const speed = 200 * Game.frameTime;
-    console.log(`Tick #${Game.tickCount} — map: ${Game.shortMapName}`);
+    console.log(`Tick #${Game.tickCount} - map: ${Game.shortMapName}`);
 });
 ```
 
@@ -1851,7 +2161,7 @@ on("tick", () => {
 ---
 title: "Globals"
 sidebarTitle: "Globals"
-description: "Timers, console output, event system, and the script object — available everywhere without imports."
+description: "Timers, console output, event system, and the script object - available everywhere without imports."
 icon: "globe"
 ---
 
@@ -1868,11 +2178,11 @@ reacting to game events, and reading per-frame state.
   <Card title="console" icon="terminal" href="#console">
     Log, warn, error, and assert output to the script console.
   </Card>
-  <Card title="Events — on / once / off" icon="bolt" href="#events">
+  <Card title="Events - on / once / off" icon="bolt" href="#events">
     React to ticks, input, and engine events. Returns IDs for cleanup.
   </Card>
   <Card title="script" icon="file-code" href="#script">
-    Metadata about the running script — name, version, author.
+    Metadata about the running script - name, version, author.
   </Card>
 </CardGroup>
 
@@ -1881,7 +2191,7 @@ reacting to game events, and reading per-frame state.
 ## Timers
 
 Standard browser-style timer API. IDs returned by `setTimeout` and
-`setInterval` are independent — pass the right ID to the right clear function.
+`setInterval` are independent - pass the right ID to the right clear function.
 
 ### setTimeout
 
@@ -2025,13 +2335,13 @@ Removes a callback by its ID. Returns `true` if found and removed,
 ```ts
 const id = on("tick", () => { /* ... */ });
 
-off(id);   // true  — removed
-off(id);   // false — already gone
+off(id);   // true  - removed
+off(id);   // false - already gone
 ```
 
 <Tip>
   Always store the ID returned by `on()` if you plan to clean up later.
-  Use `once()` when you only need a single invocation — it handles
+  Use `once()` when you only need a single invocation - it handles
   cleanup for you.
 </Tip>
 
@@ -2039,23 +2349,44 @@ off(id);   // false — already gone
 
 ### Built-in events
 
+#### `"render"`
+
+Fires every frame when the overlay is being drawn. **All `Render` module
+calls must happen inside this callback** - drawing outside of it will cause
+flickering or missing visuals because the frame may have already been
+submitted.
+
+```ts
+import Render from "@native/render";
+
+on("render", () => {
+    const { x: w, y: h } = Render.getScreenSize();
+    Render.text({ x: w / 2, y: 10 }, "Hello!", Color.white(), 18);
+});
+```
+
+<Warning>
+  Never call `Render.*` methods from `"tick"`, `setInterval`, or other
+  non-render callbacks. The overlay only accepts draw commands during the
+  `"render"` event - anything else will flicker or not appear at all.
+</Warning>
+
+---
+
 #### `"tick"`
 
-Fires every game tick (128 Hz). The primary place for per-frame logic —
-entity reads, render calls, state machines.
+Fires every game tick (128 Hz). The primary place for per-frame **logic** -
+entity reads, state machines, calculations. Do **not** draw here - use
+`"render"` for that.
 
 ```ts
 import Entities from "@native/entities";
-import Render   from "@native/render";
 
 on("tick", () => {
     const local = Entities.getLocalPlayer();
     if (!local) return;
 
-    const { success, screen } = Math.worldToScreen(local.m_pGameSceneNode.m_vecAbsOrigin);
-    if (success) {
-        Render.text(screen, `HP: ${local.m_iHealth}`, Color.white());
-    }
+    console.log(`HP: ${local.m_iHealth}, pos: ${local.m_pGameSceneNode.m_vecAbsOrigin}`);
 });
 ```
 
@@ -2232,9 +2563,9 @@ on("OnKeyDown", (vk) => {
     }
 });
 
-on("tick", () => {
+on("render", () => {
     if (!enabled) return;
-    // ... render / logic
+    // ... draw your visuals here
 });
 ```
 
@@ -2246,13 +2577,15 @@ import Render   from "@native/render";
 
 let cachedEnemies = [];
 
+// Heavy work in a timer - not every frame
 setInterval(() => {
     cachedEnemies = Entities.find("C_CSPlayerPawn")
         .filter(p => p.m_iHealth > 0)
         .toArray();
 }, 100);
 
-on("tick", () => {
+// Drawing in the render callback
+on("render", () => {
     for (const enemy of cachedEnemies) {
         const { success, screen } = Math.worldToScreen(enemy.m_pGameSceneNode.m_vecAbsOrigin);
         if (success) Render.circleFilled(screen, 4, Color.red());
@@ -2269,7 +2602,7 @@ import Render from "@native/render";
 let alpha = 0;
 let direction = 1;
 
-on("tick", () => {
+on("render", () => {
     alpha += direction * 120 * Game.frameTime;
 
     if (alpha >= 255) { alpha = 255; direction = -1; }
@@ -2284,13 +2617,521 @@ on("tick", () => {
 });
 ```
 ---
+title: "Input"
+sidebarTitle: "Input"
+description: "Simulate keyboard and mouse input, and read game input state."
+icon: "keyboard"
+---
+
+```ts
+import Input from "@native/input";
+```
+
+The `Input` module lets you simulate keyboard and mouse actions and read
+the current game input state. Mouse movements, key presses, and button
+clicks are injected at the engine level.
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Actions" icon="computer-mouse" href="#actions">
+    Simulate mouse movement, key presses, and mouse clicks.
+  </Card>
+  <Card title="Game state" icon="gamepad" href="#game-state">
+    Read-only cached input state — view angles, movement, mouse delta.
+  </Card>
+</CardGroup>
+
+---
+
+## Actions
+
+### Input.moveMouse
+
+<br />
+
+```ts
+Input.moveMouse(dx: number, dy: number): void
+```
+
+Applies a raw mouse delta. Values are in pixels.
+
+<ParamField path="dx" type="number" required>
+  Horizontal delta (positive = right).
+</ParamField>
+<ParamField path="dy" type="number" required>
+  Vertical delta (positive = down).
+</ParamField>
+
+```ts
+// Nudge the crosshair 10px right
+Input.moveMouse(10, 0);
+```
+
+---
+
+### Input.moveToAngle
+
+<br />
+
+```ts
+Input.moveToAngle(pitch: number, yaw: number): void
+Input.moveToAngle(angle: QAngle): void
+```
+
+Converts a target angle into the appropriate mouse delta using the
+current sensitivity settings, then applies it.
+
+<ParamField path="pitch" type="number" required>
+  Target pitch (vertical angle).
+</ParamField>
+<ParamField path="yaw" type="number" required>
+  Target yaw (horizontal angle).
+</ParamField>
+
+Or pass a [`QAngle`](/api/types/qangle) directly:
+
+<ParamField path="angle" type="QAngle" required>
+  Target angle.
+</ParamField>
+
+```ts
+// With pitch/yaw
+Input.moveToAngle(-5.2, 130.0);
+
+// With QAngle
+const target = Math.calcAngle(myPos, enemyPos);
+Input.moveToAngle(target);
+```
+
+---
+
+### Input.keyDown
+
+<br />
+
+```ts
+Input.keyDown(vk: number): void
+```
+
+Holds down a key by its virtual key code.
+
+<ParamField path="vk" type="number" required>
+  Virtual key code (e.g. `0x57` for W).
+</ParamField>
+
+```ts
+Input.keyDown(0x57); // hold W
+```
+
+---
+
+### Input.keyUp
+
+<br />
+
+```ts
+Input.keyUp(vk: number): void
+```
+
+Releases a previously held key.
+
+<ParamField path="vk" type="number" required>
+  Virtual key code.
+</ParamField>
+
+```ts
+Input.keyUp(0x57); // release W
+```
+
+---
+
+### Input.keyPress
+
+<br />
+
+```ts
+Input.keyPress(vk: number): void
+```
+
+Performs a full key press — down followed by up.
+
+<ParamField path="vk" type="number" required>
+  Virtual key code.
+</ParamField>
+
+```ts
+Input.keyPress(0x52); // tap R (reload)
+```
+
+---
+
+### Input.mouseDown
+
+<br />
+
+```ts
+Input.mouseDown(btn?: number): void
+```
+
+Holds down a mouse button.
+
+<ParamField path="btn" type="number" default="0">
+  Mouse button index (`0` = left, `1` = right, `2` = middle).
+</ParamField>
+
+```ts
+Input.mouseDown();  // hold left click
+Input.mouseDown(1); // hold right click
+```
+
+---
+
+### Input.mouseUp
+
+<br />
+
+```ts
+Input.mouseUp(btn?: number): void
+```
+
+Releases a mouse button.
+
+<ParamField path="btn" type="number" default="0">
+  Mouse button index.
+</ParamField>
+
+```ts
+Input.mouseUp(); // release left click
+```
+
+---
+
+### Input.mouseClick
+
+<br />
+
+```ts
+Input.mouseClick(btn?: number): void
+```
+
+Performs a full mouse click — down followed by up.
+
+<ParamField path="btn" type="number" default="0">
+  Mouse button index.
+</ParamField>
+
+```ts
+Input.mouseClick();  // left click
+Input.mouseClick(1); // right click
+```
+
+---
+
+### Input.isKeyDown
+
+<br />
+
+```ts
+Input.isKeyDown(vk: number): boolean
+```
+
+Returns the current state of a key.
+
+<ParamField path="vk" type="number" required>
+  Virtual key code.
+</ParamField>
+
+```ts
+if (Input.isKeyDown(0x10)) { // Shift
+    console.log("Shift is held");
+}
+```
+
+---
+
+## Game state
+
+`Input.state` exposes read-only, per-frame cached input values from the
+engine. All properties are updated automatically each tick.
+
+```ts
+const state = Input.state;
+```
+
+| Property | Type | |
+|:---------|:-----|:--|
+| `viewAngles` | [`QAngle`](/api/types/qangle) | Current view angles |
+| `thirdPersonAngles` | [`QAngle`](/api/types/qangle) | Third-person camera angles |
+| `forwardMove` | `number` | W/S movement value |
+| `leftMove` | `number` | A/D movement value |
+| `upMove` | `number` | Jump/crouch movement value |
+| `mouseDeltaX` | `number` | Game mouse delta X |
+| `mouseDeltaY` | `number` | Game mouse delta Y |
+| `inThirdPerson` | `boolean` | Whether third-person mode is active |
+
+```ts
+on("render", () => {
+    const { viewAngles, forwardMove, leftMove } = Input.state;
+
+    console.log(`Looking: pitch=${viewAngles.pitch.toFixed(1)} yaw=${viewAngles.yaw.toFixed(1)}`);
+    console.log(`Moving: forward=${forwardMove} left=${leftMove}`);
+
+    if (Input.state.inThirdPerson) {
+        console.log("Third person active");
+    }
+});
+```
+---
+title: "localStorage"
+sidebarTitle: "localStorage"
+description: "Persistent key-value storage that survives script reloads and restarts - the familiar browser API, but better."
+icon: "database"
+---
+
+```ts
+// No import needed - available globally
+localStorage.setItem("key", value);
+```
+
+Your favorite browser API in a modern version. `localStorage` provides persistent key-value storage that survives script reloads and restarts. Data is encrypted on disk, and each script has its own isolated storage - scripts cannot access each other's data.
+
+Unlike the browser version, values are serialized using the **structured clone algorithm** (same as IndexedDB), so any JS type is supported - not just strings.
+
+<Note>
+  **Supported value types:** objects, arrays, numbers, strings, booleans, `null`, `Date`, `RegExp`, `Map`, `Set`, `ArrayBuffer`, `TypedArray`.
+  No more `JSON.stringify` / `JSON.parse` wrappers - just store and retrieve.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Methods" icon="code" href="#methods">
+    setItem, getItem, removeItem, clear, key, length.
+  </Card>
+  <Card title="Property access" icon="arrow-right" href="#property-access">
+    Read and write values using direct property syntax.
+  </Card>
+</CardGroup>
+
+---
+
+## Methods
+
+### localStorage.setItem
+
+<br />
+
+```ts
+localStorage.setItem(key: string, value: any): void
+```
+
+Stores a value under the given key. The value can be any type supported by the structured clone algorithm.
+
+<ParamField path="key" type="string" required>
+  The key to store the value under.
+</ParamField>
+<ParamField path="value" type="any" required>
+  The value to store. Any serializable type.
+</ParamField>
+
+```ts
+localStorage.setItem("name", "Player1");
+localStorage.setItem("score", 42);
+localStorage.setItem("settings", { fov: 90, crosshair: true });
+localStorage.setItem("teammates", new Set(["Alice", "Bob"]));
+```
+
+---
+
+### localStorage.getItem
+
+<br />
+
+```ts
+localStorage.getItem(key: string): any | null
+```
+
+Retrieves a value by key. Returns `null` if the key doesn't exist.
+
+```ts
+const name = localStorage.getItem("name");         // "Player1"
+const score = localStorage.getItem("score");        // 42
+const settings = localStorage.getItem("settings");  // { fov: 90, crosshair: true }
+
+const missing = localStorage.getItem("nope");       // null
+```
+
+---
+
+### localStorage.removeItem
+
+<br />
+
+```ts
+localStorage.removeItem(key: string): void
+```
+
+Removes a key and its value from storage.
+
+```ts
+localStorage.removeItem("name");
+localStorage.getItem("name"); // null
+```
+
+---
+
+### localStorage.clear
+
+<br />
+
+```ts
+localStorage.clear(): void
+```
+
+Removes **all** keys for this script. Other scripts' storage is not affected.
+
+```ts
+localStorage.clear();
+console.log(localStorage.length); // 0
+```
+
+---
+
+### localStorage.key
+
+<br />
+
+```ts
+localStorage.key(index: number): string | null
+```
+
+Returns the key name at the given index. Returns `null` if out of bounds.
+
+<ParamField path="index" type="number" required>
+  Zero-based index into the key list.
+</ParamField>
+
+```ts
+localStorage.setItem("a", 1);
+localStorage.setItem("b", 2);
+
+localStorage.key(0); // "a"
+localStorage.key(1); // "b"
+localStorage.key(2); // null
+```
+
+<Warning>
+  `key()` and `length` scan storage internally - avoid calling them in hot loops or inside `on("render", ...)`.
+</Warning>
+
+---
+
+### localStorage.length
+
+<br />
+
+```ts
+localStorage.length: number  // read-only
+```
+
+Returns the number of stored keys.
+
+```ts
+console.log(`${localStorage.length} keys in storage`);
+```
+
+---
+
+## Property access
+
+You can also use direct property syntax via a `Proxy` - reads, writes, and deletes all work as expected.
+
+```ts
+// Write
+localStorage.config = { fov: 90, sens: 2.5 };
+
+// Read
+console.log(localStorage.config); // { fov: 90, sens: 2.5 }
+
+// Delete
+delete localStorage.config;
+
+// Iterate
+for (const key in localStorage) {
+    console.log(key, localStorage[key]);
+}
+```
+
+<Warning>
+  Built-in property names (`setItem`, `getItem`, `removeItem`, `clear`, `key`, `length`)
+  cannot be used as storage keys via property syntax. Use `setItem` / `getItem` for these names:
+  ```ts
+  // Won't work - "length" is a built-in
+  localStorage.length = 42;
+
+  // Use methods instead
+  localStorage.setItem("length", 42);
+  localStorage.getItem("length"); // 42
+  ```
+</Warning>
+
+---
+
+## Recipes
+
+### Persistent settings
+
+```ts
+// Load saved settings or use defaults
+const defaults = { fov: 90, crosshair: true, sensitivity: 2.0 };
+const settings = localStorage.getItem("settings") ?? defaults;
+
+function updateSetting(key, value) {
+    settings[key] = value;
+    localStorage.setItem("settings", settings);
+}
+
+updateSetting("fov", 110);
+```
+
+### Kill counter across reloads
+
+```ts
+const stats = localStorage.getItem("stats") ?? { kills: 0, deaths: 0 };
+
+function onKill() {
+    stats.kills++;
+    localStorage.setItem("stats", stats);
+}
+
+console.log(`K/D: ${(stats.kills / (stats.deaths || 1)).toFixed(2)}`);
+```
+
+### Per-player notes
+
+```ts
+function setNote(steamId, note) {
+    const notes = localStorage.getItem("notes") ?? {};
+    notes[steamId] = note;
+    localStorage.setItem("notes", notes);
+}
+
+function getNote(steamId) {
+    const notes = localStorage.getItem("notes") ?? {};
+    return notes[steamId] ?? null;
+}
+
+setNote("76561199517768849", "suspicious movement");
+```
+---
 title: "Math"
 sidebarTitle: "Math"
-description: "Angle math, screen projection, and interpolation — built into the global Math object."
+description: "Angle math, screen projection, and interpolation - built into the global Math object."
 icon: "calculator"
 ---
 
-The engine extends the global `Math` object. No imports needed — just call
+The engine extends the global `Math` object. No imports needed - just call
 `Math.calcAngle(...)` like you'd call `Math.sin(...)`.
 
 <Note>
@@ -2311,7 +3152,7 @@ The engine extends the global `Math` object. No imports needed — just call
     Clamp, normalize, and compare angles safely.
   </Card>
   <Card title="Interpolation" icon="wave-sine" href="#interpolation--mapping">
-    Lerp, smooth step, remap — smooth everything.
+    Lerp, smooth step, remap - smooth everything.
   </Card>
 </CardGroup>
 
@@ -2379,7 +3220,7 @@ for (const enemy of Entities.getPlayers({ skipLocal: true })) {
 
 <Warning>
   The returned angle is **not** normalized. Pipe it through
-  [clampAngles](#clampangles) before sending to the engine — it
+  [clampAngles](#clampangles) before sending to the engine - it
   hard-caps pitch to `[-89, 89]` which the engine requires.
   Use [normalizeAngles](#normalizeangles) instead if you only need to
   wrap overflows (e.g. for angle comparisons or delta calculations).
@@ -2415,11 +3256,11 @@ const traceEnd = eyePos.add(forward.scale(1000));
 ```
 
 <Tip>
-  You rarely need all three vectors. Destructure only what you use —
+  You rarely need all three vectors. Destructure only what you use -
   `const { forward } = ...` is the most common pattern.
 </Tip>
 
-See also: [vectorAngles](#vectorangles) — the inverse operation.
+See also: [vectorAngles](#vectorangles) - the inverse operation.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -2431,7 +3272,7 @@ See also: [vectorAngles](#vectorangles) — the inverse operation.
 Math.vectorAngles(vec: Vector): QAngle
 ```
 
-The inverse of `angleVectors` — converts a direction vector back to an
+The inverse of `angleVectors` - converts a direction vector back to an
 Euler angle.
 
 | Param | Type | |
@@ -2443,7 +3284,7 @@ const moveAngle = Math.vectorAngles(entity.getVelocity());
 // moveAngle.yaw → compass direction the entity is walking
 ```
 
-See also: [angleVectors](#anglevectors) — the inverse operation.
+See also: [angleVectors](#anglevectors) - the inverse operation.
 
 ---
 
@@ -2622,7 +3463,7 @@ Think of it as "how many degrees would I move my crosshair to reach this?"
 | `view` | [QAngle](/api/types#qangle) | Your current view angle |
 | `aim` | [QAngle](/api/types#qangle) | Target angle (from [calcAngle](#calcangle)) |
 
-**Returns** `number` — `0` = perfectly aligned, `180` = opposite direction.
+**Returns** `number` - `0` = perfectly aligned, `180` = opposite direction.
 
 ```ts
 import Entities from "@native/entities";
@@ -2660,9 +3501,9 @@ Math.clamp(value: number, min: number, max: number): number
 Restricts a value to `[min, max]`. Below min → min. Above max → max.
 
 ```ts
-Math.clamp(1.5,  0, 1);    // 1     — capped at max
-Math.clamp(-3,   0, 100);  // 0     — capped at min
-Math.clamp(50,   0, 100);  // 50    — in range, untouched
+Math.clamp(1.5,  0, 1);    // 1     - capped at max
+Math.clamp(-3,   0, 100);  // 0     - capped at min
+Math.clamp(50,   0, 100);  // 50    - in range, untouched
 
 // Always clamp health fraction before using it
 const fill = Math.clamp(health / maxHealth, 0, 1);
@@ -2679,7 +3520,7 @@ Math.lerp(a: number, b: number, t: number): number
 ```
 
 Linear interpolation. `t=0` → `a`, `t=1` → `b`, `t=0.5` → midpoint.
-Not clamped — `t` outside `[0, 1]` extrapolates past the endpoints.
+Not clamped - `t` outside `[0, 1]` extrapolates past the endpoints.
 
 ```ts
 Math.lerp(0, 100, 0.25);  // 25
@@ -2691,7 +3532,7 @@ currentX = Math.lerp(currentX, targetX, 0.3);
 ```
 
 <Tip>
-  `lerp` with a constant `t` each frame gives **exponential decay** — the
+  `lerp` with a constant `t` each frame gives **exponential decay** - the
   object slows as it approaches the target. `0.1–0.3` feels smooth,
   `0.5+` feels snappy.
 </Tip>
@@ -2715,9 +3556,9 @@ it sits as a `0–1` factor.
 </Note>
 
 ```ts
-Math.inverseLerp(0, 100, 25);   // 0.25  — a quarter through
-Math.inverseLerp(0, 100, 100);  // 1.0   — at the end
-Math.inverseLerp(0, 100, 150);  // 1.5   — past the end (not clamped)
+Math.inverseLerp(0, 100, 25);   // 0.25  - a quarter through
+Math.inverseLerp(0, 100, 100);  // 1.0   - at the end
+Math.inverseLerp(0, 100, 150);  // 1.5   - past the end (not clamped)
 
 // "How far through the animation?"
 const progress = Math.inverseLerp(startTime, endTime, now);
@@ -2733,15 +3574,15 @@ const progress = Math.inverseLerp(startTime, endTime, now);
 Math.smoothStep(a: number, b: number, t: number): number
 ```
 
-Like `lerp` but with easing — starts slow, speeds up, ends slow.
+Like `lerp` but with easing - starts slow, speeds up, ends slow.
 Internally clamps `t` to `[0, 1]`, then applies `3t² − 2t³`.
 
 ```ts
-Math.smoothStep(0, 1, 0.0);  // 0.0     — start
-Math.smoothStep(0, 1, 0.1);  // 0.028   — slow ramp
-Math.smoothStep(0, 1, 0.5);  // 0.5     — midpoint
-Math.smoothStep(0, 1, 0.9);  // 0.972   — slow finish
-Math.smoothStep(0, 1, 1.0);  // 1.0     — end
+Math.smoothStep(0, 1, 0.0);  // 0.0     - start
+Math.smoothStep(0, 1, 0.1);  // 0.028   - slow ramp
+Math.smoothStep(0, 1, 0.5);  // 0.5     - midpoint
+Math.smoothStep(0, 1, 0.9);  // 0.972   - slow finish
+Math.smoothStep(0, 1, 1.0);  // 1.0     - end
 ```
 
 <Tabs>
@@ -2789,7 +3630,7 @@ Math.remapVal(val: number, srcMin: number, srcMax: number, dstMin: number, dstMa
 
 Maps a value from one range to another. The Swiss army knife for converting
 game values to visual properties.
-Does **not** clamp — wrap in [clamp](#clamp) if you need bounded output.
+Does **not** clamp - wrap in [clamp](#clamp) if you need bounded output.
 
 <Tabs>
   <Tab title="Health → color">
@@ -2842,7 +3683,7 @@ Does **not** clamp — wrap in [clamp](#clamp) if you need bounded output.
 ### Putting it together
 
 A typical overlay pipeline chains several interpolation functions.
-Here's a complete example — an ESP name tag that fades and shrinks
+Here's a complete example - an ESP name tag that fades and shrinks
 with distance:
 
 ```ts
@@ -2910,7 +3751,7 @@ Use it to find a module's base address, scan for signatures, and create
 [Pointer](/api/types/pointer) values to navigate from there.
 
 <Note>
-  `ptr(addr)` is also available as a **global shorthand** — you don't need
+  `ptr(addr)` is also available as a **global shorthand** - you don't need
   to write `Memory.ptr(addr)` everywhere.
 </Note>
 
@@ -2943,7 +3784,7 @@ Memory.ptr(address: number | BigInt | Pointer): Pointer
 ```
 
 Creates a [Pointer](/api/types/pointer) from a raw address. The two forms
-are identical — `ptr()` is the global shorthand.
+are identical - `ptr()` is the global shorthand.
 
 ```ts
 const p = ptr(0x7FFE0000n);
@@ -3030,7 +3871,7 @@ if (result) {
 Memory.scanAll(moduleName: string, pattern: string): Pointer[]
 ```
 
-Returns an array of [Pointer](/api/types/pointer) values — one for each
+Returns an array of [Pointer](/api/types/pointer) values - one for each
 occurrence of `pattern` in the module. Returns an empty array if none found.
 
 ```ts
@@ -3061,7 +3902,7 @@ match any byte at that position.
 
 <Tip>
   Patterns are usually copied from a disassembler (IDA, Ghidra, x64dbg).
-  Wildcard the bytes that change between builds — typically relative offsets,
+  Wildcard the bytes that change between builds - typically relative offsets,
   addresses, and immediate values that the linker patches at link time.
 </Tip>
 
@@ -3127,6 +3968,13 @@ import Render from "@native/render";
 
 The `Render` module draws primitives on the screen overlay. Everything is drawn on top of the game in screen-space pixel coordinates.
 
+<Warning>
+  **All draw calls must happen inside the `on("render", ...)` callback.**
+  Drawing from `"tick"`, timers, or other events will cause flickering or
+  invisible output - the overlay only accepts commands during the render
+  frame. See [Events → render](/api/globals#render) for details.
+</Warning>
+
 <Note>
   **Pro tip:** All position arguments accept both [Vector2](/api/types/vector2) instances and plain `{ x, y }` objects. 
   All color arguments accept [Color](/api/types/color) instances and packed hex integers (e.g. `0xFF0000FF`). If a color is omitted, white is used.
@@ -3167,11 +4015,11 @@ Render.getScreenSize(): Vector2
 Returns the current overlay dimensions in pixels as a
 [Vector2](/api/types/vector2) (`x` = width, `y` = height).
 
-Call this once per frame — the size can change if the user resizes the window
+Call this once per frame - the size can change if the user resizes the window
 or switches resolution.
 
 ```ts
-on("tick", () => {
+on("render", () => {
     const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
     const center = { x: screenWidth / 2, y: screenHeight / 2 };
     Render.circleFilled(center, 3, Color.white());
@@ -3241,7 +4089,7 @@ Render.rectFilled(min: Vector2, max: Vector2, color?: Color, rounding?: number):
         return { mins: screenMins, maxs: screenMaxs };
     }
 
-    on("tick", () => {
+    on("render", () => {
         for (const enemy of Entities.getPlayers({ skipLocal: true })) {
             if (enemy.m_iHealth <= 0) continue;
 
@@ -3297,7 +4145,7 @@ Render.circleFilled(center: Vector2, radius: number, color?: Color): void
 
 <CodeGroup>
 ```ts FOV Ring (Outline)
-on("tick", () => {
+on("render", () => {
     const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
     const center = { x: screenWidth / 2, y: screenHeight / 2 };
     const fovRadius = 150;
@@ -3309,7 +4157,7 @@ on("tick", () => {
 ```ts Head Dot (Filled)
 import Entities from "@native/entities";
 
-on("tick", () => {
+on("render", () => {
     for (const enemy of Entities.getPlayers({ skipLocal: true })) {
         if (enemy.m_iHealth <= 0) continue;
 
@@ -3343,7 +4191,7 @@ on("tick", () => {
     ```ts
     import Entities from "@native/entities";
 
-    on("tick", () => {
+    on("render", () => {
         const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
         const bottomCenter = { x: screenWidth / 2, y: screenHeight };
 
@@ -3409,7 +4257,7 @@ on("tick", () => {
 <br />
 
 ```ts
-Render.text(pos: Vector2, text: string, color?: Color, fontSize?: number): void
+Render.text(pos: Vector2, text: string, color?: Color, fontSize?: number, fontName?: string): void
 ```
 
 Draws a text string on the screen. The position defines the **top-left** corner of the rendered text block.
@@ -3426,13 +4274,16 @@ Draws a text string on the screen. The position defines the **top-left** corner 
 <ParamField path="fontSize" type="number" default="14">
   Font size in pixels.
 </ParamField>
+<ParamField path="fontName" type="string" default='"segoe"'>
+  Font name. See [available fonts](#available-fonts).
+</ParamField>
 
 ```ts
 import Entities from "@native/entities";
 
-// getBoundingBox defined above — see Box ESP example
+// getBoundingBox defined above - see Box ESP example
 
-on("tick", () => {
+on("render", () => {
     for (const enemy of Entities.getPlayers({ skipLocal: true })) {
         if (enemy.m_iHealth <= 0) continue;
 
@@ -3455,7 +4306,7 @@ on("tick", () => {
 <br />
 
 ```ts
-Render.calcTextSize(text: string, fontSize?: number): Vector2
+Render.calcTextSize(text: string, fontSize?: number, fontName?: string): Vector2
 ```
 
 Returns the pixel dimensions of a text string without drawing it.
@@ -3467,23 +4318,45 @@ Use this to center or align text precisely.
 <ParamField path="fontSize" type="number" default="14">
   Font size in pixels. Must match the size you pass to `Render.text`.
 </ParamField>
+<ParamField path="fontName" type="string" default='"segoe"'>
+  Font name. Must match the font you pass to `Render.text`. See [available fonts](#available-fonts).
+</ParamField>
 
 ```ts
 const text = "Hello World";
 const size = Render.calcTextSize(text, 18);
 console.log(`Text is ${size.x}px wide, ${size.y}px tall`);
 
+// measure with a specific font
+const size2 = Render.calcTextSize(text, 18, "verdana");
+
 // center text on screen
-on("tick", () => {
+on("render", () => {
     const screen = Render.getScreenSize();
-    const textSize = Render.calcTextSize(text, 18);
+    const textSize = Render.calcTextSize(text, 18, "segoe-semibold");
     const pos = new Vector2(
         screen.x / 2 - textSize.x / 2,
         screen.y / 2 - textSize.y / 2
     );
-    Render.text(pos, text, Color.white(), 18);
+    Render.text(pos, text, Color.white(), 18, "segoe-semibold");
 });
 ```
+
+---
+
+### Available fonts {#available-fonts}
+
+| Name | Description |
+|:-----|:------------|
+| `"segoe"` | Segoe UI Regular (default) |
+| `"segoe-semibold"` | Segoe UI Semibold |
+| `"segoe-bold"` | Segoe UI Bold |
+| `"dewi"` | RF Dewi Expanded |
+| `"dewi-semibold"` | RF Dewi Semibold |
+| `"tahoma"` | Tahoma |
+| `"verdana"` | Verdana |
+| `"arial"` | Arial |
+| `"weapons"` | Weapon icons |
 
 ---
 
@@ -3521,7 +4394,7 @@ Render.imageRounded(texture: Texture, min: Vector2, max: Vector2, rounding?: num
 const avatar = new Texture("path/to/avatar.png");
 
 // Inside your tick callback:
-on("tick", () => {
+on("render", () => {
     if (!avatar.isReady) return;
 
     // Draw a 48x48 avatar in the top-left corner as a circle
@@ -3540,7 +4413,7 @@ A quick example showing how to combine basic primitives to build custom UI eleme
 </Frame>
 
 ```ts
-on("tick", () => {
+on("render", () => {
     const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
     const cx = screenWidth / 2;
     const cy = screenHeight / 2;
@@ -3560,7 +4433,7 @@ on("tick", () => {
 ---
 title: "Trace"
 sidebarTitle: "Trace"
-description: "Cast rays, boxes, spheres, and capsules through the game world — hit detection, visibility checks, overlap queries, and surface info."
+description: "Cast rays, boxes, spheres, and capsules through the game world - hit detection, visibility checks, overlap queries, and surface info."
 icon: "crosshairs"
 ---
 
@@ -3569,12 +4442,12 @@ import Trace from "@native/trace";
 ```
 
 The `Trace` module casts rays and sweeps shapes through the game world using
-the same collision data the engine uses — static geometry, dynamic entities,
+the same collision data the engine uses - static geometry, dynamic entities,
 and tagged collision layers.
 
 <Note>
   All trace functions are **synchronous** and return immediately. Create
-  a `TraceFilter` once and reuse it across frames — this avoids per-call
+  a `TraceFilter` once and reuse it across frames - this avoids per-call
   allocation and lets you build up an ignore list over time.
 </Note>
 
@@ -3600,7 +4473,7 @@ and tagged collision layers.
 ## Filters
 
 Every trace function accepts an optional **filter** that controls what
-the trace collides with. Filters can be passed in three forms — pick
+the trace collides with. Filters can be passed in three forms - pick
 whichever fits your situation:
 
 | Form | Example |
@@ -3644,7 +4517,7 @@ scenarios, or a configuration object for fine-grained control.
 const filter = Trace.filter("bullet");
 const visFilter = Trace.filter("visibility");
 
-// No argument — defaults to "bullet"
+// No argument - defaults to "bullet"
 const defaultFilter = Trace.filter();
 ```
 
@@ -3674,12 +4547,12 @@ const filter = Trace.filter({
 | `resolveMaterials` | `boolean` | `true` | Resolve surface material info on hit |
 | `resolveEntity` | `boolean` | `true` | Populate entity info on hit |
 | `backFaces` | `boolean` | `false` | Collide with back-facing surfaces |
-| `includeTags` | `string[]` | — | [Collision tags](#collision-tags) to include |
-| `excludeTags` | `string[]` | — | [Collision tags](#collision-tags) to exclude |
+| `includeTags` | `string[]` | - | [Collision tags](#collision-tags) to include |
+| `excludeTags` | `string[]` | - | [Collision tags](#collision-tags) to exclude |
 
 <Tip>
   Disable `resolveNormals`, `resolveMaterials`, and `resolveEntity` if
-  you only care about **whether** something was hit — the trace runs
+  you only care about **whether** something was hit - the trace runs
   faster when it doesn't need to fill in extra data.
 </Tip>
 
@@ -3738,14 +4611,14 @@ Once you have a filter, you can tell it to skip specific entities.
 Trace.ray(start: Vector, end: Vector, filter?): TraceResult
 ```
 
-Casts a single ray from `start` to `end`. The workhorse of the trace API —
+Casts a single ray from `start` to `end`. The workhorse of the trace API -
 use this for hit detection, aim checks, and penetration tests.
 
 <ParamField path="start" type="Vector" required>
   Ray origin, typically the player's eye position.
 </ParamField>
 <ParamField path="end" type="Vector" required>
-  Ray endpoint — the target position.
+  Ray endpoint - the target position.
 </ParamField>
 <ParamField path="filter" type="string | TraceFilter | FilterOptions">
   Collision filter. Defaults to `"bullet"` if omitted.
@@ -3870,7 +4743,7 @@ Trace.rayAll(start: Vector, end: Vector, filter?, maxHits?: number): TraceResult
 ```
 
 Casts a ray and returns **all** hits along the path, not just the first.
-Useful for penetration simulation — you get every surface the ray passes
+Useful for penetration simulation - you get every surface the ray passes
 through.
 
 <ParamField path="start" type="Vector" required>Ray origin.</ParamField>
@@ -3912,7 +4785,7 @@ Trace.isVisible(from: Vector, to: Vector): boolean
 
 The **fastest** way to check line of sight. Returns `true` if nothing
 blocks the path between `from` and `to`. Skips normal, material,
-and entity resolution entirely — just a yes/no answer.
+and entity resolution entirely - just a yes/no answer.
 
 <ParamField path="from" type="Vector" required>Start position (e.g. eye position).</ParamField>
 <ParamField path="to" type="Vector" required>Target position (e.g. enemy head).</ParamField>
@@ -3932,7 +4805,7 @@ if (Trace.isVisible(localPos, enemyPos)) {
 ```
 
 <Tip>
-  Use `isVisible` over `Trace.ray` when you only need a boolean — it's
+  Use `isVisible` over `Trace.ray` when you only need a boolean - it's
   significantly faster because it doesn't resolve any hit data.
 </Tip>
 
@@ -3985,7 +4858,7 @@ const nearby = Trace.overlapSphere(localPos, 256.0);
 
 for (const overlap of nearby) {
     if (overlap.entity) {
-        console.log(`${overlap.entity.className} — depth: ${overlap.depth}`);
+        console.log(`${overlap.entity.className} - depth: ${overlap.depth}`);
     }
 }
 ```
@@ -4032,7 +4905,7 @@ and each element of `Trace.rayAll`.
 | Property | Type | Description |
 |:---------|:-----|:------------|
 | `hit` | `boolean` | Whether the trace hit anything |
-| `fraction` | `number` | `0..1` — how far along the path the hit occurred |
+| `fraction` | `number` | `0..1` - how far along the path the hit occurred |
 | `position` | [`Vector`](/api/types/vector) | Impact point in world space |
 | `normal` | [`Vector`](/api/types/vector) | Surface normal at the impact point |
 | `startSolid` | `boolean` | `true` if the trace started inside solid geometry |
@@ -4044,7 +4917,7 @@ and each element of `Trace.rayAll`.
 | `entity` | `object \| null` | Entity info (see below) |
 | `surface` | `object \| null` | Surface material info (see below) |
 
-**`entity`** — populated when `resolveEntity` is `true` and the trace hit a dynamic entity:
+**`entity`** - populated when `resolveEntity` is `true` and the trace hit a dynamic entity:
 
 | Property | Type | |
 |:---------|:-----|:--|
@@ -4052,7 +4925,7 @@ and each element of `Trace.rayAll`.
 | `handle` | `number` | Entity handle |
 | `origin` | [`Vector`](/api/types/vector) | Entity origin |
 
-**`surface`** — populated when `resolveMaterials` is `true`:
+**`surface`** - populated when `resolveMaterials` is `true`:
 
 | Property | Type | |
 |:---------|:-----|:--|
@@ -4112,7 +4985,7 @@ Tags control which collision layers are included or excluded in a
 | Tag | Description |
 |:----|:------------|
 | `"pass_bullets"` | Surfaces that bullets pass through |
-| `"player_clip"` | Player clip brushes — block players, not bullets |
+| `"player_clip"` | Player clip brushes - block players, not bullets |
 | `"npc_clip"` | NPC clip brushes |
 | `"grenade_clip"` | Grenade clip brushes |
 | `"ladder"` | Ladder surfaces |
@@ -4126,7 +4999,7 @@ Tags control which collision layers are included or excluded in a
 
 ### Fast visibility check
 
-`Trace.isVisible` is the fastest way to check line of sight — it skips
+`Trace.isVisible` is the fastest way to check line of sight - it skips
 normal / material / entity resolution and just returns a boolean.
 
 ```ts
@@ -4163,13 +5036,48 @@ if (ground.hit) {
 }
 ```
 ---
+title: "WebAssembly"
+sidebarTitle: "WebAssembly"
+description: "Run WebAssembly modules inside scripts with full WASI Preview 1 support."
+icon: "cube"
+---
+
+The runtime supports the standard **WebAssembly JavaScript API** - you
+can compile, instantiate, and run `.wasm` modules directly from your
+scripts. The engine implements the full `wasi_snapshot_preview1`
+interface, so WASI-compatible modules work out of the box.
+
+```ts
+import fs from "@native/fs";
+
+const bytes = fs.readFileSync("python.wasm");
+const module = new WebAssembly.Module(bytes);
+const instance = new WebAssembly.Instance(module);
+
+try {
+    instance.exports._start();
+    console.log("python exited normally");
+} catch (e) {
+    if (String(e).includes("__wasi_proc_exit__"))
+        console.log("python called proc_exit - ok");
+    else
+        console.log("python error:", String(e));
+}
+```
+
+<Tip>
+  For a deeper dive into `WebAssembly.Module`, `WebAssembly.Instance`,
+  imports, memory, and tables - see the
+  [MDN WebAssembly guide](https://developer.mozilla.org/en-US/docs/WebAssembly/Guides/Using_the_JavaScript_API).
+</Tip>
+---
 title: "Color"
 sidebarTitle: "Color"
 description: "RGBA color type with HSV/HSL conversion, blending, and brightness control."
 icon: "palette"
 ---
 
-`Color` represents an RGBA color with four `uint8` components — `r`, `g`,
+`Color` represents an RGBA color with four `uint8` components - `r`, `g`,
 `b`, `a`, each in the range `0–255`. Every render function, ESP element,
 and visual effect uses this type.
 
@@ -4185,7 +5093,7 @@ and visual effect uses this type.
     RGBA, hex, arrays, objects, HSV, HSL, and float forms.
   </Card>
   <Card title="Arithmetic" icon="calculator" href="#arithmetic">
-    Add, subtract, scale — all return new instances.
+    Add, subtract, scale - all return new instances.
   </Card>
   <Card title="Modification" icon="sliders" href="#modification">
     Alpha override, brightness, and interpolation.
@@ -4219,7 +5127,7 @@ log(col.r, col.g, col.b, col.a);  // 255, 128, 0, 100
 
 ## Creating colors
 
-Seven forms — pick whatever fits your data source.
+Seven forms - pick whatever fits your data source.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -4256,7 +5164,7 @@ Creates a new Color. Missing components default to `255`.
     ```ts
     const col = new Color([255, 128, 0, 200]);
 
-    // 3-element arrays work — alpha defaults to 255
+    // 3-element arrays work - alpha defaults to 255
     const opaque = new Color([255, 128, 0]);
     ```
   </Tab>
@@ -4319,7 +5227,7 @@ const faded  = Color.fromHSV(120, 1, 1, 0.5);  // green, 50% alpha
 ```
 
 <Tip>
-  HSV is ideal for cycling through hues — just animate the `h` parameter
+  HSV is ideal for cycling through hues - just animate the `h` parameter
   from `0` to `360` for a rainbow effect.
 </Tip>
 
@@ -4392,7 +5300,7 @@ Render.circleFilled(pos, 5, Color.white());
 ```
 
 <Tip>
-  Presets create a new instance every call — safe to modify without
+  Presets create a new instance every call - safe to modify without
   affecting future calls: `const c = Color.red(); c.a = 128;` is fine.
 </Tip>
 
@@ -4464,14 +5372,14 @@ Color.
 
 ```ts
 const half = Color.red().mul(0.5);
-// (128, 0, 0, 255) — half-intensity red
+// (128, 0, 0, 255) - half-intensity red
 ```
 
 ---
 
 ## Modification
 
-These methods create variations of a color — adjusting alpha, brightness,
+These methods create variations of a color - adjusting alpha, brightness,
 or blending with another color. All return a **new** Color.
 
 {/* ------------------------------------------------------------------ */}
@@ -4489,7 +5397,7 @@ or a `0.0–1.0` float.
 
 | Param | Type | |
 |:------|:-----|:--|
-| `alpha` | `number` | New alpha — `0–255` (int) or `0.0–1.0` (float) |
+| `alpha` | `number` | New alpha - `0–255` (int) or `0.0–1.0` (float) |
 
 The engine auto-detects: if the value is a float in `[0.0, 1.0]` (and
 not an integer), it's treated as a fraction. Otherwise it's a byte.
@@ -4501,7 +5409,7 @@ const exact = solid.withAlpha(200);  // int   → a = 200
 ```
 
 <Warning>
-  The value `1` is ambiguous — it could mean "1 out of 255" or "100%
+  The value `1` is ambiguous - it could mean "1 out of 255" or "100%
   opacity". The engine treats integer `1` as the byte value `1` (nearly
   invisible). Use `1.0` for full opacity, or `255` to be explicit.
 </Warning>
@@ -4648,7 +5556,7 @@ color.toImU32(): number
 ```
 
 Returns the color as an ImGui-compatible packed integer (`ImU32`,
-ABGR byte order). You rarely need this directly — render functions
+ABGR byte order). You rarely need this directly - render functions
 accept Color objects natively.
 
 ```ts
@@ -4665,7 +5573,7 @@ const imcol = myColor.toImU32();
 color.equals(other: Color): boolean
 ```
 
-Exact equality — all four channels must match. Returns `false` if
+Exact equality - all four channels must match. Returns `false` if
 `other` is not a Color.
 
 | Param | Type | |
@@ -4674,7 +5582,7 @@ Exact equality — all four channels must match. Returns `false` if
 
 ```ts
 Color.red().equals(new Color(255, 0, 0, 255));  // true
-Color.red().equals(Color.red().withAlpha(128));   // false — alpha differs
+Color.red().equals(Color.red().withAlpha(128));   // false - alpha differs
 ```
 
 {/* ------------------------------------------------------------------ */}
@@ -4778,13 +5686,13 @@ icon: "arrow-pointer"
 ---
 
 `Pointer` wraps a single memory address. You get one from `ptr()`, from
-`Memory.scan()`, or by following another pointer — and then use it to
+`Memory.scan()`, or by following another pointer - and then use it to
 navigate and read game memory.
 
 <Note>
   `.address` is always a **BigInt** (`0n`, `0x12345678n`, etc.).
   All methods accept `number`, `BigInt`, or another `Pointer` as an address
-  argument — the engine converts automatically.
+  argument - the engine converts automatically.
 </Note>
 
 ## Overview
@@ -4832,7 +5740,7 @@ console.log(p.isNull);   // false
 
 ### Pointer.null
 
-A pre-built null pointer — use it as a sentinel or default value.
+A pre-built null pointer - use it as a sentinel or default value.
 
 ```ts
 const empty = Pointer.null;
@@ -4907,7 +5815,7 @@ ptr.derefRaw(): Pointer   // bypasses cache
 ```
 
 Reads a pointer-sized value from this address and returns it as a new
-`Pointer`. Use `deref` in most cases — `derefRaw` forces a live read.
+`Pointer`. Use `deref` in most cases - `derefRaw` forces a live read.
 
 ```ts
 const entity = ptr(entityListBase).deref();
@@ -4917,7 +5825,7 @@ if (!entity.isNull) {
 ```
 
 <Tip>
-  **Cached vs raw** — `deref` reads through the SDK cache (fast, data
+  **Cached vs raw** - `deref` reads through the SDK cache (fast, data
   is up-to-date within a frame). `derefRaw` always hits process memory
   directly. Prefer cached reads in per-frame code.
 </Tip>
@@ -4936,7 +5844,7 @@ ptr.resolveRaw(...offsets: (number | BigInt)[]): Pointer
 ```
 
 Walks a multi-level pointer chain. For each offset except the last, adds the
-offset then dereferences. The final offset is only added — not dereferenced.
+offset then dereferences. The final offset is only added - not dereferenced.
 
 Equivalent to writing a chain of `add` + `deref` calls manually.
 
@@ -4965,13 +5873,13 @@ const health = ptr(clientBase).resolve(0x2F0, 0x58);
 <br />
 
 ```ts
-// Raw snapshot — read byteCount bytes
+// Raw snapshot - read byteCount bytes
 ptr.read(byteCount: number): Snapshot
 
 // Typed scalar
 ptr.read(type: string): number | BigInt | boolean | string | Pointer
 
-// Typed array — returns a TypedArray
+// Typed array - returns a TypedArray
 ptr.read(type: string, count: number): TypedArray | Pointer[]
 
 // Struct view (from FFI.struct)
@@ -5036,7 +5944,7 @@ const list = ptr(entityList).read(PlayerInfo, 64);
 
 ## Snapshot
 
-`Snapshot` is what `.read(byteCount)` returns — a frozen copy of raw bytes
+`Snapshot` is what `.read(byteCount)` returns - a frozen copy of raw bytes
 together with helpers to interpret them.
 
 ```ts
@@ -5104,7 +6012,7 @@ console.log("Health:", hp);
 ### Read multiple fields from one snapshot
 
 ```ts
-// Read once — avoid hammering the read path per field
+// Read once - avoid hammering the read path per field
 const snap = ptr(entityBase).read(0x400);
 
 const info = {
@@ -5128,11 +6036,11 @@ if (!entity.isNull) {
 ---
 title: "QAngle"
 sidebarTitle: "QAngle"
-description: "Euler angles for view direction, aim, and rotation — pitch, yaw, roll in degrees."
+description: "Euler angles for view direction, aim, and rotation - pitch, yaw, roll in degrees."
 icon: "compass-drafting"
 ---
 
-`QAngle` represents an Euler rotation as three components — **pitch**
+`QAngle` represents an Euler rotation as three components - **pitch**
 (up/down), **yaw** (left/right), and **roll** (tilt). Every view angle,
 aim calculation, and rotation in the engine uses this type.
 
@@ -5147,10 +6055,10 @@ aim calculation, and rotation in the engine uses this type.
 
 <CardGroup cols={2}>
   <Card title="Creating angles" icon="plus" href="#creating-angles">
-    Six constructor forms — numbers, arrays, objects, or zero.
+    Six constructor forms - numbers, arrays, objects, or zero.
   </Card>
   <Card title="Arithmetic" icon="calculator" href="#arithmetic">
-    Add, subtract, scale, divide, negate — all return new instances.
+    Add, subtract, scale, divide, negate - all return new instances.
   </Card>
   <Card title="Normalization" icon="arrows-rotate" href="#normalization">
     Wrap overflowed components back into valid ranges.
@@ -5189,7 +6097,7 @@ log(angle.roll);  // 0
 
 ## Creating angles
 
-Six forms — use whichever reads best in your code.
+Six forms - use whichever reads best in your code.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -5221,7 +6129,7 @@ Creates a new QAngle. Missing components default to `0`.
     const angle = new QAngle([45, 90, 0]);
     // pitch=45, yaw=90, roll=0
 
-    // Shorter arrays work — missing elements stay 0
+    // Shorter arrays work - missing elements stay 0
     const partial = new QAngle([10]);
     // pitch=10, yaw=0, roll=0
     ```
@@ -5231,7 +6139,7 @@ Creates a new QAngle. Missing components default to `0`.
     const angle = new QAngle({ pitch: 45, yaw: 90 });
     // pitch=45, yaw=90, roll=0
 
-    // Only set what you need — the rest default to 0
+    // Only set what you need - the rest default to 0
     const yawOnly = new QAngle({ yaw: 180 });
     ```
   </Tab>
@@ -5264,7 +6172,7 @@ const origin = QAngle.zero();
 
 ## Arithmetic
 
-All arithmetic methods return a **new** QAngle — the original is never
+All arithmetic methods return a **new** QAngle - the original is never
 modified. This makes them safe to use in calculations without cloning
 first.
 
@@ -5432,7 +6340,7 @@ const clean = raw.normalized();
 ```
 
 <Tip>
-  **normalize() vs normalized()** — the naming follows a common pattern:
+  **normalize() vs normalized()** - the naming follows a common pattern:
 
   | Method | Mutates? | Returns |
   |:-------|:---------|:--------|
@@ -5452,7 +6360,7 @@ const clean = raw.normalized();
 QAngle.normalizeAngle(deg: number): number
 ```
 
-Static utility — wraps a **single** angle value to `[-180, 180]`.
+Static utility - wraps a **single** angle value to `[-180, 180]`.
 Useful when you need to normalize one component without touching the
 others.
 
@@ -5472,7 +6380,7 @@ QAngle.normalizeAngle(45);    // 45 (unchanged)
 
 Decompose the angle into perpendicular direction vectors. These are
 instance-method shortcuts for
-[Math.angleVectors](/api/math#anglevectors) — same math, different
+[Math.angleVectors](/api/math#anglevectors) - same math, different
 syntax.
 
 {/* ------------------------------------------------------------------ */}
@@ -5485,7 +6393,7 @@ syntax.
 angle.forward(): Vector
 ```
 
-Returns the **forward** direction vector — where this angle is pointing.
+Returns the **forward** direction vector - where this angle is pointing.
 This is the direction you'd trace a ray along.
 
 ```ts
@@ -5500,7 +6408,7 @@ const traceEnd = {
 
 <Tip>
   `angle.forward()` is equivalent to
-  `Math.angleVectors(angle).forward` — use whichever reads better.
+  `Math.angleVectors(angle).forward` - use whichever reads better.
   If you need multiple vectors at once, `Math.angleVectors` is more
   efficient (one decomposition vs three).
 </Tip>
@@ -5515,7 +6423,7 @@ const traceEnd = {
 angle.right(): Vector
 ```
 
-Returns the **right** direction vector — perpendicular to forward,
+Returns the **right** direction vector - perpendicular to forward,
 pointing to the right side of the view.
 
 ```ts
@@ -5539,7 +6447,7 @@ const sidePos = {
 angle.up(): Vector
 ```
 
-Returns the **up** direction vector — perpendicular to both forward and
+Returns the **up** direction vector - perpendicular to both forward and
 right, pointing above the view.
 
 ```ts
@@ -5568,7 +6476,7 @@ instance method.
 |:------|:-----|:--|
 | `other` | `QAngle` | Target angle to compare against |
 
-**Returns** `number` — `0` = identical direction, `180` = opposite.
+**Returns** `number` - `0` = identical direction, `180` = opposite.
 
 ```ts
 const aim = Math.calcAngle(myEyePos, enemy.headPos);
@@ -5673,7 +6581,7 @@ angle.set(0, 180, 0);
 // angle is now QAngle(0, 180, 0)
 
 angle.set({ yaw: -90 });
-// angle is now QAngle(0, -90, 0) — pitch and roll reset to 0
+// angle is now QAngle(0, -90, 0) - pitch and roll reset to 0
 ```
 
 <Warning>
@@ -5762,12 +6670,12 @@ shake.length();  // 2.29...
 angle.lengthSqr(): number
 ```
 
-Squared length — `pitch² + yaw² + roll²`. Faster than `length()` when
+Squared length - `pitch² + yaw² + roll²`. Faster than `length()` when
 you only need to compare magnitudes.
 
 ```ts
 if (deltaAngle.lengthSqr() < 0.01) {
-    // Almost no rotation change — skip update
+    // Almost no rotation change - skip update
 }
 ```
 
@@ -5862,7 +6770,7 @@ into GPU memory so you can draw it with [Render.image](/api/render#image)
 and [Render.imageRounded](/api/render#imagerounded).
 
 <Note>
-  Textures load **asynchronously** — they may not be ready on the same
+  Textures load **asynchronously** - they may not be ready on the same
   frame they're created. Always check `isReady` before drawing.
 </Note>
 
@@ -5891,22 +6799,45 @@ and [Render.imageRounded](/api/render#imagerounded).
 <br />
 
 ```ts
-new Texture(path: string): Texture
+new Texture(path: string, width?: number, height?: number): Texture
 ```
 
 Loads an image from a file path. The texture starts loading immediately
 but may not be ready until a later frame.
 
+For **SVG** files you can optionally specify render dimensions.
+PNG/JPG images always use the dimensions from the file itself — `width`
+and `height` are ignored.
+
 | Param | Type | |
 |:------|:-----|:--|
 | `path` | `string` | Path to the image file |
+| `width` | `number?` | Render width for SVG. `0` = auto (proportional to height) |
+| `height` | `number?` | Render height for SVG. `0` = auto (proportional to width) |
+
+<Tip>
+  If neither `width` nor `height` is provided for an SVG, it renders at
+  its intrinsic size × 4.
+</Tip>
 
 ```ts
 const icon = new Texture("assets/icon.png");
+
+// SVG — intrinsic size × 4
+const svg1 = new Texture("icon.svg");
+
+// SVG — exact size
+const svg2 = new Texture("icon.svg", 128, 128);
+
+// SVG — width 256, height proportional
+const svg3 = new Texture("icon.svg", 256);
+
+// SVG — height 64, width proportional
+const svg4 = new Texture("icon.svg", 0, 64);
 ```
 
 <Warning>
-  Create textures **once** outside your render callback — not every
+  Create textures **once** outside your render callback - not every
   frame. Repeated construction causes repeated disk reads and GPU
   uploads.
 </Warning>
@@ -5918,7 +6849,7 @@ const icon = new Texture("assets/icon.png");
     const icon = new Texture("assets/icon.png");
 
     // Draw every frame
-    onRender(() => {
+    on("render", () => {
         if (icon.isReady) {
             Render.image(icon, pos, size, Color.white());
         }
@@ -5927,7 +6858,7 @@ const icon = new Texture("assets/icon.png");
   </Tab>
   <Tab title="Wrong">
     ```ts
-    onRender(() => {
+    on("render", () => {
         // BAD: loads from disk every frame!
         const icon = new Texture("assets/icon.png");
         Render.image(icon, pos, size, Color.white());
@@ -5967,7 +6898,7 @@ const checker = Texture.fromMemory(pixels, 2, 2);
 ```
 
 <Tip>
-  `fromMemory` is useful for procedurally generated textures — gradients,
+  `fromMemory` is useful for procedurally generated textures - gradients,
   noise patterns, or dynamically composited images.
 </Tip>
 
@@ -6050,7 +6981,7 @@ documentation.
     ```ts
     const icon = new Texture("assets/weapon.png");
 
-    onRender(() => {
+    on("render", () => {
         if (!icon.isReady) return;
 
         const { success, screen } = Math.worldToScreen(pos);
@@ -6064,7 +6995,7 @@ documentation.
     ```ts
     const avatar = new Texture("assets/avatar.png");
 
-    onRender(() => {
+    on("render", () => {
         if (!avatar.isReady) return;
 
         const size = new Vector2(48, 48);
@@ -6077,7 +7008,7 @@ documentation.
     ```ts
     const icon = new Texture("assets/shield.png");
 
-    onRender(() => {
+    on("render", () => {
         if (!icon.isReady) return;
 
         // Tint with team color
@@ -6090,7 +7021,7 @@ documentation.
     ```ts
     const logo = new Texture("assets/logo.png");
 
-    onRender(() => {
+    on("render", () => {
         if (!logo.isReady) return;
 
         const drawHeight = 64;
@@ -6105,17 +7036,17 @@ documentation.
 ---
 title: "Vector"
 sidebarTitle: "Vector"
-description: "3D vector for positions, velocities, directions — the most used type in the engine."
+description: "3D vector for positions, velocities, directions - the most used type in the engine."
 icon: "location-arrow"
 ---
 
 `Vector` is a 3D vector with `x`, `y`, `z` components. World positions,
-velocities, normals, trace endpoints — almost everything spatial is a
+velocities, normals, trace endpoints - almost everything spatial is a
 Vector. If you're writing game logic, you'll use this type more than
 any other.
 
 <Note>
-  All Vector arithmetic methods return a **new** Vector — the original is
+  All Vector arithmetic methods return a **new** Vector - the original is
   never modified. The exceptions are `normalize()` and direct property
   assignment (`vec.x = 10`), which mutate in place.
 </Note>
@@ -6127,7 +7058,7 @@ any other.
     Constructor and static factories.
   </Card>
   <Card title="Arithmetic" icon="calculator" href="#arithmetic">
-    Add, subtract, multiply, scale — all return new instances.
+    Add, subtract, multiply, scale - all return new instances.
   </Card>
   <Card title="Length & distance" icon="ruler" href="#length--distance">
     Magnitude, squared variants, and distance between points.
@@ -6136,7 +7067,7 @@ any other.
     Dot product, cross product.
   </Card>
   <Card title="Normalization" icon="arrows-rotate" href="#normalization">
-    Unit vectors — mutating and non-mutating.
+    Unit vectors - mutating and non-mutating.
   </Card>
   <Card title="Utility" icon="wrench" href="#utility">
     Clone, validity checks, conversion, string output.
@@ -6281,8 +7212,8 @@ const delta = enemyPos.sub(myPos);
 vec.mul(other: Vector): Vector
 ```
 
-Component-wise multiplication — `x*x`, `y*y`, `z*z`. Returns a new
-Vector. This is **not** dot or cross product — it's the Hadamard product.
+Component-wise multiplication - `x*x`, `y*y`, `z*z`. Returns a new
+Vector. This is **not** dot or cross product - it's the Hadamard product.
 
 | Param | Type | |
 |:------|:-----|:--|
@@ -6354,13 +7285,13 @@ vec.lengthSqr(): number
 ```
 
 Returns the **squared** length: `x² + y² + z²`. Faster than `length()`
-because it skips the square root — use it when you're comparing
+because it skips the square root - use it when you're comparing
 magnitudes, not when you need the actual value.
 
 ```ts
 // "Is the player moving faster than 200 u/s?"
 if (vel.lengthSqr() > 200 * 200) {
-    // yes — and we didn't pay for a sqrt
+    // yes - and we didn't pay for a sqrt
 }
 ```
 
@@ -6369,9 +7300,9 @@ if (vel.lengthSqr() > 200 * 200) {
 
   | Need | Use |
   |:-----|:----|
-  | Compare two magnitudes | `lengthSqr()` — both skip sqrt, comparison still valid |
-  | Display speed in HUD | `length()` — you need the actual number |
-  | Threshold check (`> N`) | `lengthSqr()` — compare against `N * N` |
+  | Compare two magnitudes | `lengthSqr()` - both skip sqrt, comparison still valid |
+  | Display speed in HUD | `length()` - you need the actual number |
+  | Threshold check (`> N`) | `lengthSqr()` - compare against `N * N` |
 </Tip>
 
 {/* ------------------------------------------------------------------ */}
@@ -6426,7 +7357,7 @@ vec.distToSqr(other: Vector): number
 ```
 
 Returns the **squared** distance to another vector. Same speed advantage
-as `lengthSqr` — no square root.
+as `lengthSqr` - no square root.
 
 | Param | Type | |
 |:------|:-----|:--|
@@ -6488,7 +7419,7 @@ if (alignment > 0.9) {
 vec.cross(other: Vector): Vector
 ```
 
-Returns the cross product — a vector **perpendicular** to both inputs.
+Returns the cross product - a vector **perpendicular** to both inputs.
 The magnitude equals the area of the parallelogram they span.
 
 | Param | Type | |
@@ -6499,7 +7430,7 @@ The magnitude equals the area of the parallelogram they span.
 const a = new Vector(1, 0, 0);
 const b = new Vector(0, 1, 0);
 
-const up = a.cross(b);  // Vector(0, 0, 1) — Z axis
+const up = a.cross(b);  // Vector(0, 0, 1) - Z axis
 ```
 
 <Warning>
@@ -6526,7 +7457,7 @@ Scales the vector to length 1 **in place**. Returns `this`.
 ```ts
 const dir = enemyPos.sub(myPos);
 dir.normalize();
-// dir is now a unit vector — length() ≈ 1.0
+// dir is now a unit vector - length() ≈ 1.0
 ```
 
 <Warning>
@@ -6555,7 +7486,7 @@ const dist = toTarget.length();
 ```
 
 <Tip>
-  **normalize() vs normalized()** — same pattern as QAngle:
+  **normalize() vs normalized()** - same pattern as QAngle:
 
   | Method | Mutates? | Returns |
   |:-------|:---------|:--------|
@@ -6615,7 +7546,7 @@ not `±Infinity`).
 
 ```ts
 if (!result.isFinite()) {
-    // Something went wrong — don't use this vector
+    // Something went wrong - don't use this vector
 }
 ```
 
@@ -6688,7 +7619,7 @@ Vector.lerp(a: Vector, b: Vector, t: number): Vector
 ```
 
 Linear interpolation between two vectors. `t=0` returns `a`, `t=1`
-returns `b`, `t=0.5` returns the midpoint. Not clamped — `t` outside
+returns `b`, `t=0.5` returns the midpoint. Not clamped - `t` outside
 `[0, 1]` extrapolates.
 
 | Param | Type | |
@@ -6724,7 +7655,7 @@ returns `b`, `t=0.5` returns the midpoint. Not clamped — `t` outside
 
 <Tip>
   `Vector.lerp` with a constant `t` each frame gives **exponential
-  decay** — the same smooth-follow behavior as `Math.lerp`. Values
+  decay** - the same smooth-follow behavior as `Math.lerp`. Values
   around `0.1–0.3` feel smooth, `0.5+` feels snappy.
 </Tip>
 
@@ -6788,7 +7719,7 @@ Real-world patterns that combine Vector methods with the
     const delta = enemyPos.sub(myPos);
     const dist = delta.length();
     const dir = delta.normalized();
-    // delta is preserved — dir is a new unit vector
+    // delta is preserved - dir is a new unit vector
     ```
   </Tab>
   <Tab title="Is enemy behind me?">
@@ -6829,13 +7760,13 @@ icon: "display"
 
 `Vector2` is a 2D vector with `x`, `y` components. You'll encounter it
 primarily as the return type of
-[Math.worldToScreen](/api/math#worldtoscreen) — screen-space pixel
+[Math.worldToScreen](/api/math#worldtoscreen) - screen-space pixel
 coordinates for ESP overlays and HUD elements.
 
 <Note>
   Unlike [Vector](/api/types/vector), Vector2 has **no z component**.
   Operations like `mul` and `div` accept both a scalar number and another
-  Vector2 — check the overloads below.
+  Vector2 - check the overloads below.
 </Note>
 
 ## Overview
@@ -6845,7 +7776,7 @@ coordinates for ESP overlays and HUD elements.
     Numbers, arrays, objects, or axis presets.
   </Card>
   <Card title="Arithmetic" icon="calculator" href="#arithmetic">
-    Add, subtract, multiply, divide — all return new instances.
+    Add, subtract, multiply, divide - all return new instances.
   </Card>
   <Card title="Length & distance" icon="ruler" href="#length--distance">
     Magnitude and distance on the 2D plane.
@@ -6913,7 +7844,7 @@ Creates a new Vector2. Missing components default to `0`.
     ```ts
     const pos = new Vector2({ x: 640, y: 360 });
 
-    // Partial — missing fields default to 0
+    // Partial - missing fields default to 0
     const xOnly = new Vector2({ x: 100 });
     ```
   </Tab>
@@ -6953,7 +7884,7 @@ Returns a new `(1, 1)` vector.
 Vector2.xAxis(): Vector2
 ```
 
-Returns `(1, 0)` — the horizontal unit vector.
+Returns `(1, 0)` - the horizontal unit vector.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -6965,7 +7896,7 @@ Returns `(1, 0)` — the horizontal unit vector.
 Vector2.yAxis(): Vector2
 ```
 
-Returns `(0, 1)` — the vertical unit vector.
+Returns `(0, 1)` - the vertical unit vector.
 
 ```ts
 // All four presets
@@ -7037,7 +7968,7 @@ vec.mul(factor: number): Vector2
 vec.mul(other: Vector2): Vector2
 ```
 
-Overloaded — accepts a **scalar** or a **Vector2** for component-wise
+Overloaded - accepts a **scalar** or a **Vector2** for component-wise
 multiplication.
 
 | Param | Type | |
@@ -7065,7 +7996,7 @@ vec.div(divisor: number): Vector2
 vec.div(other: Vector2): Vector2
 ```
 
-Overloaded — accepts a **scalar** or a **Vector2** for component-wise
+Overloaded - accepts a **scalar** or a **Vector2** for component-wise
 division.
 
 | Param | Type | |
@@ -7185,7 +8116,7 @@ const alignment = dir.dot(toTarget);
 vec.cross(other: Vector2): number
 ```
 
-Returns the 2D cross product — a **scalar**, not a vector. Its sign
+Returns the 2D cross product - a **scalar**, not a vector. Its sign
 tells you the winding direction: positive = `other` is counter-clockwise
 from `vec`, negative = clockwise.
 
@@ -7202,7 +8133,7 @@ b.cross(a);  // -1 (a is CW from b)
 ```
 
 <Note>
-  In 3D the cross product returns a vector. In 2D it returns a scalar —
+  In 3D the cross product returns a vector. In 2D it returns a scalar -
   the z-component of what the 3D cross would be. This is different
   from [Vector.cross](/api/types/vector#cross).
 </Note>

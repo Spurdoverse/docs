@@ -6,8 +6,17 @@ icon: "memory"
 ---
 
 ```ts
-import Memory from "@native/memory";
+import Memory from "@native/memory";  // requires "memory" permission
 ```
+
+<Note>
+  Requires the **`memory`** permission in your
+  [manifest](/api/manifest#permissions):
+
+  ```json
+  { "permissions": ["memory"] }
+  ```
+</Note>
 
 The `Memory` module gives scripts access to the process address space.
 Use it to find a module's base address, scan for signatures, and create

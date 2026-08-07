@@ -1,0 +1,455 @@
+---
+title: "Networking"
+sidebarTitle: "Networking"
+description: "HTTP and realtime sockets from a script - fetch, WebSocket, EventSource, XMLHttpRequest."
+icon: "globe"
+---
+
+```ts
+// all global - no import, no permission in the manifest
+const data = await (await fetch("https://httpbin.org/json")).json();
+const socket = new WebSocket("wss://ws.postman-echo.com/raw");
+```
+
+These are the browser APIs, not lookalikes: `fetch` with `Headers`/`Request`/
+`Response`/`FormData`, `WebSocket`, `EventSource` and `XMLHttpRequest`, on a
+native HTTP/1.1 + WebSocket transport with TLS.
+
+Which means browser HTTP libraries work unmodified - `ky`, `axios`, `ofetch`,
+`jose`, `reconnecting-websocket`, `centrifuge`, any SDK written for a browser or
+a service worker.
+
+<Note>
+  Nothing here blocks the game: a request in flight costs you no frames, and
+  every callback still runs on the script thread, so there is no concurrency to
+  reason about in your own code.
+</Note>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="fetch" icon="cloud-arrow-down" href="#fetch">
+    Requests, responses, bodies, streaming, aborting.
+  </Card>
+  <Card title="WebSocket" icon="plug" href="#websocket">
+    Full-duplex sockets with subprotocols and close codes.
+  </Card>
+  <Card title="EventSource" icon="tower-broadcast" href="#eventsource">
+    Server-sent events with automatic reconnect.
+  </Card>
+  <Card title="Limits & TLS" icon="lock" href="#tls--certificates">
+    What the transport does not do, and who decides trust.
+  </Card>
+</CardGroup>
+
+<Tip>
+  These follow the specs, so [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API)
+  is the reference for every argument and edge case. This page covers the parts
+  that are specific to running inside the game.
+</Tip>
+
+---
+
+## fetch
+
+```ts
+const res = await fetch("https://httpbin.org/get");
+console.log(res.status, res.ok);            // 200 true
+
+// POST JSON
+await fetch("https://httpbin.org/post", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kills: 12, map: "de_dust2" }),
+});
+
+// query string - let URL build it
+const url = new URL("https://httpbin.org/get");
+url.searchParams.set("player", "spurdo");
+await fetch(url);
+```
+
+The promise resolves as soon as the **headers** arrive. A 404 is a *successful*
+fetch - only transport failures reject, so check `res.ok` yourself.
+
+### Bodies
+
+`string`, `Blob`, `ArrayBuffer`, any typed array, `FormData`, `URLSearchParams`
+and `ReadableStream` (with `duplex: "half"`) are all accepted, and the implied
+`content-type` is filled in when you leave it out.
+
+```ts
+const form = new FormData();
+form.append("map", currentMap());
+form.append("shot", new Blob([pngBytes], { type: "image/png" }), "shot.png");
+
+await fetch("https://example.com/upload", { method: "POST", body: form });
+```
+
+Read a response with `text()`, `json()`, `bytes()`, `arrayBuffer()`, `blob()` or
+`formData()` - once each. `res.clone()` before reading if you need it twice.
+
+### Streaming
+
+`res.body` is a real `ReadableStream` with working backpressure, so a large
+download never has to be held in memory at once:
+
+```ts
+const res = await fetch("https://httpbin.org/stream-bytes/1048576");
+const total = Number(res.headers.get("content-length") ?? 0);
+
+let received = 0;
+for await (const chunk of res.body) {
+    received += chunk.length;
+    if (total) console.log(`${((received / total) * 100) | 0}%`);
+}
+```
+
+Reading pauses on its own when a slow consumer lets chunks pile up, so a body
+you consume lazily is not silently buffered whole. `gzip`, `deflate` and `br`
+arrive decoded, and the body is a normal [stream](/api/web#streams) - pipe it
+through a `TextDecoderStream` or a `DecompressionStream` if that suits you
+better.
+
+### Aborting & timeouts
+
+```ts
+// cancel by hand
+const controller = new AbortController();
+setTimeout(() => controller.abort(), 2_000);
+await fetch(url, { signal: controller.signal });
+
+// or give it a deadline
+await fetch(url, { signal: AbortSignal.timeout(5_000) });
+
+// or both
+await fetch(url, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5_000)]) });
+```
+
+The transport has deadlines of its own, and hitting one rejects with a
+`DOMException` named `TimeoutError`:
+
+| Stage | Limit |
+|:------|:------|
+| TCP connect | 15 s |
+| TLS handshake | 15 s |
+| Sending the request | 30 s |
+| Inactivity while receiving | 60 s |
+
+### Redirects
+
+Followed by the transport, up to **20**, with the spec's method rewrite (a 303,
+and a 301/302 on a request with a body, continue as `GET`).  `Authorization` and
+`Cookie` are dropped when a redirect crosses to another origin.
+
+```ts
+const hop = await fetch(url, { redirect: "manual" });
+console.log(hop.status, hop.headers.get("location"));
+```
+
+`redirect: "manual"` deviates from the spec on purpose: a browser hands back an
+opaque response with no headers, and a script fetches a 3xx precisely to read
+its `Location`.
+
+### data: and blob: URLs
+
+Resolved locally - no socket involved.
+
+```ts
+await (await fetch("data:text/plain;base64,aGVsbG8=")).text();   // "hello"
+
+const objectUrl = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+const png = await (await fetch(objectUrl)).bytes();
+URL.revokeObjectURL(objectUrl);
+```
+
+<Warning>
+  URLs must be **absolute**. There is no document to be relative to, so
+  `fetch("/api/status")` fails with
+  `Failed to fetch: the scheme 'spurdo' is not supported`. Keep the base URL in a
+  constant.
+</Warning>
+
+### Headers
+
+Case-insensitive, sorted iteration, `getSetCookie()` for the one header that is
+never merged - all as specified. Response headers are immutable.
+
+There is no forbidden-header list: `User-Agent`, `Host`, `Referer`, `Cookie` and
+`Origin` all go out as you set them. Three are filled in when you leave them
+out - `host`, `accept-encoding` (`gzip, deflate, br`), and a desktop-Chrome
+`user-agent`, because plenty of sites answer 403 to anything they do not
+recognise.
+
+---
+
+## WebSocket
+
+```ts
+const socket = new WebSocket("wss://ws.postman-echo.com/raw");
+
+socket.onopen    = () => socket.send("hello");
+socket.onmessage = (e) => console.log("got", e.data);
+socket.onclose   = (e) => console.log(`closed ${e.code} ${e.reason} clean=${e.wasClean}`);
+socket.onerror   = () => console.log("socket error");
+```
+
+Subprotocols, `binaryType`, `bufferedAmount`, `CloseEvent` with the peer's code
+and reason, and the spec's failure order (`error`, then a close that was not
+clean). `http`/`https` URLs are mapped onto `ws`/`wss`; anything else throws a
+`SyntaxError`.
+
+```ts
+const socket = new WebSocket("wss://example.com/stream", ["json.v2", "json.v1"]);
+socket.binaryType = "arraybuffer";          // or "blob"
+
+socket.onopen = () => {
+    console.log("agreed on", socket.protocol);   // whichever the server picked
+    socket.send(new Uint8Array([1, 2, 3]));      // strings, buffers, views, Blobs
+    console.log(socket.bufferedAmount);          // bytes still queued
+};
+
+socket.close(1000, "done");    // only 1000 and 3000-4999 may be sent
+```
+
+Message compression (`permessage-deflate`) is offered to the server, and
+keep-alive pings plus an idle timeout come for free - a peer that dies quietly is
+noticed and reported as a close, not waited on forever.
+
+<Note>
+  `WebSocket` only exists when the host has the transport, so
+  `typeof WebSocket === "function"` is an honest feature check rather than a
+  stub that fails later.
+</Note>
+
+### Staying connected
+
+Reconnect logic is not the socket's job, so bring a library or a few lines:
+
+```ts
+function connect(url, onMessage) {
+    let delay = 500;
+
+    const open = () => {
+        const socket = new WebSocket(url);
+
+        socket.onopen    = () => { delay = 500; };
+        socket.onmessage = (e) => onMessage(e.data);
+        socket.onclose   = () => {
+            setTimeout(open, delay);
+            delay = Math.min(delay * 2, 30_000);   // back off, then keep trying
+        };
+    };
+
+    open();
+}
+```
+
+`reconnecting-websocket`, `socket.io-client` and `centrifuge` all work as they
+are - they only ever needed a real `WebSocket` global.
+
+---
+
+## EventSource
+
+Server-sent events, for the one-directional case. Reconnects on its own, resumes
+with `Last-Event-ID`, honours a `retry:` field and treats a 204 as "do not come
+back".
+
+```ts
+const events = new EventSource("https://example.com/stream");
+
+events.onopen    = () => console.log("streaming");
+events.onmessage = (e) => console.log(e.data, e.lastEventId);
+events.onerror   = () => console.log(`dropped, retrying (state ${events.readyState})`);
+
+// named events, as sent by `event: score`
+events.addEventListener("score", (e) => console.log(JSON.parse(e.data)));
+
+events.close();
+```
+
+Default reconnect delay is 3 s until the server says otherwise. The server must
+answer `200` with `content-type: text/event-stream`; anything else is a hard
+failure and is not retried.
+
+---
+
+## XMLHttpRequest
+
+Also here, in full - because libraries look for it. **axios**' default browser
+adapter is XHR, and so is every SDK written before `fetch` existed.
+
+```ts
+import axios from "axios";        // picks its XHR adapter on its own
+const { data } = await axios.get("https://httpbin.org/json", { timeout: 5_000 });
+```
+
+Events, `readyState`, `timeout`, `upload`, `overrideMimeType` and the
+`responseType` values `""`/`text`/`json`/`arraybuffer`/`blob` all behave as
+specified. Two gaps:
+
+* `open(..., false)` - a **synchronous** request - throws. There is one script
+  thread, and blocking it until a socket answers would freeze the game.
+* No DOM, so `responseXML` and `responseType: "document"` are always `null`.
+  `responseText` still has the raw body.
+
+Upload progress is one `loadstart` → `progress` → `load` → `loadend` run rather
+than byte-by-byte - the request body is sent in one piece, so there is nothing in
+between to report honestly.
+
+<Tip>
+  Prefer `fetch` in your own code. Bundling axios for this runtime? Build with
+  `platform: "browser"` and define `process.env.NODE_ENV` so it takes the XHR
+  adapter instead of the Node `http` one.
+</Tip>
+
+---
+
+## TLS & certificates
+
+Certificates are checked by **Windows itself**, against the same trust store a
+browser on that machine uses, and the verdict lands before a single byte of your
+request goes out.
+
+So a host is trusted here exactly when it is trusted in your browser -
+cross-signed and incomplete chains, revocation and the hostname check all
+included. Expired, wrong-host, self-signed, untrusted-root and revoked
+certificates are rejected with a readable reason:
+
+```
+Failed to fetch: expired.badssl.com could not be trusted: the certificate has expired
+```
+
+A revocation check that cannot be reached is not treated as a bad certificate -
+otherwise a flaky network would look like a compromised server.
+
+<Warning>
+  There is no way to skip verification and no pinning hook. If a host fails, its
+  certificate really is unacceptable to the machine the script runs on.
+</Warning>
+
+---
+
+## Limits
+
+The transport is deliberately small. What it does not do:
+
+| Not there | Consequence |
+|:----------|:------------|
+| HTTP/2, HTTP/3 | HTTP/1.1 only - every public API still speaks it |
+| Proxies | Direct connections only; system proxy settings are ignored |
+| Cookie jar | `credentials` changes nothing - set `cookie` yourself, read `set-cookie` off the response |
+| Connection reuse | One connection per exchange: no pooling, no keep-alive |
+| CORS | The script *is* the client, so there is no origin to enforce |
+| `integrity` | Accepted, never checked |
+| Synchronous requests | One script thread - blocking it would freeze the game |
+
+`mode`, `cache`, `referrerPolicy` and `credentials` are stored and echoed back
+untouched, because libraries read them, but nothing acts on them.
+
+---
+
+## Recipes
+
+### A small API client
+
+```ts
+const BASE = "https://api.example.com";
+
+async function api(path, { method = "GET", body, token, timeoutMs = 10_000 } = {}) {
+    const res = await fetch(`${BASE}${path}`, {
+        method,
+        headers: {
+            accept: "application/json",
+            ...(body  ? { "content-type": "application/json" } : {}),
+            ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    if (!res.ok)
+        throw new Error(`${method} ${path} -> ${res.status} ${(await res.text()).slice(0, 200)}`);
+
+    return res.status === 204 ? null : res.json();
+}
+
+await api("/v1/stats", { method: "POST", body: { kills: 12 }, token });
+```
+
+### Retry with backoff
+
+```ts
+async function fetchRetry(url, init = {}, attempts = 3) {
+    let lastError;
+
+    for (let attempt = 0; attempt < attempts; attempt++) {
+        try {
+            const res = await fetch(url, init);
+            if (res.status >= 500 || res.status === 429) throw new Error(`http ${res.status}`);
+            return res;
+        } catch (err) {
+            if (err.name === "AbortError") throw err;    // a cancel is not worth retrying
+            lastError = err;
+            await new Promise(r => setTimeout(r, 250 * 2 ** attempt));
+        }
+    }
+
+    throw lastError;
+}
+```
+
+### Download to disk with progress
+
+```ts
+import fs from "@native/fs";      // requires the "filesystem" permission - see /api/fs
+
+const res = await fetch("https://example.com/model.bin");
+const total = Number(res.headers.get("content-length") ?? 0);
+const parts = [];
+let received = 0;
+
+for await (const chunk of res.body) {
+    parts.push(chunk);
+    received += chunk.length;
+    if (total) console.log(`${((received / total) * 100) | 0}%`);
+}
+
+const out = new Uint8Array(received);
+let offset = 0;
+for (const part of parts) { out.set(part, offset); offset += part.length; }
+
+await fs.writeFile("cache/model.bin", out);
+```
+
+---
+
+## Error handling
+
+Only transport-level problems reject:
+
+| Rejection | `name` | When |
+|:----------|:-------|:-----|
+| `TypeError: Failed to fetch: ...` | `TypeError` | DNS, connection, TLS or protocol failure - detail in the message and on `err.cause` |
+| `DOMException` | `AbortError` | The signal was aborted |
+| `DOMException` | `TimeoutError` | A transport deadline was hit |
+| `TypeError` | `TypeError` | A programming mistake: bad method, body on a `GET`, already-read body |
+
+```ts
+try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(5_000) });
+    if (!res.ok) return { error: `http ${res.status}` };
+    return { data: await res.json() };
+} catch (err) {
+    if (err.name === "TimeoutError") return { error: "too slow" };
+    if (err.name === "AbortError")   return { error: "cancelled" };
+    return { error: String(err.message ?? err) };
+}
+```
+
+A `WebSocket` never throws for a connection problem: it fires `error` and then
+`close` with `wasClean === false`.
+
+For the rest of the browser surface these build on - streams, `Blob`,
+`crypto.subtle`, `TextDecoder` - see [Web APIs](/api/web).

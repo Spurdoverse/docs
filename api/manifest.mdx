@@ -1,0 +1,103 @@
+---
+title: "Manifest & Permissions"
+sidebarTitle: "Manifest"
+description: "manifest.json - how the loader finds your script and what it is allowed to touch."
+icon: "file-json"
+---
+
+Every script folder needs a `manifest.json` next to its build output. It is the
+first thing the loader reads: no manifest, no script.
+
+```json
+{
+  "name": "my-script",
+  "version": "1.0.0",
+  "author": "you",
+  "description": "What this script does",
+  "entry": "dist/index.js",
+  "permissions": ["memory", "filesystem"]
+}
+```
+
+| Field | Type | Required | Description |
+|:------|:-----|:---------|:------------|
+| `name` | `string` | yes | Display name and the identity used for storage, reloads and logs. Must be unique. |
+| `entry` | `string` | yes | Path to the bundled entry file, relative to the script folder. |
+| `version` | `string` | no | Shown in the menu and exposed as `script.version`. Defaults to `1.0.0`. |
+| `author` | `string` | no | Exposed as `script.author`. |
+| `description` | `string` | no | Shown in the menu. |
+| `permissions` | `string[]` | no | Which native modules the script may import. See below. |
+
+<Note>
+  `entry` has to stay inside the script folder - `"entry": "../../elsewhere.js"`
+  is rejected. The same rule applies to every relative `import` your bundle
+  makes at runtime.
+</Note>
+
+## Permissions
+
+Native modules that can reach outside the script - raw memory, the filesystem,
+arbitrary native code - are gated. A script that imports one it did not declare
+gets an error at import time:
+
+```
+Permission denied: '@native/memory' requires 'memory'
+```
+
+| Permission | Unlocks | What it actually allows |
+|:-----------|:--------|:------------------------|
+| `filesystem` | `@native/fs` | Reading and writing files inside the script's own `data/` folder |
+| `memory` | `@native/memory` | Raw reads and writes anywhere in the game process, pattern scans |
+| `ffi` | `@native/ffi` | Loading DLLs and calling arbitrary native functions |
+| `input` | `@native/input` | Synthesizing mouse and keyboard input into the game |
+| `wasi` | WASI system calls | Filesystem-style syscalls for WebAssembly modules |
+| `all` | everything | Convenience for local development |
+
+Everything else - `@native/entities`, `@native/render`, `@native/esp`,
+`@native/trace`, `@native/convars`, `@native/game`, `localStorage`, timers -
+needs no permission at all. Those only read game state or draw.
+
+```json
+{
+  "permissions": ["memory", "ffi"]
+}
+```
+
+<Warning>
+  A manifest with **no** `permissions` key at all keeps working and is granted
+  everything, with a warning in the log. That is a compatibility fallback for
+  scripts written before permissions existed - declare the list explicitly in
+  anything new. An empty array (`"permissions": []`) means *nothing* is granted
+  and is enforced as written.
+</Warning>
+
+## Layout
+
+```
+my-script/
+├── manifest.json
+├── dist/
+│   └── index.js      <- "entry" points here
+└── data/             <- created on demand, @native/fs is sandboxed to it
+```
+
+The `data/` folder is excluded from the file watcher, so writing to it from
+your script does not trigger a reload loop.
+
+## Bundling is required
+
+The module loader resolves exactly three kinds of specifier:
+
+- `./thing.js`, `../thing.js` - relative paths inside your script folder
+- `@native/*` - the built-in modules
+- nothing else
+
+There is no `node_modules` resolution at runtime. Any npm dependency has to be
+bundled into your `entry` file - which is what `spd build` does for you. If you
+see `Cannot resolve 'lodash-es'`, the import survived into the output instead of
+being bundled.
+
+<Tip>
+  Keep an eye on bundle size. Each script is compiled in its own context, so a
+  500 KB bundle costs real time on every load and reload.
+</Tip>

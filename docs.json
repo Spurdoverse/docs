@@ -40,6 +40,9 @@
             "group": "Overview",
             "pages": [
               "api/globals",
+              "api/manifest",
+              "api/web",
+              "api/networking",
               "api/wasm"
             ]
           },
