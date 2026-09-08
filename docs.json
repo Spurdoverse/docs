@@ -52,6 +52,7 @@
               "api/math",
               "api/render",
               "api/esp",
+              "api/ui",
               "api/game",
               "api/ffi",
               "api/fs",
