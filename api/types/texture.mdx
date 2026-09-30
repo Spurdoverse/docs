@@ -1,32 +1,19 @@
 ---
 title: "Texture"
 sidebarTitle: "Texture"
-description: "Load images from disk or memory for drawing on the overlay."
+description: "Images from files or raw pixels, for render.image."
 icon: "image"
 ---
 
-`Texture` loads an image file (`.png`, `.jpg`, etc.) or raw pixel data
-into GPU memory so you can draw it with [Render.image](/api/render#image)
-and [Render.imageRounded](/api/render#imagerounded).
+An image the overlay can draw with [render.image](/api/render#image). Global class, no import.
+
+```ts
+const logo = new Texture("assets/logo.png");
+```
 
 <Note>
-  Textures load **asynchronously** - they may not be ready on the same
-  frame they're created. Always check `isReady` before drawing.
+  Loading and the GPU upload happen in the background. `width` and `height` are `0` until `ready` is `true`, and `render.image` draws nothing before that.
 </Note>
-
-## Overview
-
-<CardGroup cols={2}>
-  <Card title="Loading" icon="upload" href="#loading">
-    From file path or raw RGBA pixel data.
-  </Card>
-  <Card title="Properties" icon="circle-info" href="#properties">
-    Width, height, readiness, and file path.
-  </Card>
-  <Card title="Drawing" icon="paintbrush" href="#drawing">
-    How to render loaded textures on screen.
-  </Card>
-</CardGroup>
 
 ---
 
@@ -34,242 +21,82 @@ and [Render.imageRounded](/api/render#imagerounded).
 
 {/* ------------------------------------------------------------------ */}
 
-### Constructor
+### constructor
 
 <br />
 
 ```ts
-new Texture(path: string, width?: number, height?: number): Texture
+new Texture(path: string, options?: { width?: number; height?: number })
 ```
 
-Loads an image from a file path. The texture starts loading immediately
-but may not be ready until a later frame.
-
-For **SVG** files you can optionally specify render dimensions.
-PNG/JPG images always use the dimensions from the file itself — `width`
-and `height` are ignored.
-
-| Param | Type | |
-|:------|:-----|:--|
-| `path` | `string` | Path to the image file |
-| `width` | `number?` | Render width for SVG. `0` = auto (proportional to height) |
-| `height` | `number?` | Render height for SVG. `0` = auto (proportional to width) |
-
-<Tip>
-  If neither `width` nor `height` is provided for an SVG, it renders at
-  its intrinsic size × 4.
-</Tip>
+Loads a PNG, JPG, BMP, TGA, GIF (first frame) or SVG. `path` is relative to the script folder. A missing file throws `Error` with code `ENOENT`. Textures are cached by resolved path, so loading the same file twice is cheap.
 
 ```ts
-const icon = new Texture("assets/icon.png");
-
-// SVG — intrinsic size × 4
-const svg1 = new Texture("icon.svg");
-
-// SVG — exact size
-const svg2 = new Texture("icon.svg", 128, 128);
-
-// SVG — width 256, height proportional
-const svg3 = new Texture("icon.svg", 256);
-
-// SVG — height 64, width proportional
-const svg4 = new Texture("icon.svg", 0, 64);
+const icon = new Texture("icons/bomb.png");
+const logo = new Texture("assets/logo.svg", { width: 64 });   // height keeps the aspect ratio
 ```
 
+`width` and `height` (`1`–`8192`) only apply to SVG and set its raster size. By default it's 4× the SVG's own size.
+
 <Warning>
-  Create textures **once** outside your render callback - not every
-  frame. Repeated construction causes repeated disk reads and GPU
-  uploads.
+  Without the `filesystem` [permission](/api/manifest#permissions) the file must be inside the script folder. Absolute paths, `..` and symlinks that lead out of it throw `Error` with code `ESANDBOX`.
 </Warning>
-
-<Tabs>
-  <Tab title="Correct">
-    ```ts
-    // Create once at script start
-    const icon = new Texture("assets/icon.png");
-
-    // Draw every frame
-    on("render", () => {
-        if (icon.isReady) {
-            Render.image(icon, pos, size, Color.white());
-        }
-    });
-    ```
-  </Tab>
-  <Tab title="Wrong">
-    ```ts
-    on("render", () => {
-        // BAD: loads from disk every frame!
-        const icon = new Texture("assets/icon.png");
-        Render.image(icon, pos, size, Color.white());
-    });
-    ```
-  </Tab>
-</Tabs>
 
 {/* ------------------------------------------------------------------ */}
 
-### Texture.fromMemory
+### fromMemory
 
 <br />
 
 ```ts
-Texture.fromMemory(data: Uint8Array, width: number, height: number): Texture
+Texture.fromMemory(data: BufferSource, width: number, height: number): Texture
 ```
 
-Creates a texture from raw **RGBA** pixel data in memory. Each pixel
-is 4 bytes (R, G, B, A). The buffer must contain exactly
-`width × height × 4` bytes.
+A texture from raw RGBA8 pixels: row-major, 4 bytes per pixel, no row padding. The pixels are copied, so you can reuse `data`.
 
-| Param | Type | |
-|:------|:-----|:--|
-| `data` | `Uint8Array` | Raw RGBA pixel buffer |
-| `width` | `number` | Image width in pixels |
-| `height` | `number` | Image height in pixels |
+| Throws | When |
+|:-------|:-----|
+| `RangeError` | `width` or `height` outside `1`–`8192`, or `data` shorter than `width * height * 4` bytes |
+| `TypeError` | `data` is a detached buffer |
 
 ```ts
-// Create a 2×2 checkerboard
-const pixels = new Uint8Array([
-    255, 0, 0, 255,    0, 0, 0, 255,     // row 1: red, black
-      0, 0, 0, 255,  255, 0, 0, 255,     // row 2: black, red
-]);
-
-const checker = Texture.fromMemory(pixels, 2, 2);
+const size = 32;
+const pixels = new Uint8Array(size * size * 4);
+for (let i = 0; i < size * size; i++) {
+    const x = i % size;
+    pixels.set([255, 255, 255, Math.round((x / (size - 1)) * 255)], i * 4);   // white, fading in
+}
+const gradient = Texture.fromMemory(pixels, size, size);
 ```
-
-<Tip>
-  `fromMemory` is useful for procedurally generated textures - gradients,
-  noise patterns, or dynamically composited images.
-</Tip>
 
 ---
 
 ## Properties
 
-All properties are **read-only**.
-
 | Property | Type | |
 |:---------|:-----|:--|
-| `width` | `number` | Image width in pixels. `0` if not yet loaded |
-| `height` | `number` | Image height in pixels. `0` if not yet loaded |
-| `isReady` | `boolean` | `true` once the texture is uploaded to the GPU |
-| `path` | `string` | File path (empty for `fromMemory` textures) |
+| `ready` | `boolean` | `true` once uploaded. Stays `false` if the file couldn't be decoded. |
+| `width`, `height` | `number` | Size in pixels, `0` until `ready` |
+| `path` | `string` or `null` | The resolved file path, `null` for `fromMemory` textures |
 
-```ts
-const tex = new Texture("assets/logo.png");
-
-// Later:
-if (tex.isReady) {
-    console.log(tex.width, tex.height);  // e.g. 256, 256
-    console.log(tex.path);               // "assets/logo.png"
-}
-```
-
-{/* ------------------------------------------------------------------ */}
-
-### getSize
-
-<br />
-
-```ts
-texture.getSize(): { width: number, height: number }
-```
-
-Returns both dimensions as a plain object. Convenience method when you
-need both at once.
-
-```ts
-const { width, height } = tex.getSize();
-const aspect = width / height;
-```
-
-{/* ------------------------------------------------------------------ */}
-
-### toString
-
-<br />
-
-```ts
-texture.toString(): string
-```
-
-Returns a debug string with dimensions, path, and ready state.
-
-```ts
-const tex = new Texture("icon.png");
-tex.toString();
-// "Texture(64x64, path='icon.png', ready=true)"
-```
+`toString()` gives something like `Texture(64x64, ready, "C:/…/logo.svg")`.
 
 ---
 
-## Drawing
+## Example
 
-Textures are drawn using the [render](/api/render) module:
+A logo in the top-right corner at its real size, once it has loaded.
 
 ```ts
-Render.image(texture, position, size, tintColor);
-Render.imageRounded(texture, position, size, rounding, tintColor);
+import render from "@native/render";
+
+const logo = new Texture("assets/logo.svg", { height: 48 });
+
+on("render", () => {
+    if (!logo.ready) return;
+
+    const max = new Vector2(render.screenSize.x - 16, 16 + logo.height);
+    const min = max.sub([logo.width, logo.height]);
+    render.image(logo, min, max, { tint: Color.white().withAlphaF(0.8), rounding: 6 });
+});
 ```
-
-See [Render.image](/api/render#image) and
-[Render.imageRounded](/api/render#imagerounded) for full parameter
-documentation.
-
-<Tabs>
-  <Tab title="Basic image">
-    ```ts
-    const icon = new Texture("assets/weapon.png");
-
-    on("render", () => {
-        if (!icon.isReady) return;
-
-        const { success, screen } = Math.worldToScreen(pos);
-        if (success) {
-            Render.image(icon, screen, new Vector2(24, 24), Color.white());
-        }
-    });
-    ```
-  </Tab>
-  <Tab title="Circular avatar">
-    ```ts
-    const avatar = new Texture("assets/avatar.png");
-
-    on("render", () => {
-        if (!avatar.isReady) return;
-
-        const size = new Vector2(48, 48);
-        Render.imageRounded(avatar, hudPos, size, 24, Color.white());
-        // rounding = half of width → perfect circle
-    });
-    ```
-  </Tab>
-  <Tab title="Tinted icon">
-    ```ts
-    const icon = new Texture("assets/shield.png");
-
-    on("render", () => {
-        if (!icon.isReady) return;
-
-        // Tint with team color
-        const tint = isAlly ? Color.green() : Color.red();
-        Render.image(icon, pos, new Vector2(32, 32), tint);
-    });
-    ```
-  </Tab>
-  <Tab title="Preserve aspect ratio">
-    ```ts
-    const logo = new Texture("assets/logo.png");
-
-    on("render", () => {
-        if (!logo.isReady) return;
-
-        const drawHeight = 64;
-        const aspect = logo.width / logo.height;
-        const drawWidth = drawHeight * aspect;
-
-        Render.image(logo, pos, new Vector2(drawWidth, drawHeight), Color.white());
-    });
-    ```
-  </Tab>
-</Tabs>

@@ -1,122 +1,79 @@
 ---
 title: "UI"
 sidebarTitle: "UI"
-description: "Declarative settings window — declare controls once, and the menu builds, persists, and binds them for you."
+description: "The script's settings window: pages, controls, hotkeys and reactive values."
 icon: "sliders"
 ---
+
+Your script's own window in the menu. Declare pages and controls once, and the menu builds the
+widgets and saves their values into the user's configs.
 
 ```ts
 import ui from "@native/ui";
 ```
 
-The `ui` module gives your script its own settings window inside the menu. You
-**declare** controls once; the menu builds real widgets from that declaration and
-keeps them alive. There is no render callback — the menu draws on the render
-thread, your script runs on its own, and the two only exchange declarations and
-events.
-
-Values live in the same store the rest of the cheat uses, so a script's controls
-save into configs, come back when one is applied, and carry hotkeys exactly like
-native controls do. You write none of that.
+<Note>
+  Declare at the top level, not in `tick` or `render`. There is no draw callback: you read
+  `control.value` or listen for `change`. Everything is removed when the script unloads.
+</Note>
 
 ## Overview
 
 <CardGroup cols={2}>
-  <Card title="Pages and groups" icon="layer-group" href="#pages-and-groups">
-    Tabs down the left, panels in up to two columns.
+  <Card title="Layout" icon="table-columns" href="#layout">
+    `page`, `group`, `row`.
   </Card>
   <Card title="Controls" icon="toggle-on" href="#controls">
-    Switches, sliders, combos, colours, inputs, buttons.
+    `switch`, `slider`, `combo`, `multi`, `color`, `input`, `button`, `text`.
   </Card>
-  <Card title="Reactivity" icon="bolt" href="#reactivity">
-    Assign a function to `visible`, `disabled`, or `label` and forget about it.
+  <Card title="Reactive values" icon="bolt" href="#reactive-values">
+    `signal`, `computed`, `effect`, `batch`.
   </Card>
-  <Card title="Persistence" icon="floppy-disk" href="#persistence">
-    How values are keyed, saved, and restored.
+  <Card title="Keybinds" icon="keyboard" href="#keybinds">
+    `key`, `mode`, `active`, `press` / `release`.
+  </Card>
+  <Card title="Paths and persistence" icon="floppy-disk" href="#paths-and-persistence">
+    `id`, `persist`, `EEXIST`.
+  </Card>
+  <Card title="Window" icon="window-maximize" href="#window">
+    `open`, `close`, `on`.
   </Card>
 </CardGroup>
 
----
-
-## Quick start
-
 ```ts
-import ui from "@native/ui";
+const aim = ui.page("Aim", { icon: "target" }).group("General", { toggle: true });
+const fov = aim.slider("FOV", { min: 1, max: 30, default: 5, unit: "°" });
 
-const page = ui.page("Aimbot", { icon: "target" });
-const main = page.group("Main", { toggle: true, default: true });
-
-const mode = main.combo("Mode", ["Legit", "Rage"], { default: "Legit" });
-const fov  = main.slider("FOV", { min: 1, max: 180, default: 30, unit: "°" });
-
-// Reactive: re-runs whenever anything it read changes.
-fov.visible = () => mode.value === "Rage";
-
-onTick(() => {
-    if (main.value) aim(fov.value);
+on("tick", () => {
+    if (aim.value) console.log(fov.value);
 });
 ```
 
-The window opens from the **settings** button on your script's card in the
-**Scripts** tab. The button appears by itself as soon as your script declares a
-page.
-
 ---
 
-## The window
+## Layout
 
-Your script gets one window, laid out like the menu itself:
+{/* ------------------------------------------------------------------ */}
 
-- a **header** with the script's name and a close button
-- a **rail** of icon-only tabs down the left, one per page — it scrolls when a
-  script declares more tabs than fit
-- **up to two columns** of panels, 240px each
-
-The window has two widths and one height. A page whose groups fit in one column
-makes a narrow window; a page that fills both makes a wide one. Height is fixed —
-long pages scroll inside their column rather than growing the window.
-
-<Tip>
-  The window drags by its header, closes with **Escape** or the ×, and is
-  deliberately **not** dismissed by clicking into the menu behind it — you are
-  meant to use both at once.
-</Tip>
-
----
-
-## Pages and groups
-
-### ui.page
+### page
 
 <br />
 
 ```ts
-ui.page(title: string, options?: PageOptions): Page
+ui.page(title: string, options?: { id?: string; icon?: string; order?: number }): Page
 ```
 
-Creates a tab in your window, or returns the existing one. **Get-or-create**, so
-running it again on a reload never duplicates anything.
-
-<ParamField path="title" type="string" required>
-  Names the tab and derives the page's id.
-</ParamField>
-<ParamField path="options.icon" type="string">
-  Tabler icon name, as used by the native tabs: `"target"`, `"eye"`, `"code"`,
-  `"keyboard"`. Defaults to `"adjustments"`.
-</ParamField>
-<ParamField path="options.id" type="string">
-  Pins the path values save under. See [Persistence](#persistence).
-</ParamField>
-<ParamField path="options.order" type="number">
-  Position among your other tabs. Lower comes first.
-</ParamField>
+A tab in the window. Asking for the same title (or `id`) again returns the same page, and the
+options of that repeat call are ignored. `icon` is a Tabler icon name; tabs sort by `order`
+(default `0`). `page.show()` brings the tab to the front.
 
 ```ts
-const visuals = ui.page("Visuals", { icon: "eye", order: 1 });
-visuals.show();   // bring this tab to the front
+const main = ui.page("Main", { icon: "target", order: -1 });
 ```
 
-### container.group
+{/* ------------------------------------------------------------------ */}
+
+### group
 
 <br />
 
@@ -124,360 +81,406 @@ visuals.show();   // bring this tab to the front
 container.group(title: string, options?: GroupOptions): Group
 ```
 
-A panel. On a page this is the normal way to lay things out; inside a group it
-nests. Also **get-or-create**.
+A panel. Same get-or-create rule as `page`. Without `column`, a page's groups are split down the
+middle in declaration order.
 
-<ParamField path="options.toggle" type="boolean">
-  Puts a switch in the panel header. The group then behaves as a control too:
-  `group.value`, `group.label`, `group.on("change")`.
-</ParamField>
-<ParamField path="options.default" type="boolean">
-  Starting state of the header switch. Only with `toggle`.
-</ParamField>
-<ParamField path="options.key" type="boolean">
-  Gives the header a hotkey chip. Only with `toggle`.
-</ParamField>
-<ParamField path="options.column" type='"left" | "right"'>
-  Forces the column. Left alone, groups are split down the middle in declaration
-  order — so one group stays one column and the window stays narrow.
-</ParamField>
+| Option | |
+|:-------|:--|
+| `column` | `"left"` or `"right"`. |
+| `toggle` | Puts a switch in the header: `group.value`, `group.on("change")`, `group.reset()`. |
+| `default`, `persist`, `key`, `onChange` | Like on a [switch](#switch). Only with `toggle`, a `TypeError` otherwise. |
 
 ```ts
-const esp = visuals.group("ESP", { toggle: true, key: true });
-
-esp.value;                                  // the header switch
-esp.on("change", (on) => log(`esp ${on}`));
+const trigger = main.group("Triggerbot", { column: "right", toggle: true, key: { mode: "hold" } });
 ```
 
-### container.row
+{/* ------------------------------------------------------------------ */}
+
+### row
 
 <br />
 
 ```ts
-container.row(build: (row: Container) => void): Container
+container.row(build?: (row: Row) => void): Row
+container.row(options: { visible?: Reactive<boolean>; disabled?: Reactive<boolean> }, build?: (row: Row) => void): Row
 ```
 
-Lays its children out side by side instead of stacked.
+Lays its children out side by side. `build` runs right away with the row. Rows don't add a path
+segment, so wrapping controls in a row never moves their saved values.
 
 ```ts
-esp.row((row) => {
-    row.checkbox("Box", { default: true });
-    row.checkbox("Name", { default: true });
+trigger.row((row) => {
+    row.button("Save", { style: "accent" });
+    row.button("Reset", { style: "danger" });
 });
 ```
-
-<Note>
-  Controls can also be declared straight on a page. They land in the column with no
-  panel around them — useful for a caption or a single button above the panels.
-</Note>
 
 ---
 
 ## Controls
 
-Every factory below exists on pages, groups, and rows alike.
+Every container (page, group, row) has the same builders. The first argument is the label.
 
-| Call | Returns | Value |
-|:-----|:--------|:------|
-| `switch(label, opts?)` / `checkbox(label, opts?)` | `Control<boolean>` | `boolean` |
-| `slider(label, opts)` | `Control<number>` | `number` |
-| `combo(label, items, opts?)` | `ListControl` | the picked item |
-| `multi(label, items, opts?)` | `MultiControl` | array of picked items |
-| `color(label, opts?)` | `Control<Color>` | [`Color`](/api/types/color) |
-| `input(label, opts?)` | `Control<string>` | `string` |
-| `button(label, opts?)` | `Button` | — |
-| `text(text, opts?)` | `Control<string>` | caption, never saved |
+| Option | Default | |
+|:-------|:--------|:--|
+| `id` | label, slugified | The path segment. See [paths](#paths-and-persistence). |
+| `visible`, `disabled` | `true`, `false` | A boolean or a [reactive function](#reactive-values). |
+| `persist` | `true` | `false` keeps the value, and its hotkey, out of configs. |
+| `onChange` | | Same as `control.on("change", fn)`. |
 
-```ts
-const g = page.group("Controls");
+A control has these members:
 
-const enabled  = g.switch("Enabled", { default: true, key: true });
-const smooth   = g.slider("Smooth", { min: 0, max: 10, default: 2.5, precision: 2 });
-const hitboxes = g.multi("Hitboxes", ["Head", "Neck", "Body"], { default: ["Head"] });
-const colour   = g.color("Chams", { default: "#e4733f" });
-const name     = g.input("Name tag", { placeholder: "player" });
+| Member | |
+|:-------|:--|
+| `value` | Read or write. Writing updates the menu and fires `change` right away. A bad value throws `TypeError` or `RangeError`. |
+| `label`, `visible`, `disabled` | Read or write. Writing a function makes it [reactive](#reactive-values). |
+| `on("change", fn)` | Fires after the user, the script, `reset()` or a config changed the value. Returns a `Subscription`. |
+| `reset()` | Back to the declared default. |
+| `key` | The [keybind](#keybinds), or `null`. |
+| `id`, `alive`, `dispose()` | Path, liveness, removal. |
 
-g.button("Reset", { style: "accent", icon: "refresh", onClick: () => colour.reset() });
-```
+{/* ------------------------------------------------------------------ */}
 
-### Slider options
+### switch
 
-<ParamField path="min" type="number" required />
-<ParamField path="max" type="number" required />
-<ParamField path="step" type="number">
-  Values snap to this. `0` (default) means no snapping.
-</ParamField>
-<ParamField path="precision" type="number">
-  Decimals shown. `0` (default) makes it an integer slider, which also decides how
-  the value is stored.
-</ParamField>
-<ParamField path="unit" type="string">
-  Appended to the printed value: `"°"`, `" ms"`.
-</ParamField>
-
-### Combo and multi
-
-The value is the **item**, not its index. Replacing the list keeps the selection by
-value: an item that survived stays picked wherever it moved to, one that is gone
-falls back to the first entry — delivered as a normal `change`.
+<br />
 
 ```ts
-const target = g.combo("Target", ["Head", "Body"]);
-
-target.items = ["Head", "Neck", "Body"];   // "Head" stays picked
-target.value;                               // "Head"
+container.switch(label: string, options?: { default?: boolean; key?: boolean | KeyOptions }): Control<boolean>
 ```
 
-<Tip>
-  In TypeScript the item list types the value: `combo("Mode", ["Legit", "Rage"])`
-  is a `Control<"Legit" | "Rage">`, with no `as const` needed.
-</Tip>
-
-### Control handle
+A checkbox. `key` attaches a [hotkey](#keybinds); `true` is an unbound `"hold"` bind.
 
 ```ts
-fov.value = 45;            // moves the widget, saves, fires `change` once
-fov.label = "FOV (deg)";
-fov.visible = false;
-fov.disabled = true;
-fov.reset();               // back to the declared default
-fov.dispose();             // remove it from the window
+const enabled = main.switch("Enabled", { default: true, key: { key: 0x05, mode: "toggle" } });
 ```
 
-| Property | Type | Access | |
-|:---------|:-----|:------:|:--|
-| `id` | `string` | r | Path the value saves under, e.g. `aimbot/main/fov`. |
-| `value` | *depends* | r/w | Reading is cheap — it never crosses a thread. |
-| `label` | `string` | r/w | Accepts a function. See [Reactivity](#reactivity). |
-| `visible` | `boolean` | r/w | Accepts a function. |
-| `disabled` | `boolean` | r/w | Accepts a function. |
-| `items` | `string[]` | r/w | Combo and multi only. |
-| `key` | `KeyBind \| null` | r | Non-null when declared with `key`. |
+{/* ------------------------------------------------------------------ */}
+
+### slider
+
+<br />
 
 ```ts
-const off = fov.on("change", (v) => log(`fov ${v}`));
-off();   // unsubscribe
+container.slider(label: string, options?: SliderOptions): Control<number>
 ```
 
-### Buttons
+| Option | Default | |
+|:-------|:--------|:--|
+| `min`, `max` | `0`, `100` | `min` must not exceed `max`. |
+| `default` | `min` | Must lie in `min..max`. |
+| `step` | `0` | Snap step, `0` for none. |
+| `precision` | `0` | Decimals shown, `0..6`. `0` makes it an integer slider: bounds, step and values must be integers. |
+| `unit` | | Appended to the printed value, e.g. `"°"` or `" ms"`. |
 
 ```ts
-const btn = g.button("Panic", { style: "danger", icon: "alert-triangle" });
-
-btn.on("click", () => panic());
-btn.click();                          // fire the handlers yourself
-btn.disabled = () => !enabled.value;
+const smooth = main.slider("Smooth", { min: 1, max: 20, step: 0.5, precision: 1, default: 4 });
 ```
 
-`style` is `"normal"`, `"accent"`, `"danger"`, or `"dashed"`.
+{/* ------------------------------------------------------------------ */}
+
+### combo
+
+<br />
+
+```ts
+container.combo(label: string, items: readonly string[], options?: { default?: string | number }): ListControl
+```
+
+One of `items`. The value is the item text; writing takes an item or its index. The items type
+the value, so `combo("Mode", ["Legit", "Rage"])` is `"Legit" | "Rage"` without `as const`.
+
+```ts
+const mode = main.combo("Mode", ["Legit", "Rage"]);
+mode.value = 1;           // "Rage"
+mode.items = ["Legit"];   // selection falls back to the default, change fires
+```
+
+Items must be unique strings (`TypeError`) and not empty (`RangeError`). An unknown item or an
+index out of range throws the same way.
+
+{/* ------------------------------------------------------------------ */}
+
+### multi
+
+<br />
+
+```ts
+container.multi(label: string, items: readonly string[], options?: { default?: readonly (string | number)[] }): MultiControl
+```
+
+Any number of `items`. The value is the picked items in list order; writing takes items and/or
+indices. Replacing `items` drops picks that are gone.
+
+```ts
+const bones = main.multi("Bones", ["Head", "Chest", "Pelvis"], { default: ["Head"] });
+bones.value = ["Head", 2]; // ["Head", "Pelvis"]
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### color
+
+<br />
+
+```ts
+container.color(label: string, options?: { default?: ColorLike; key?: boolean | KeyOptions }): Control<Color, ColorLike>
+```
+
+A color picker. The value is a new [Color](/api/types/color) on every read; writing takes any
+`ColorLike`. Default white. `key` works like on a switch.
+
+```ts
+const boxColor = main.color("Box", { default: "#ff4040" });
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### input
+
+<br />
+
+```ts
+container.input(label: string, options?: { default?: string; placeholder?: string }): Control<string>
+```
+
+A text field.
+
+```ts
+const tag = main.input("Clan tag", { placeholder: "none" });
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### button
+
+<br />
+
+```ts
+container.button(label: string, options?: { style?: "normal" | "accent" | "danger" | "dashed"; icon?: string; onClick?: () => void }): Button
+```
+
+Has no value. `button.on("click", fn)` subscribes, `button.click()` runs the listeners as a real
+click would.
+
+```ts
+main.button("Reset all", { style: "danger", onClick: () => ui.batch(() => { fov.reset(); smooth.reset(); }) });
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### text
+
+<br />
+
+```ts
+container.text(text: Reactive<string>, options?: TextOptions): Text
+```
+
+A line of wrapped text. Pass a function to keep it up to date. Never saved.
+
+```ts
+main.text(() => `FOV ${fov.value}°, smooth ${smooth.value}`);
+```
 
 ---
 
-## Reactivity
+## Reactive values
 
-Assign a **function** to `visible`, `disabled`, or `label` and it re-runs whenever
-anything it read changes. No diffing, no re-render — only the property you fed is
-updated.
+`label`, `visible`, `disabled` and a text's `text` accept a function, as an option or an
+assignment. It runs now and again whenever a control `value`, a `key.active` or a signal it read
+changes. Assigning again replaces it.
 
 ```ts
-smooth.visible    = () => mode.value === "Legit";
-fov.label         = () => `FOV (${fov.value}°)`;
-hitboxes.disabled = () => !enabled.value;
+main.slider("Max angle", { min: 1, max: 180, visible: () => mode.value === "Rage" });
 ```
 
-The same tracking powers three helpers:
+Exceptions thrown in reactive functions and handlers are reported through the global `error`
+event.
+
+{/* ------------------------------------------------------------------ */}
+
+### signal
+
+<br />
 
 ```ts
-const target  = ui.signal("head");            // { value, on("change") }
-const doubled = ui.computed(() => fov.value * 2);
+ui.signal<T>(initial?: T): Signal<T>
+```
 
-const stop = ui.effect(() => {
-    log(`mode=${mode.value} fov=${fov.value}`);
-});
+A value holder. Setting `value` to something new (`Object.is`) fires `change` and re-runs whatever
+read it. Mutating an object in place doesn't count.
+
+```ts
+const kills = ui.signal(0);
+main.text(() => `Kills: ${kills.value}`);
+kills.value = (kills.value ?? 0) + 1;
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### computed
+
+<br />
+
+```ts
+ui.computed<T>(compute: () => T): Computed<T>
+```
+
+A read-only value derived from others. `compute` re-runs when something it read changes; `change`
+fires when the result differs. If it throws, the error is reported and the last value kept.
+
+```ts
+const radius = ui.computed(() => Math.tan(Math.toRadians(fov.value ?? 0)) * 400);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### effect
+
+<br />
+
+```ts
+ui.effect(fn: () => void, options?: { signal?: AbortSignal }): Subscription
+```
+
+Runs `fn` now and again whenever anything it read changes, until the Subscription is disposed.
+Errors are reported and the effect keeps running.
+
+```ts
+const stop = ui.effect(() => console.log("mode is", mode.value));
 stop();
-
-ui.batch(() => {                               // one notification pass, not two
-    fov.value = 20;
-    smooth.value = 1;
-});
 ```
 
-<Note>
-  `key.active` is tracked too, so a bind's state can drive a label or a visibility
-  rule: `label = () => (ctl.key.active ? "ON" : "OFF")`.
-</Note>
+{/* ------------------------------------------------------------------ */}
 
----
+### batch
 
-## Hotkeys
-
-Pass `key` to any control to give it a bind chip.
+<br />
 
 ```ts
-const dt   = g.switch("Double tap", { key: true });                 // hold
-const rage = g.switch("Rage mode",  { key: { mode: "toggle" } });   // toggle
-
-dt.key.on("press",   () => log("held"));
-dt.key.on("release", () => log("let go"));
-
-rage.key.active;   // current state
-rage.key.mode;     // "hold" | "toggle"
-rage.key.key;      // bound virtual-key code, 0 when unbound
+ui.batch<T>(fn: () => T): T
 ```
 
-The user binds the key in the menu: **left-click** the chip, then press any key, or
-click the chip with a mouse button. **Right-click** clears it, **Escape** cancels.
-The bound key is saved with the config; the mode comes from your code.
-
-<Warning>
-  `key.key` is read-only — a script cannot bind a key on the user's behalf yet.
-</Warning>
-
----
-
-## Persistence
-
-Every control's value is stored under a path built from where it sits:
-
-```
-script.<script name>.<page>/<group>/<control>
-```
-
-Each segment defaults to the label, slugified (`"Double tap"` becomes
-`double_tap`). Renaming a **label** is free. Renaming a **group or page** moves
-every id below it, and changing an explicit `id` orphans what configs already hold
-— so pass `id` for anything you expect to rename.
+Defers reactive re-runs until `fn` returns, then runs each affected function once. `change`
+listeners still fire immediately. Returns what `fn` returns; a throw is re-thrown after the
+re-runs.
 
 ```ts
-g.slider("Field of view", { id: "fov", min: 1, max: 180 });   // path stays .../fov
-```
-
-<Note>
-  Values under a path nothing claims are **kept**, not dropped: unloading a script
-  and saving a config does not strip its settings, and declaring the old path again
-  recovers them.
-</Note>
-
-Opting out:
-
-```ts
-g.switch("Verbose log", { persist: false });   // session only, starts at the default
-```
-
-`text()` is never saved, whatever `persist` says — a caption belongs to the script,
-not to a config.
-
-<Warning>
-  Two **controls** whose paths collide are not merged: the second is suffixed
-  (`fov_2`) and the host logs a warning. Pages and groups are get-or-create, so the
-  same title twice is the same container.
-</Warning>
-
----
-
-## Window and config events
-
-```ts
-ui.open();     // open the window, as the card's button would
-ui.close();
-
-ui.on("open",   () => log("window opened"));
-ui.on("close",  () => log("window closed"));
-ui.on("config", () => log("a config was applied"));
-```
-
-When a config is applied, every value is refreshed **first**, then each control
-whose value actually moved fires its `change`, and finally `config` fires once.
-That ordering is the point: a `change` handler reading a neighbouring control sees
-the config's world, and logic that must run once per config goes in `config`.
-
-```ts
-ui.on("config", () => {
-    // runs once, after everything has settled
-    rebuildCache(mode.value, fov.value);
+ui.batch(() => {
+    fov.value = 10;
+    smooth.value = 2;
 });
 ```
 
 ---
 
-## Lifecycle
+## Keybinds
 
-| Event | What happens |
-|:------|:-------------|
-| Script unloads | Its window and every control go with it. Nothing to clean up. |
-| Script reloads | The declaration is rebuilt from scratch; values survive, the window closes and is reopened from the card. |
-| Menu closes | The window closes with it. |
-| `dispose()` | Removes one control, group, or page early. |
+A switch, color or toggle group declared with `key` has a `KeyBind` at `control.key`. The user can
+rebind the key and change the mode in the menu; a persisted control saves both.
 
-Callbacks are delivered on the script thread, in order. Nothing here is ever called
-from the render thread, so a handler can do real work without stuttering the menu.
+| Member | |
+|:-------|:--|
+| `key` | Win32 virtual-key code, `0` when unbound. Writing takes an integer `0..255`. |
+| `mode` | `"hold"` (active while down), `"toggle"` (flips on each press) or `"always"`. |
+| `active` | Whether it's active right now. Reactive. |
+| `on("press", fn)`, `on("release", fn)` | When it becomes active and when it stops. Returns a `Subscription`. |
+| `alive` | Whether its control is alive. |
+
+The `key` option (`{ key?, mode? }`) only seeds a setting that doesn't exist yet. A key the user
+bound, or cleared, is never overwritten.
+
+```ts
+const aimbot = main.switch("Aimbot", { key: { key: 0x06, mode: "hold" } });
+
+on("tick", () => {
+    if (aimbot.value && aimbot.key?.active) {
+        // aim
+    }
+});
+aimbot.key?.on("release", () => console.log("released"));
+```
 
 ---
 
-## Not supported yet
+## Paths and persistence
 
-<AccordionGroup>
-  <Accordion title="Reading or changing the native menu">
-    `ui` builds your own window only. There is no way to find, read, or write the
-    cheat's own controls from a script yet.
-  </Accordion>
-  <Accordion title="Tooltips">
-    Controls carry no hover text. Use `text()` for a line of explanation instead.
-  </Accordion>
-  <Accordion title="Changing a slider's range after creation">
-    `min`, `max`, `step`, `precision`, and `unit` are fixed when the control is
-    created. Only `label`, `visible`, `disabled`, `items`, and the value can change.
-  </Accordion>
-  <Accordion title="Binding a key from code">
-    `key.mode` is yours, `key.key` is the user's.
-  </Accordion>
-</AccordionGroup>
+Every node has a path: its parent's path plus its own segment, the `id` option or the slugified
+label. `ui.page("Aim").group("Main").slider("FOV")` is `aim/main/fov`, saved in the user's config
+under `script.<script name>.aim/main/fov`.
+
+- Rows add no segment.
+- A second control on a taken path throws an `Error` with code `EEXIST`. Give it an `id`, or
+  dispose the old one first. Buttons and texts save nothing and move to `~2`, `~3` instead.
+- Renaming a label moves the path, so the saved value no longer applies. Set `id` when the label may change.
+- `persist: false` keeps a value for the session only.
+
+```ts
+main.slider("Field of view", { id: "fov", min: 1, max: 30 }); // path stays "main/fov"
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### dispose
+
+<br />
+
+```ts
+node.dispose(): void
+```
+
+Removes a node and everything in it. After that `alive` is `false`, reads return `null` and
+writes throw an `Error` with code `ESTALE`. Declaring the same path again creates a new node with
+a new handle. Signals and computeds are disposed the same way.
+
+```ts
+const debug = main.group("Debug");
+debug.dispose();
+```
 
 ---
 
-## Recipes
+## Window
 
-### A page that reshapes itself
+| Call | |
+|:-----|:--|
+| `ui.open()` | Opens the window centred on screen. Does nothing until there's a page. |
+| `ui.close()` | Closes it. |
+| `ui.on("open", fn)`, `ui.on("close", fn)` | Follows the window. |
+| `ui.on("config", fn)` | Once after a config was applied, after every moved control fired `change`. |
 
-```ts
-const page = ui.page("Aimbot", { icon: "target" });
-const main = page.group("Main", { toggle: true });
+---
 
-const mode = main.combo("Mode", ["Legit", "Rage"], { default: "Legit" });
-const fov  = main.slider("FOV", { min: 1, max: 180, default: 30, unit: "°" });
-const rcs  = main.slider("RCS", { min: 0, max: 100, default: 50 });
+## Example
 
-rcs.visible   = () => mode.value === "Rage";
-fov.label     = () => `FOV (${fov.value}°)`;
-main.disabled = () => !isInGame();
-```
-
-### Per-weapon settings from a list
+A crosshair with its settings.
 
 ```ts
-const weapons = ["AK-47", "M4A1-S", "AWP"];
-const g = page.group("Per weapon");
+import ui from "@native/ui";
+import render from "@native/render";
 
-const settings = new Map(
-    weapons.map((name) => [
-        name,
-        g.slider(name, { id: slug(name), min: 0, max: 100, default: 50 }),
-    ]),
-);
+const main = ui.page("Crosshair", { icon: "crosshair" }).group("Crosshair", { toggle: true, default: true });
+const style = main.combo("Style", ["Cross", "Dot", "Circle"]);
+const size = main.slider("Size", { min: 2, max: 40, default: 8, unit: " px" });
+const gap = main.slider("Gap", { min: 0, max: 20, default: 3, visible: () => style.value === "Cross" });
+const color = main.color("Color", { default: "#40ff40" });
+main.text(() => `${style.value}, ${size.value} px`);
 
-// Explicit ids keep the paths stable if the list is ever reordered or renamed.
-```
+on("render", () => {
+    if (!main.value) return;
+    const { x, y } = render.screenSize.scale(0.5);
+    const s = size.value ?? 8;
+    const g = gap.value ?? 0;
+    const c = color.value ?? "#fff";
 
-### A debug tab that never touches configs
-
-```ts
-const debug = ui.page("Debug", { icon: "bug" });
-const g = debug.group("Live");
-
-const verbose = g.switch("Verbose", { persist: false });
-const status  = g.text("idle");
-
-ui.effect(() => {
-    status.label = verbose.value ? `fov=${fov.value} mode=${mode.value}` : "idle";
+    if (style.value === "Dot") render.circleFilled([x, y], s / 4, c);
+    else if (style.value === "Circle") render.circle([x, y], s, c, { thickness: 1.5 });
+    else {
+        render.line([x - s - g, y], [x - g, y], c);
+        render.line([x + g, y], [x + s + g, y], c);
+        render.line([x, y - s - g], [x, y - g], c);
+        render.line([x, y + g], [x, y + s + g], c);
+    }
 });
 ```

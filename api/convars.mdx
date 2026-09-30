@@ -1,121 +1,114 @@
 ---
 title: "Convars"
 sidebarTitle: "Convars"
-description: "Read console variable values from the engine."
+description: "Read console variables by name, typed."
 icon: "terminal"
 ---
 
+Reads engine console variables by exact name.
+
 ```ts
-import Convars from "@native/convars";
+import convars from "@native/convars";
 ```
 
-The `Convars` module reads console variable (cvar) values from the engine.
+<Note>
+  Values are read at most once per tick. A convar that doesn't exist is `null` and is looked up again
+  later, so one registered after your first try is still found.
+</Note>
 
 ---
 
-## Methods
+## Reading
 
-### Convars.get
+{/* ------------------------------------------------------------------ */}
+
+### get
 
 <br />
 
 ```ts
-Convars.get(name: string): boolean | number | string | Color | Vector
+convars.get(name: string): ConvarValue | null
 ```
 
-Returns the convar value with its natural type.
+The value in its natural type, or `null` when the convar doesn't exist.
 
-<ParamField path="name" type="string" required>
-  Console variable name.
-</ParamField>
+| Convar type | Value |
+|:------------|:------|
+| `bool` | `boolean` |
+| `int16` `uint16` `int32` `uint32` `float32` `float64` | `number` |
+| `int64` `uint64` | `bigint` |
+| `string` | `string` |
+| `color` | [Color](/api/types/color) |
+| `vector2`, `vector3`, `qangle` | [Vector2](/api/types/vector2), [Vector](/api/types/vector), [QAngle](/api/types/qangle) |
+| `vector4` | `[x, y, z, w]` |
 
 ```ts
-const sens = Convars.get("sensitivity");    // number
-const cheats = Convars.get("sv_cheats");    // boolean
+const cheats = convars.get("sv_cheats");   // boolean | null
 ```
 
----
+{/* ------------------------------------------------------------------ */}
 
-### Convars.getFloat
+### typeOf
 
 <br />
 
 ```ts
-Convars.getFloat(name: string): number
+convars.typeOf(name: string): ConvarType | null
 ```
 
-Returns the convar value as a float.
-
-<ParamField path="name" type="string" required>
-  Console variable name.
-</ParamField>
+The convar's engine type from the table above, or `null` when it doesn't exist.
 
 ```ts
-const sens = Convars.getFloat("sensitivity"); // 2.5
-const vol = Convars.getFloat("volume");       // 0.8
+convars.typeOf("sensitivity");   // "float32"
 ```
 
----
+{/* ------------------------------------------------------------------ */}
 
-### Convars.getInt
+### Typed getters
 
 <br />
 
 ```ts
-Convars.getInt(name: string): number
+convars.getBool(name: string): boolean | null
+convars.getInt(name: string): number | null
+convars.getFloat(name: string): number | null
+convars.getString(name: string): string | null
 ```
 
-Returns the convar value as an integer.
+Convert by the convar's real type. `null` when it doesn't exist, `TypeError` when its type can't convert (`getFloat` on a string convar).
 
-<ParamField path="name" type="string" required>
-  Console variable name.
-</ParamField>
+| Getter | Accepts |
+|:-------|:--------|
+| `getBool` | bool, integers, floats (`!= 0`) |
+| `getInt` | bool (0/1), integers, floats (toward zero); `RangeError` beyond ±2^53 |
+| `getFloat` | bool (0/1), integers, floats |
+| `getString` | string |
 
 ```ts
-const alpha = Convars.getInt("cl_crosshairalpha"); // 200
-const team = Convars.getInt("mp_autoteambalance"); // 1
+const sens = convars.getFloat("sensitivity") ?? 1;
+const yaw = convars.getFloat("m_yaw") ?? 0.022;
+const degreesPerCount = sens * yaw;
 ```
 
 ---
 
-### Convars.getBool
+## Example
 
-<br />
-
-```ts
-Convars.getBool(name: string): boolean
-```
-
-Returns the convar value as a boolean.
-
-<ParamField path="name" type="string" required>
-  Console variable name.
-</ParamField>
+Mouse counts needed to turn a given angle, for input code that moves the mouse.
 
 ```ts
-if (Convars.getBool("sv_cheats")) {
-    console.log("Cheats enabled");
+import convars from "@native/convars";
+
+function countsFor(degrees: number): number | null {
+    const sens = convars.getFloat("sensitivity");
+    const yaw = convars.getFloat("m_yaw");
+    if (sens === null || yaw === null || sens === 0) return null;
+    return Math.round(degrees / (sens * yaw));
 }
+
+on("keydown", (e) => {
+    if (e.code !== "F8") return;
+    console.log("180° =", countsFor(180), "counts");
+    console.log("zoom ratio:", convars.getFloat("zoom_sensitivity_ratio"));
+});
 ```
-
----
-
-### Convars.getString
-
-<br />
-
-```ts
-Convars.getString(name: string): string
-```
-
-Returns the convar value as a string.
-
-<ParamField path="name" type="string" required>
-  Console variable name.
-</ParamField>
-
-```ts
-const mapGroup = Convars.getString("game_type");
-const hostname = Convars.getString("hostname");
-```
-

@@ -1,0 +1,17 @@
+Every argument takes any <code>{like}</code>, not just a <code>{name}</code>.
+
+| Member | Does |
+|:-------|:-----|
+| <code>new {name}(value)</code>, <code>{name}.from(value)</code> | Copy from any <code>{like}</code>. |
+| `set(...)` | Replaces every component in place, returns `this`. Same arguments as the constructor. |
+| `clone()` | A copy. |
+| `equals(other, epsilon?)` | Every component within `epsilon`. Default `0`, exact. |
+| `toArray()`, `toJSON()` | Plain array, plain object. |
+| `toString()` | <code>"{name}(…)"</code> |
+| `add(other)`, `sub(other)` | Component-wise. |
+| `scale(factor)` | Every component times `factor`. |
+| `mul(x)`, `div(x)` | By a number, or component-wise by another value. Dividing by zero throws `RangeError`. |
+| `lerp(other, t)` | Linear blend, `t` not clamped. |
+| `normalize()`, `normalized()` | The first changes the value and returns `this`, the second returns a copy. |
+
+Only `set()` and `normalize()` change the value. Nothing changes its arguments.

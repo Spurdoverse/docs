@@ -1,611 +1,314 @@
 ---
 title: "Globals"
 sidebarTitle: "Globals"
-description: "Timers, console output, event system, and the script object - available everywhere without imports."
+description: "Events, subscriptions, timers, console and the script object."
 icon: "globe"
 ---
 
-Everything on this page is available in every script without any import.
-These are the building blocks every script starts with: scheduling work,
-reacting to game events, and reading per-frame state.
+What every script has without an import.
+
+<Note>
+  Logic goes in `tick` (128 Hz), drawing in `render` (once per overlay frame).
+  `render.*` draw calls anywhere else throw `EPHASE`.
+</Note>
 
 ## Overview
 
 <CardGroup cols={2}>
-  <Card title="Timers" icon="clock" href="#timers">
-    Schedule one-shot or repeating callbacks with setTimeout and setInterval.
-  </Card>
-  <Card title="console" icon="terminal" href="#console">
-    Log, warn, error, and assert output to the script console.
-  </Card>
   <Card title="Events" icon="bolt" href="#events">
-    addEventListener for ticks, input, and engine events.
+    `on`, `emit`, `addEventListener`, event types.
   </Card>
-  <Card title="script" icon="file-code" href="#script">
-    Metadata about the running script - name, version, author.
+  <Card title="Subscriptions" icon="link-slash" href="#subscriptions">
+    `Subscription`, `signal`, `once`.
+  </Card>
+  <Card title="Timers" icon="clock" href="#timers">
+    `setTimeout`, `setInterval`.
+  </Card>
+  <Card title="console and script" icon="terminal" href="#console">
+    Log levels, `console.inspect`, manifest data.
   </Card>
 </CardGroup>
 
 ---
 
+## Events
+
+The global object is an `EventTarget`. `on` and `emit` are shortcuts on it; `addEventListener`
+and `on<type>` properties see the same events.
+
+{/* ------------------------------------------------------------------ */}
+
+### on
+
+<br />
+
+```ts
+on(type: string, listener: (event: Event) => void, options?: SubscribeOptions): Subscription
+```
+
+Adds a listener and returns a [Subscription](#subscriptions). The listener gets the event
+object. Throws `TypeError` when `type` isn't a string or `listener` isn't a function.
+
+```ts
+const sub = on("keydown", (e) => {
+    if (e.code === "F6" && !e.repeat) console.log("F6");
+});
+
+on("tick", () => console.log("first tick"), { once: true });
+sub(); // stop listening
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### emit
+
+<br />
+
+```ts
+emit(type: string, detail?: unknown): boolean
+```
+
+Dispatches a `CustomEvent` on the global object, synchronously. `detail` is `null` when omitted.
+Returns `false` if a listener called `preventDefault()`.
+
+```ts
+declare global { interface ScriptCustomEvents { scoreChanged: number } }
+
+on("scoreChanged", (e) => console.log(e.detail)); // e.detail: number
+emit("scoreChanged", 10);
+```
+
+Augmenting `ScriptCustomEvents` types `detail` for both calls. Emitting a host type such as
+`"tick"` only reaches its listeners as a `CustomEvent`.
+
+{/* ------------------------------------------------------------------ */}
+
+### addEventListener and handler properties
+
+<br />
+
+The standard API works on the same events. A handler property holds one function; assigning
+replaces it, `null` removes it.
+
+```ts
+addEventListener("tick", () => { /* logic */ });
+ontick = () => { /* logic */ };
+onkeydown = (e) => console.log(e.key);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Event types
+
+<br />
+
+| Type | Event | When |
+|:-----|:------|:-----|
+| `tick` | `Event` | 128 times a second. Entity, game and input data is refreshed right before it. |
+| `render` | `Event` | Once per overlay frame. Draw here. |
+| `unload` | `Event` | Before the script is unloaded or reloaded. Not fired when it stops on an error. |
+| `keydown` / `keyup` | `KeyboardEvent` | Key pressed (again while held, `repeat: true`) / released |
+| `mousemove` | `MouseEvent` | The mouse moved |
+| `mousedown` / `mouseup` | `MouseEvent` | Button pressed / released |
+| `wheel` | `WheelEvent` | One wheel notch |
+| `error` | `ErrorEvent` | A listener, timer or other callback threw, or `reportError(e)` was called |
+| `unhandledrejection` | `PromiseRejectionEvent` | A rejected promise had no handler after the current task |
+
+Everything a script owns is released after `unload`, so there's nothing to clean up by hand.
+
+{/* ------------------------------------------------------------------ */}
+
+### Input event fields
+
+<br />
+
+Fields follow the DOM.
+
+| Field | On | Value |
+|:------|:---|:------|
+| `key`, `code`, `location` | key events | UI Events values (`"a"`, `"KeyA"`) |
+| `keyCode` | key events | Win32 virtual-key code |
+| `repeat` | `keydown` | `true` for auto-repeat |
+| `button` | `mousedown`, `mouseup` | `0` left, `1` middle, `2` right, `3` back, `4` forward |
+| `buttons` | mouse events | Held buttons: `1` left, `2` right, `4` middle, `8` back, `16` forward |
+| `clientX`, `clientY`, `x`, `y`, `screenX`, `screenY` | mouse events | Screen pixels |
+| `movementX`, `movementY` | `mousemove` | Raw delta since the last `mousemove` |
+| `deltaY` | `wheel` | `-100` per notch up, `+100` per notch down |
+| `ctrlKey`, `shiftKey`, `altKey`, `metaKey` | all input | Modifier state |
+
+Host events aren't cancelable. The input has already reached the game, so `preventDefault()`
+does nothing.
+
+{/* ------------------------------------------------------------------ */}
+
+### Errors
+
+<br />
+
+Exceptions from listeners, timers, ui handlers and ESP evaluators land in `error`. Unhandled
+rejections land in `unhandledrejection`. Both go to the log unless you call `preventDefault()`.
+
+```ts
+on("error", (e) => {
+    console.warn("handled:", e.message);
+    e.preventDefault();
+});
+
+on("unhandledrejection", (e) => {
+    console.warn("rejected:", e.reason);
+    e.preventDefault();
+});
+```
+
+---
+
+## Subscriptions
+
+`on` and every other subscribe-style call (ui `.on(...)`, `ui.effect`, key binds) return a
+`Subscription`: a function that unsubscribes when called. `.dispose()` and `[Symbol.dispose]` do
+the same. All three are idempotent. Dropping the function does not unsubscribe.
+
+| Option | Type | Effect |
+|:-------|:-----|:-------|
+| `signal` | `AbortSignal` | Unsubscribes when the signal aborts. An already-aborted signal subscribes nothing. |
+| `once` | `boolean` | Unsubscribes after the first delivery. |
+
+```ts
+const controller = new AbortController();
+on("keydown", (e) => console.log(e.code), { signal: controller.signal });
+on("mousedown", (e) => console.log(e.button), { signal: controller.signal });
+controller.abort(); // both gone
+
+{
+    using sub = on("render", () => { /* draw */ });
+} // unsubscribed here
+```
+
+---
+
 ## Timers
 
-Standard browser-style timer API. IDs returned by `setTimeout` and
-`setInterval` are independent - pass the right ID to the right clear function.
-
-### setTimeout
-
-<br />
+`setTimeout`, `setInterval`, `clearTimeout` and `clearInterval` work as in a browser, with
+extra arguments passed to the callback. Timers belong to the script and die with it.
 
 ```ts
-setTimeout(callback: () => void, ms: number): number
-```
-
-Calls `callback` once after `ms` milliseconds. Returns a timer ID.
-
-```ts
-setTimeout(() => {
-    console.log("3 seconds have passed");
-}, 3000);
-```
-
----
-
-### setInterval
-
-<br />
-
-```ts
-setInterval(callback: () => void, ms: number): number
-```
-
-Calls `callback` repeatedly every `ms` milliseconds. Returns a timer ID.
-
-```ts
-const id = setInterval(() => {
-    console.log("tick");
-}, 1000);
-```
-
----
-
-### clearTimeout / clearInterval
-
-<br />
-
-```ts
-clearTimeout(id: number): void
-clearInterval(id: number): void
-```
-
-Cancels a pending timer by its ID. Safe to call with an invalid or
-already-fired ID.
-
-```ts
-const id = setInterval(() => {
-    console.log("tick");
-}, 500);
-
-// Stop after 5 seconds
+const id = setInterval((label: string) => console.log(label), 1000, "every second");
 setTimeout(() => clearInterval(id), 5000);
 ```
 
-<Warning>
-  Cancel intervals you no longer need. They keep firing even if the entities
-  or objects they reference have become invalid, and an interval that runs
-  heavy work every few milliseconds costs the same as doing it in `tick`.
-</Warning>
+| Rule | |
+|:-----|:-|
+| Handler | Must be a function. A string throws `TypeError`. |
+| `delay` | A number or omitted (`TypeError` otherwise). `NaN`, negative and infinite mean `0`; above `2^31 - 1` ms it's clamped. |
+| Resolution | Callbacks run on the script thread, at most once per tick. `setInterval(fn, 0)` repeats every tick. |
+| Ids | Per script, shared by both kinds. Either `clear` function cancels either. |
+| Errors | A throwing callback fires `error`. |
 
-<Note>
-  Timers **do not** survive a reload: every timer belonging to a script is
-  dropped when it unloads, so a forgotten `setInterval` cannot pile up across
-  hot reloads. Clearing them in `onUnload` is still good hygiene, not damage
-  control.
-</Note>
+---
+
+## Time limits
+
+All scripts share one thread, so the host times every call into JavaScript. Only JavaScript time
+counts; slow native calls (a big scan, a sync file read) pause the clock.
+
+| Code | Warning | Stopped |
+|:-----|:--------|:--------|
+| A listener, timer or callback | 250 ms | 2 s |
+| Top-level code while loading | 2 s | 15 s |
+
+A stopped script is unwound and marked as errored.
 
 ---
 
 ## console
 
-```ts
-console.log(...args: any[]): void      // general output
-console.warn(...args: any[]): void     // warning
-console.error(...args: any[]): void    // error
-console.assert(cond: any, ...args: any[]): void  // logs if cond is falsy
-```
+Output goes to the cheat log, tagged with the script name. Objects print inspected
+(`{ a: 1 }`), printf placeholders `%s %d %i %f %o %O %j %c` work, and getters are never called.
 
-```ts
-console.log("Player HP:", player.m_iHealth);
-console.warn("Entity not found for index", idx);
-console.error("Critical failure:", err);
+| Method | Log level |
+|:-------|:----------|
+| `log`, `info`, `debug`, `dirxml`, `dir`, `table`, `count`, `time*`, `group*` | Info |
+| `warn` | Warning |
+| `error`, `trace`, a failed `assert` | Error |
 
-// Multiple values are space-joined
-console.log("pos:", pos.x, pos.y, pos.z);
-```
+{/* ------------------------------------------------------------------ */}
 
-### Objects print as objects
-
-Values are formatted by an inspector, not by `toString()`, so structures are
-readable without wrapping everything in `JSON.stringify`:
-
-```ts
-console.log({ name: "bot", pos: { x: 1, y: 2 }, tags: ["a", "b"] });
-// { name: 'bot', pos: { x: 1, y: 2 }, tags: [ 'a', 'b' ] }
-
-console.log(new Map([["k", 1]]));      // Map(1) { 'k' => 1 }
-console.log(new Uint8Array([1, 2, 3])); // Uint8Array(3) [ 1, 2, 3 ]
-console.log(vec);                       // Vector(1, 2, 3)
-```
-
-Nesting is cut off after two levels (`[Object]`), long arrays and strings are
-truncated with a note, and cycles print as `[Circular]` instead of hanging.
-
-<Note>
-  Getters are shown as `[Getter]` and **never invoked**. Reading a property off
-  an entity is a memory read, and logging must not have side effects - so
-  `console.log(player)` will not silently read every field of the entity.
-</Note>
-
-### Extras
-
-```ts
-console.dir(value, { depth: 4 });   // deeper inspection
-console.inspect(value, depth);      // the formatted string, no output
-console.table(rows);                // aligned grid
-console.group("label"); console.groupEnd();
-console.time("t"); console.timeEnd("t");
-console.count("hits"); console.countReset("hits");
-console.trace("got here");
-```
-
-Printf-style placeholders work too: `%s %d %i %f %o %O %j %%`.
-
-```ts
-console.log("%s took %d ms", name, elapsed);
-```
-
----
-
-## Events
-
-Events use the standard `addEventListener` API. Everything a browser gives you
-works here - `once`, `signal`, `preventDefault`, custom `EventTarget`s - see
-[Web APIs](/api/web#events).
-
-### addEventListener
+### console.inspect
 
 <br />
 
 ```ts
-addEventListener(type: string, listener: (event: Event) => void, options?: {
-    once?: boolean;
-    capture?: boolean;
-    passive?: boolean;
-    signal?: AbortSignal;
-}): void
-
-removeEventListener(type: string, listener: (event: Event) => void): void
+console.inspect(value: any, depth?: number): string
 ```
+
+Returns what `console.log(value)` would print, without printing it. `depth` defaults to `2`.
 
 ```ts
-addEventListener("tick", () => {
-    // called every tick
-});
-
-addEventListener("keydown", (e: KeyboardEvent) => {
-    if (e.code === "Insert") toggle();
-}, { once: true });
+const text = console.inspect({ a: [1, 2] }); // "{ a: [ 1, 2 ] }"
 ```
-
-The cleanest way to unregister a whole script's worth of listeners is one
-`AbortController`:
-
-```ts
-const controller = new AbortController();
-const { signal } = controller;
-
-addEventListener("tick", onTick, { signal });
-addEventListener("render", onRender, { signal });
-addEventListener("keydown", onKey, { signal });
-
-export function onUnload() {
-    controller.abort();   // removes all three
-}
-```
-
-<Note>
-  A listener that throws does not take the script down: the error is reported
-  through the `error` event and the remaining listeners still run.
-</Note>
-
----
-
-### on / once / off (legacy)
-
-<br />
-
-```ts
-on(event: string, callback: (...args: any[]) => void): number
-once(event: string, callback: (...args: any[]) => void): number
-off(id: number): boolean
-```
-
-The original API, still fully supported. Handlers receive **positional
-arguments** instead of an event object, and `on` returns a numeric ID for
-`off`. Old event names (`"OnKeyDown"`, `"OnMouseMove"`, ...) keep working and
-resolve to the same events as the modern names.
-
-```ts
-const id = on("OnKeyDown", (vk) => console.log(vk));
-off(id);
-```
-
-```ts
-// emit your own event - reaches both listener styles
-emit("my-event", 1, 2);
-```
-
-<Tip>
-  Prefer `addEventListener` in new scripts: typed event objects, `signal`
-  cleanup, and the same names you already know from the web.
-</Tip>
-
----
-
-### Built-in events
-
-| Modern name | Legacy name | Event class |
-|:------------|:------------|:------------|
-| `tick` | `tick` | `Event` |
-| `render` | `render` | `Event` |
-| `unload` | - | `Event` |
-| `keydown` / `keyup` | `OnKeyDown` / `OnKeyUp` | `KeyboardEvent` |
-| `mousemove` | `OnMouseMove` | `MouseEvent` |
-| `mousedown` / `mouseup` | `OnMouseClick` | `MouseEvent` |
-| `wheel` | `OnMouseScroll` | `WheelEvent` |
-| `error` | - | `ErrorEvent` |
-
-Input events carry the fields you would expect in a browser:
-
-```ts
-addEventListener("keydown", (e: KeyboardEvent) => {
-    e.key;        // "w" - layout aware
-    e.code;       // "KeyW" - physical key
-    e.keyCode;    // 87 - Windows virtual key code
-    e.shiftKey;   // modifiers
-    e.getModifierState("Control");
-});
-
-addEventListener("mousemove", (e: MouseEvent) => {
-    e.x; e.y;                       // absolute cursor position
-    e.movementX; e.movementY;       // delta since the last event
-    e.buttons;                      // bitmask: 1 left, 2 right, 4 middle
-});
-
-addEventListener("wheel", (e: WheelEvent) => {
-    e.deltaY;   // positive when scrolling down, like the web
-});
-```
-
-The legacy sections below describe the positional arguments the `on()` API
-passes for the same events.
-
----
-
-#### `"render"`
-
-Fires every frame when the overlay is being drawn. **All `Render` module
-calls must happen inside this callback** - drawing outside of it will cause
-flickering or missing visuals because the frame may have already been
-submitted.
-
-```ts
-import Render from "@native/render";
-
-on("render", () => {
-    const { x: w, y: h } = Render.getScreenSize();
-    Render.text({ x: w / 2, y: 10 }, "Hello!", Color.white(), 18);
-});
-```
-
-<Warning>
-  Never call `Render.*` methods from `"tick"`, `setInterval`, or other
-  non-render callbacks. The overlay only accepts draw commands during the
-  `"render"` event; anywhere else the call does nothing and logs
-  `render.text() outside of a 'render' listener does nothing` once.
-</Warning>
-
----
-
-#### `"tick"`
-
-Fires on the script loop, which targets **128 Hz** independently of the
-server tickrate and of your framerate. The primary place for **logic** -
-entity reads, state machines, calculations. Do **not** draw here - use
-`"render"` for that.
-
-```ts
-import Entities from "@native/entities";
-
-on("tick", () => {
-    const local = Entities.getLocalPlayer();
-    if (!local) return;
-
-    console.log(`HP: ${local.m_iHealth}, pos: ${local.m_pGameSceneNode.m_vecAbsOrigin}`);
-});
-```
-
----
-
-#### `"OnMouseMove"`
-
-```ts
-on("OnMouseMove", (absX: number, absY: number, deltaX: number, deltaY: number) => void)
-```
-
-| Param | Type | |
-|:------|:-----|:--|
-| `absX` | `number` | Absolute cursor X position in screen pixels |
-| `absY` | `number` | Absolute cursor Y position in screen pixels |
-| `deltaX` | `number` | Change in X since the last event |
-| `deltaY` | `number` | Change in Y since the last event |
-
-```ts
-let cursorPos = { x: 0, y: 0 };
-
-on("OnMouseMove", (absX, absY) => {
-    cursorPos = { x: absX, y: absY };
-});
-```
-
----
-
-#### `"OnMouseClick"`
-
-```ts
-on("OnMouseClick", (button: number, isDown: boolean) => void)
-```
-
-| Param | Type | |
-|:------|:-----|:--|
-| `button` | `number` | `0` = left, `1` = right, `2` = middle, `3` = X1, `4` = X2 |
-| `isDown` | `boolean` | `true` on press, `false` on release |
-
-```ts
-on("OnMouseClick", (button, isDown) => {
-    if (button === 0 && isDown) {
-        console.log("Left mouse button pressed");
-    }
-});
-```
-
----
-
-#### `"OnMouseScroll"`
-
-```ts
-on("OnMouseScroll", (direction: number) => void)
-```
-
-| Param | Type | |
-|:------|:-----|:--|
-| `direction` | `number` | `1` = scroll up, `-1` = scroll down |
-
-```ts
-on("OnMouseScroll", (dir) => {
-    console.log(dir > 0 ? "Scrolled up" : "Scrolled down");
-});
-```
-
----
-
-#### `"OnKeyDown"` / `"OnKeyUp"`
-
-```ts
-on("OnKeyDown", (vkCode: number) => void)
-on("OnKeyUp",   (vkCode: number) => void)
-```
-
-| Param | Type | |
-|:------|:-----|:--|
-| `vkCode` | `number` | Windows Virtual Key code |
-
-```ts
-const VK_INSERT = 0x2D;
-
-on("OnKeyDown", (vk) => {
-    if (vk === VK_INSERT) {
-        console.log("Insert pressed");
-    }
-});
-```
-
-<Tip>
-  Virtual Key codes are listed in the
-  [Microsoft documentation](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes).
-  Common ones: `0x01` LMB · `0x02` RMB · `0x04` MMB · `0x10` Shift ·
-  `0x11` Ctrl · `0x12` Alt · `0x2D` Insert · `0x2E` Delete.
-</Tip>
-
----
-
-### onUnload
-
-Script cleanup is handled by exporting a function named `onUnload`.
-It is called once when the script is about to be unloaded or reloaded.
-
-```ts
-export function onUnload() {
-    console.log("script unloaded");
-}
-```
-
-<CodeGroup>
-```ts Cleanup intervals
-const intervalId = setInterval(() => { /* ... */ }, 100);
-
-export function onUnload() {
-    clearInterval(intervalId);
-    console.log("Cleaned up.");
-}
-```
-
-```ts Cleanup event listeners
-const tickId = on("tick", () => { /* ... */ });
-const keyId  = on("OnKeyDown", () => { /* ... */ });
-
-export function onUnload() {
-    off(tickId);
-    off(keyId);
-}
-```
-</CodeGroup>
-
-<Warning>
-  `onUnload` must be a **named export** at the module level. It will not
-  fire if declared as a local variable or inside a nested function.
-</Warning>
-
-There is also an `unload` **event**, fired just before `onUnload` is called.
-Use whichever fits - the event works with `AbortController` cleanup, the export
-does not need a listener:
-
-```ts
-addEventListener("unload", () => {
-    console.log("going away");
-});
-```
-
----
-
-## Execution budget
-
-Script code runs on one shared worker thread, so a listener that never returns
-would freeze every script at once. Two thresholds guard against that:
-
-| Situation | Threshold | What happens |
-|:----------|:----------|:-------------|
-| One event, timer or callback | 250 ms | Warning in the log, nothing is interrupted |
-| One event, timer or callback | 2 s | JS is unwound, the script is stopped and marked as errored |
-| Top-level code at load | 2 s / 15 s | Same, with a larger budget for setup work |
-
-Only **JavaScript** time counts. A slow native call - reading a big file,
-scanning a whole module, an FFI call into blocking code - pauses the clock, so
-you are never punished for the host being slow:
-
-```ts
-import Memory from "@native/memory";
-
-addEventListener("tick", () => {
-    // The scan itself may take a second; the budget does not tick during it.
-    const addr = Memory.scan("client.dll", "48 8B 05 ? ? ? ? 48 85 C0");
-});
-```
-
-<Warning>
-  A script blocked *inside* a native call still holds the worker thread - there
-  is no way to interrupt native code. Never call into something that can block
-  forever through `@native/ffi`.
-</Warning>
-
-<Tip>
-  The 250 ms warning means you dropped a frame. If you see it every few
-  seconds, move the work into a `setInterval` at a lower rate, or cache the
-  result - see the throttling recipe below.
-</Tip>
 
 ---
 
 ## script
 
-The `script` object exposes metadata about the currently running script.
-All fields are **readonly**.
+Frozen metadata from [manifest.json](/api/manifest), read-only.
 
-```ts
-declare var script: {
-    name: string;
-    version: string;
-    author: string;
-};
-```
-
-| Field | Type | Description |
-|:------|:-----|:------------|
-| `name` | `string` | Script display name |
-| `version` | `string` | Version string |
-| `author` | `string` | Author name |
+| Field | Type | When the manifest has none |
+|:------|:-----|:---------------------------|
+| `name` | `string` | `"unnamed"` |
+| `version` | `string` | `"1.0.0"` |
+| `author` | `string` | `"unknown"` |
+| `description` | `string` | `""` |
+| `permissions` | `readonly ("filesystem" \| "ffi")[]` | Both, see [permissions](/api/manifest#permissions) |
 
 ```ts
 console.log(`${script.name} v${script.version} by ${script.author}`);
+if (!script.permissions.includes("ffi")) console.warn("ffi disabled");
 ```
 
 ---
 
-## Recipes
+## Web runtime
 
-### Feature toggle with a keybind
+The context is shaped like a Web Worker. These are there, typed by `lib.dom`:
+
+| Area | Globals |
+|:-----|:--------|
+| Network | `fetch`, `WebSocket`, `EventSource`, `XMLHttpRequest`, see [Networking](/api/networking) |
+| Data | `URL`, `TextEncoder`/`TextDecoder`, `Blob`, `File`, `FormData`, `FileReader`, `structuredClone` |
+| Streams | Web Streams, `CompressionStream`, `DecompressionStream` |
+| Crypto | `crypto.getRandomValues`, `crypto.randomUUID`, `crypto.subtle` |
+| Scheduling | `queueMicrotask`, `requestAnimationFrame`, `requestIdleCallback`, `MessageChannel`, `performance` |
+| Misc | `AbortController`, `navigator`, `reportError`, `self`, `globalThis`, [localStorage](/api/localStorage) |
+
+`window`, `document`, `sessionStorage`, `indexedDB`, `Worker`, `alert`, `prompt` and `onmessage`
+don't exist, even though `lib.dom` types them. `Symbol.dispose` exists, `DisposableStack` doesn't.
+Details on [Web APIs](/api/web).
+
+---
+
+## Example
+
+A hotkey that toggles a crosshair, with the state kept across reloads.
 
 ```ts
-let enabled = false;
-const VK_INSERT = 0x2D;
+import render from "@native/render";
 
-on("OnKeyDown", (vk) => {
-    if (vk === VK_INSERT) {
-        enabled = !enabled;
-        console.log("Feature:", enabled ? "ON" : "OFF");
-    }
+let enabled = localStorage.getItem<boolean>("crosshair") ?? true;
+
+on("keydown", (e) => {
+    if (e.code !== "F7" || e.repeat) return;
+    enabled = !enabled;
+    localStorage.setItem("crosshair", enabled);
+    console.log(`crosshair ${enabled ? "on" : "off"}`);
 });
 
 on("render", () => {
     if (!enabled) return;
-    // ... draw your visuals here
+    const { x, y } = render.screenSize;
+    render.line([x / 2 - 6, y / 2], [x / 2 + 6, y / 2], "#00ff80");
+    render.line([x / 2, y / 2 - 6], [x / 2, y / 2 + 6], "#00ff80");
 });
-```
 
-### Throttle expensive work with setInterval
-
-```ts
-import Entities from "@native/entities";
-import Render   from "@native/render";
-
-let cachedEnemies = [];
-
-// Heavy work in a timer - not every frame
-setInterval(() => {
-    cachedEnemies = Entities.find("C_CSPlayerPawn")
-        .filter(p => p.m_iHealth > 0)
-        .toArray();
-}, 100);
-
-// Drawing in the render callback
-on("render", () => {
-    for (const enemy of cachedEnemies) {
-        const { success, screen } = Math.worldToScreen(enemy.m_pGameSceneNode.m_vecAbsOrigin);
-        if (success) Render.circleFilled(screen, 4, Color.red());
-    }
-});
-```
-
-### Frame-time independent animation
-
-```ts
-import Game   from "@native/game";
-import Render from "@native/render";
-
-let alpha = 0;
-let direction = 1;
-
-on("render", () => {
-    alpha += direction * 120 * Game.frameTime;
-
-    if (alpha >= 255) { alpha = 255; direction = -1; }
-    if (alpha <= 0)   { alpha = 0;   direction =  1; }
-
-    const { x: w, y: h } = Render.getScreenSize();
-    Render.text(
-        { x: w / 2, y: h / 2 },
-        "Hello World",
-        new Color(255, 255, 255, alpha)
-    );
-});
+on("unload", () => console.log(`${script.name} unloaded`));
 ```

@@ -1,43 +1,34 @@
 ---
-title: "Getting Started"
-description: "Install the CLI, create your first script, and start building."
+title: "Getting started"
+description: "Install the CLI, create a script and see it run."
+icon: "rocket"
 ---
 
-## Install an IDE
+Scripts are TypeScript or JavaScript modules that run inside the cheat. The `spd` CLI creates
+projects, compiles them and keeps the type definitions up to date.
 
-We recommend [Visual Studio Code](https://code.visualstudio.com/) or
-[WebStorm](https://www.jetbrains.com/webstorm/) - the CLI configures
-the debugger, linter, and type definitions specifically for them. You'll
-get autocompletion, inline errors, and one-click debugging out of the
-box. Also works great with
-[Claude Code](https://claude.ai/claude-code) and other AI assistants -
-type definitions are set up automatically so vibe coding just works.
+## Install
 
-## Install Node.js
+<Steps>
+  <Step title="Editor">
+    [VS Code](https://code.visualstudio.com/) or [WebStorm](https://www.jetbrains.com/webstorm/).
+    The CLI sets up types and the debugger for both. Projects also come with a `CLAUDE.md` and an
+    API cheat sheet for [Claude Code](https://claude.ai/claude-code) and other assistants.
+  </Step>
+  <Step title="Node.js">
+    [Node.js](https://nodejs.org/) LTS, for the TypeScript compiler. Plain JavaScript projects
+    run without it, but you lose type checking.
+  </Step>
+  <Step title="Spurdo CLI">
+    In PowerShell:
 
-If you want to write scripts in **TypeScript** (recommended), you'll
-need [Node.js](https://nodejs.org/) installed. Download the LTS version
-and run the installer.
+    ```powershell
+    irm https://api.spurdoverse.app/cdn/cli/install.ps1 | iex
+    ```
 
-<Note>
-  If you only plan to write plain JavaScript, Node.js is not required -
-  but you'll miss out on type checking, autocompletion, and the build
-  pipeline.
-</Note>
-
-## Install Spurdo CLI
-
-Open PowerShell and run:
-
-```powershell
-irm https://api.spurdoverse.app/cdn/cli/install.ps1 | iex
-```
-
-Verify the installation:
-
-```bash
-spd --version
-```
+    Restart the terminal, then check it with `spd --version`.
+  </Step>
+</Steps>
 
 ## Create a project
 
@@ -45,49 +36,84 @@ spd --version
 spd new
 ```
 
-The CLI will ask you for:
-- **Project name**
-- **Language** - TypeScript or JavaScript
-- **Linter** - Biome, ESLint, or None
+It asks for a name, TypeScript or JavaScript, and a linter (Biome, ESLint or none), then creates
+the project in `C:\Spurdo\scripts\` and installs what it needs.
 
-It automatically finds your `C:\Spurdo\scripts\` folder, sets up type
-definitions, installs dependencies, and configures the debugger and
-linter.
-
-## Build & watch
-
-<Tabs>
-  <Tab title="Build once">
-    ```bash
-    spd build
-    ```
-    Compiles your TypeScript project. Shows errors with file, line, and
-    error code.
-  </Tab>
-  <Tab title="Watch mode">
-    ```bash
-    spd watch
-    ```
-    Recompiles automatically on file changes. Shows which files changed
-    and the result.
-  </Tab>
-</Tabs>
-
-## Lint
-
-```bash
-spd lint
+```
+C:\Spurdo\scripts\
+├── types\            shared .d.ts files, updated by spd sync
+└── my-script\
+    ├── manifest.json
+    ├── CLAUDE.md
+    ├── src\index.ts  your code
+    ├── dist\         compiled output, what the cheat runs
+    └── data\         @native/fs root, created on first use
 ```
 
-Runs the configured linter with auto-fix on `src/`.
+[manifest.json](/api/manifest) holds the name, entry file and permissions. The new project already
+has a working example in `src/index.ts`: a menu page, an ESP element and enemy boxes. JavaScript
+projects have no `dist\` folder, the cheat runs `src\index.js` directly.
+
+## Run it
+
+```bash
+cd C:\Spurdo\scripts\my-script
+spd watch
+```
+
+`spd watch` recompiles on every save and the cheat reloads the script when its files change. In a
+JavaScript project there's nothing to compile, just save.
+`console.log` output and uncaught errors go to the cheat log, tagged with the script name.
+
+A minimal script, to see the loop working:
+
+```ts
+import render from "@native/render";
+import game from "@native/game";
+
+on("render", () => {
+    render.text([20, 20], game.shortMapName ?? "not in a map", "#ffffff", { outline: true });
+});
+
+on("keydown", (e) => {
+    if (e.code === "F6" && !e.repeat) console.log(`hello from ${script.name}`);
+});
+```
+
+Logic goes in `tick`, drawing in `render`. See [Conventions](/api/conventions) for the rest of the
+rules.
+
+## Commands
+
+| Command | |
+|:--------|:-|
+| `spd new` | Create a project |
+| `spd watch` | Recompile on every save |
+| `spd build` | Compile once, fail on type errors |
+| `spd lint` | Lint and fix `src/` with the linter picked at `spd new` |
+| `spd sync` | Update the shared `types\` after a cheat update |
+| `spd update` | Update the CLI |
+| `spd docs` | Open these docs |
+
+## Debugging
+
+Turn on **Debug** for the script in the cheat's Scripts page (it reloads), then run the
+**Attach to Spurdo** configuration in VS Code or WebStorm. It connects to `127.0.0.1:9229`, and
+source maps are on, so breakpoints work in your `.ts` files.
 
 ## Next steps
 
 <CardGroup cols={2}>
   <Card title="Build an ESP" icon="eye" href="/learn/building-esp">
-    Step-by-step tutorial: bounding boxes, health bars, visibility checks.
+    Builder elements, overlay boxes and a menu toggle, step by step.
   </Card>
-  <Card title="API Reference" icon="book" href="/api/globals">
-    Globals, modules, types - everything available to your scripts.
+  <Card title="Conventions" icon="scale-balanced" href="/api/conventions">
+    Errors, `null`, value types, handles, phases.
+  </Card>
+  <Card title="Globals" icon="globe" href="/api/globals">
+    Events, timers, `console`, `script`.
+  </Card>
+  <Card title="Render" icon="pen" href="/api/render">
+    Drawing on the overlay.
   </Card>
 </CardGroup>

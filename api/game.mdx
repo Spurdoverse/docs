@@ -1,41 +1,65 @@
 ---
 title: "Game"
 sidebarTitle: "Game"
-description: "Per-frame timestamps, tick counters, map info, and frame timing - engine state updated every tick."
+description: "Engine time, ticks, map and local match state."
 icon: "gauge-high"
 ---
 
+Engine globals and your match state, as of the current tick.
+
 ```ts
-import Game from "@native/game";
+import game from "@native/game";
 ```
 
-The `Game` module exposes engine globals that are updated each tick.
-All fields are **readonly**.
+<Note>
+  Every property is a read-only live getter, refreshed right before `tick`. Read them as `game.curTime`;
+  the module has no named exports. Engine numbers are `0` until the game client has initialised.
+</Note>
 
-## Fields
+| Property | |
+|:---------|:--|
+| `serverTime: number` | server time, seconds |
+| `curTime: number` | client time, seconds |
+| `frameTime: number` | time between frames, seconds |
+| `absFrameTime: number` | same, unscaled |
+| `tickFraction: number` | interpolation fraction within the current tick |
+| `tickCount: number` | |
+| `frameCount: number` | |
+| `maxClients: number` | |
+| `intervalPerTick: number` | seconds per server tick (CS2 runs at 64) |
+| `mapName: string \| null` | map path, `null` with no map loaded |
+| `shortMapName: string \| null` | `"de_dust2"`, `null` with no map loaded |
+| `connected: boolean` | connected to a server, possibly still loading |
+| `inGame: boolean` | fully in a game, not the main-menu background map |
+| `localTeam: number \| null` | `2` T, `3` CT, `1` spectator, `null` when not in a game |
+| `teammatesAreEnemies: boolean` | `mp_teammates_are_enemies` (deathmatch), `false` when not in a game |
 
-| Field | Type | Description |
-|:------|:-----|:------------|
-| `serverTime` | `number` | Current server-side time in seconds |
-| `curTime` | `number` | Client-side current time in seconds |
-| `frameTime` | `number` | Time elapsed since the previous frame (seconds) |
-| `absFrameTime` | `number` | Absolute frame time, unaffected by time scaling |
-| `tickFraction` | `number` | Fractional position within the current tick `[0, 1]` |
-| `tickCount` | `number` | Current server tick number |
-| `frameCount` | `number` | Total frames rendered since engine start |
-| `maxClients` | `number` | Maximum number of players on the server |
-| `mapName` | `string` | Full map path, e.g. `"maps/de_dust2.vpk"` |
-| `shortMapName` | `string` | Short map name, e.g. `"de_dust2"` |
+---
+
+## Example
+
+Logs the map when you join and a timestamp every second.
 
 ```ts
+import game from "@native/game";
+
+let lastMap: string | null = null;
+let lastSecond = 0;
+
 on("tick", () => {
-    const speed = 200 * Game.frameTime;
-    console.log(`Tick #${Game.tickCount} - map: ${Game.shortMapName}`);
+    if (!game.inGame) {
+        lastMap = null;
+        return;
+    }
+    if (game.shortMapName !== lastMap) {
+        lastMap = game.shortMapName;
+        console.log(`joined ${lastMap} as team ${game.localTeam}`);
+    }
+
+    const second = Math.floor(game.curTime);
+    if (second !== lastSecond) {
+        lastSecond = second;
+        console.log(`t=${second}s tick=${game.tickCount}`);
+    }
 });
 ```
-
-<Tip>
-  Use `Game.frameTime` to make any per-frame calculation **frame-rate
-  independent**. Multiply velocities, animation deltas, and lerp factors
-  by `Game.frameTime` so they behave the same at 60 FPS and 300 FPS.
-</Tip>

@@ -1,38 +1,34 @@
 ---
 title: "Trace"
 sidebarTitle: "Trace"
-description: "Cast rays, boxes, spheres, and capsules through the game world - hit detection, visibility checks, overlap queries, and surface info."
+description: "Rays, sweeps, overlaps and line of sight against the map's physics world."
 icon: "crosshairs"
 ---
 
+Collision queries against the map's physics world. Positions take any `Vec3Like`.
+
 ```ts
-import Trace from "@native/trace";
+import trace from "@native/trace";
 ```
 
-The `Trace` module casts rays and sweeps shapes through the game world using
-the same collision data the engine uses - static geometry, dynamic entities,
-and tagged collision layers.
-
 <Note>
-  All trace functions are **synchronous** and return immediately. Create
-  a `TraceFilter` once and reuse it across frames - this avoids per-call
-  allocation and lets you build up an ignore list over time.
+  Without a map loaded every query returns `null`, the `boolean` ones too. Check for `null` before `.hit`.
 </Note>
 
 ## Overview
 
 <CardGroup cols={2}>
   <Card title="Filters" icon="filter" href="#filters">
-    Create reusable trace filters from presets or custom configs.
+    Presets, `filter`, `ignore`, `clearIgnore`.
   </Card>
-  <Card title="Raycasts" icon="arrow-right-long" href="#raycasts">
-    Single and multi-hit rays, box / sphere / capsule sweeps.
+  <Card title="Rays and sweeps" icon="arrow-right" href="#rays-and-sweeps">
+    `ray`, `rayAll`, `box`, `sphere`, `capsule`.
   </Card>
-  <Card title="Spatial queries" icon="magnifying-glass" href="#spatial-queries">
-    Visibility, solid checks, overlap spheres, closest point.
+  <Card title="Point queries" icon="location-dot" href="#point-queries">
+    `isVisible`, `isSolid`, `overlapSphere`, `closestPoint`.
   </Card>
   <Card title="Results" icon="bullseye" href="#results">
-    TraceResult, OverlapResult, ClosestPointResult shapes.
+    `TraceResult`, `OverlapResult`, `ClosestPointResult`.
   </Card>
 </CardGroup>
 
@@ -40,566 +36,257 @@ and tagged collision layers.
 
 ## Filters
 
-Every trace function accepts an optional **filter** that controls what
-the trace collides with. Filters can be passed in three forms - pick
-whichever fits your situation:
+Every query takes a filter last: a preset name, a `trace.filter()` object, or inline options. Omitted means `"bullet"`.
 
-| Form | Example |
-|:-----|:--------|
-| Preset string | `"bullet"` |
-| `TraceFilter` object | `Trace.filter("bullet")` |
-| Inline config object | `{ type: "bullet", backFaces: true }` |
-| Omitted | Defaults to `"bullet"` |
+| Preset | Collides with |
+|:-------|:--------------|
+| `"bullet"` | what bullets hit, back faces included |
+| `"visibility"` | skips conditionally-solid geometry, no material or entity info |
+| `"everything"` | every shape, back faces included |
+| `"grenade"` | what grenades hit |
+| `"player_movement"` | what player movement hits |
+| `"occlusion"` | bullet collision without normal, material or entity info (cheapest) |
+
+An unknown preset name is a `TypeError`.
 
 {/* ------------------------------------------------------------------ */}
 
-### Trace.filter
+### filter
 
 <br />
 
 ```ts
-Trace.filter(preset?: string): TraceFilter
-Trace.filter(options: FilterOptions): TraceFilter
+trace.filter(presetOrOptions?: TracePreset | TraceFilterOptions): TraceFilter
 ```
 
-Creates a reusable `TraceFilter`. Pass a preset string for common
-scenarios, or a configuration object for fine-grained control.
+A reusable filter. Build it once at the top level and pass it every tick.
 
-<ParamField path="preset" type="string" default="bullet">
-  One of the built-in filter presets (see table below).
-</ParamField>
-
-**Preset strings**
-
-| Preset | Description |
-|:-------|:------------|
-| `"bullet"` | Standard bullet collision (default) |
-| `"visibility"` | Line-of-sight checks |
-| `"everything"` | Collide with all surfaces |
-| `"grenade"` | Grenade collision rules |
-| `"player_movement"` | Player movement sweep |
-| `"occlusion"` | Occlusion culling traces |
-
-<CodeGroup>
-```ts Preset string
-const filter = Trace.filter("bullet");
-const visFilter = Trace.filter("visibility");
-
-// No argument - defaults to "bullet"
-const defaultFilter = Trace.filter();
+```ts
+const shots = trace.filter({ type: "bullet", players: true });
+const hit = trace.ray(eye, end, shots);
 ```
 
-```ts Custom config
-const filter = Trace.filter({
-    type: "bullet",
-    static: true,
-    dynamic: true,
-    resolveNormals: true,
-    resolveMaterials: true,
-    resolveEntity: true,
-    backFaces: false,
-    includeTags: ["pass_bullets", "window", "sky", "ladder", "player"],
-    excludeTags: ["player_clip", "npc_clip", "grenade_clip"],
+Options you leave out keep the preset's value.
+
+| Option | Default | |
+|:-------|:--------|:--|
+| `type` | `"bullet"` | base preset |
+| `static`, `dynamic` | `true` | world geometry, dynamic bodies (doors, props) |
+| `players` | `false` | player hitboxes; honoured by `ray` and `rayAll` only |
+| `resolveNormals` | `true` | `false` in `"occlusion"` |
+| `resolveMaterials`, `resolveEntity` | `true` | `false` in `"visibility"` and `"occlusion"` |
+| `backFaces` | preset | `true` in `"bullet"` and `"everything"` |
+| `includeTags` | | only default-group shapes and shapes with one of these tags |
+| `excludeTags` | | never shapes with one of these tags |
+| `ignore` | | `EntityRef` or `EntityRef[]`, at most 8 |
+
+Tags: `pass_bullets`, `player_clip`, `npc_clip`, `grenade_clip`, `ladder`, `window`, `sky`, `player`, `thrown_grenade`, `solid`, `block_los`, `block_light`, `block_sound`. An unknown tag is a `TypeError`.
+
+{/* ------------------------------------------------------------------ */}
+
+### ignore
+
+<br />
+
+```ts
+filter.ignore(entities: EntityRef | EntityRef[]): TraceFilter
+filter.clearIgnore(): TraceFilter
+```
+
+Passes through these entities, matched by slot. At most 8 per filter; past that it's a `RangeError` and the filter is left unchanged. Both return the filter, so they chain.
+
+```ts
+const shots = trace.filter({ type: "bullet", players: true });
+
+on("tick", () => {
+    const me = entities.getLocalPlayer();
+    if (me) shots.clearIgnore().ignore(me);
 });
 ```
-</CodeGroup>
-
-**Configuration object fields**
-
-| Option | Type | Default | Description |
-|:-------|:-----|:--------|:------------|
-| `type` | `string` | `"bullet"` | Base preset to start from |
-| `static` | `boolean` | `true` | Trace against static world geometry |
-| `dynamic` | `boolean` | `true` | Trace against dynamic entities |
-| `resolveNormals` | `boolean` | `true` | Compute surface normals on hit |
-| `resolveMaterials` | `boolean` | `true` | Resolve surface material info on hit |
-| `resolveEntity` | `boolean` | `true` | Populate entity info on hit |
-| `backFaces` | `boolean` | `false` | Collide with back-facing surfaces |
-| `includeTags` | `string[]` | - | [Collision tags](#collision-tags) to include |
-| `excludeTags` | `string[]` | - | [Collision tags](#collision-tags) to exclude |
-
-<Tip>
-  Disable `resolveNormals`, `resolveMaterials`, and `resolveEntity` if
-  you only care about **whether** something was hit - the trace runs
-  faster when it doesn't need to fill in extra data.
-</Tip>
-
-{/* ------------------------------------------------------------------ */}
-
-### TraceFilter methods
-
-Once you have a filter, you can tell it to skip specific entities.
-
-<AccordionGroup>
-  <Accordion title="filter.ignore" icon="eye-slash">
-    Adds an entity to the filter's ignore list. Accepts a raw entity index
-    or any object with an `.index` property (e.g. an `Entity`).
-
-    ```ts
-    filter.ignore(entityIndex: number): void
-    filter.ignore(entity: { index: number }): void
-    ```
-
-    ```ts
-    const filter = Trace.filter("bullet");
-    const local = Entities.getLocalPlayer();
-
-    // Ignore by entity object
-    filter.ignore(local);
-
-    // Ignore by raw index
-    filter.ignore(42);
-    ```
-  </Accordion>
-
-  <Accordion title="filter.clearIgnore" icon="rotate">
-    Clears the ignore list so the filter collides with all entities again.
-
-    ```ts
-    filter.clearIgnore(): void
-    ```
-
-    ```ts
-    filter.clearIgnore();
-    ```
-  </Accordion>
-</AccordionGroup>
 
 ---
 
-## Raycasts
+## Rays and sweeps
 
 {/* ------------------------------------------------------------------ */}
 
-### Trace.ray
+### ray
 
 <br />
 
 ```ts
-Trace.ray(start: Vector, end: Vector, filter?): TraceResult
+trace.ray(start: Vec3Like, end: Vec3Like, filter?: TraceFilterArg): TraceResult | null
 ```
 
-Casts a single ray from `start` to `end`. The workhorse of the trace API -
-use this for hit detection, aim checks, and penetration tests.
-
-<ParamField path="start" type="Vector" required>
-  Ray origin, typically the player's eye position.
-</ParamField>
-<ParamField path="end" type="Vector" required>
-  Ray endpoint - the target position.
-</ParamField>
-<ParamField path="filter" type="string | TraceFilter | FilterOptions">
-  Collision filter. Defaults to `"bullet"` if omitted.
-</ParamField>
-
-<Tabs>
-  <Tab title="Default filter">
-    ```ts
-    const result = Trace.ray(eye, target);
-    ```
-  </Tab>
-  <Tab title="Preset string">
-    ```ts
-    const result = Trace.ray(eye, target, "bullet");
-    ```
-  </Tab>
-  <Tab title="Reusable filter">
-    ```ts
-    const filter = Trace.filter("bullet");
-    filter.ignore(local);
-    const result = Trace.ray(eye, target, filter);
-    ```
-  </Tab>
-  <Tab title="Inline config">
-    ```ts
-    const result = Trace.ray(eye, target, { type: "bullet", backFaces: true });
-    ```
-  </Tab>
-</Tabs>
-
-{/* ------------------------------------------------------------------ */}
-
-### Trace.box
-
-<br />
+Casts one ray and returns the first hit, see [TraceResult](#results). `null` without a map.
 
 ```ts
-Trace.box(start: Vector, end: Vector, mins: Vector, maxs: Vector, filter?): TraceResult
-```
-
-Sweeps an axis-aligned box from `start` to `end`. `mins` and `maxs` define
-the box extents relative to the sweep origin.
-
-<ParamField path="start" type="Vector" required>Sweep origin.</ParamField>
-<ParamField path="end" type="Vector" required>Sweep destination.</ParamField>
-<ParamField path="mins" type="Vector" required>
-  Minimum corner of the box (negative offsets).
-</ParamField>
-<ParamField path="maxs" type="Vector" required>
-  Maximum corner of the box (positive offsets).
-</ParamField>
-<ParamField path="filter" type="string | TraceFilter | FilterOptions">
-  Collision filter. Defaults to `"bullet"`.
-</ParamField>
-
-```ts
-const mins = new Vector(-16, -16, 0);
-const maxs = new Vector(16, 16, 72);
-
-const result = Trace.box(start, end, mins, maxs, "player_movement");
-if (result.hit) {
-    console.log("Blocked at", result.position);
-}
+const result = trace.ray(eye, eye.add(view.forward().scale(8192)), "bullet");
+if (result?.hit) console.log("hit", result.surface?.name, "at", result.position);
 ```
 
 {/* ------------------------------------------------------------------ */}
 
-### Trace.sphere
+### rayAll
 
 <br />
 
 ```ts
-Trace.sphere(start: Vector, end: Vector, radius: number, filter?): TraceResult
+trace.rayAll(start: Vec3Like, end: Vec3Like, filter?: TraceFilterArg, maxHits?: number): TraceResult[] | null
 ```
 
-Sweeps a sphere from `start` to `end`.
-
-<ParamField path="start" type="Vector" required>Sweep origin.</ParamField>
-<ParamField path="end" type="Vector" required>Sweep destination.</ParamField>
-<ParamField path="radius" type="number" required>Sphere radius in game units.</ParamField>
-<ParamField path="filter" type="string | TraceFilter | FilterOptions">
-  Collision filter. Defaults to `"bullet"`.
-</ParamField>
+Every hit along the ray, up to `maxHits` (1–128, default 32, `RangeError` otherwise). `null` without a map.
 
 ```ts
-const result = Trace.sphere(start, end, 8.0, "grenade");
+const hits = trace.rayAll(eye, end, { type: "bullet", players: true }) ?? [];
+const walls = hits.filter((h) => !h.entity).length;
 ```
 
 {/* ------------------------------------------------------------------ */}
 
-### Trace.capsule
+### Sweeps
 
 <br />
 
 ```ts
-Trace.capsule(start: Vector, end: Vector, radius: number, halfHeight: number, filter?): TraceResult
+trace.box(start: Vec3Like, end: Vec3Like, mins: Vec3Like, maxs: Vec3Like, filter?: TraceFilterArg): TraceResult | null
+trace.sphere(start: Vec3Like, end: Vec3Like, radius: number, filter?: TraceFilterArg): TraceResult | null
+trace.capsule(start: Vec3Like, end: Vec3Like, radius: number, halfHeight: number, filter?: TraceFilterArg): TraceResult | null
 ```
 
-Sweeps a capsule (cylinder with hemispherical caps) from `start` to `end`.
-Useful for simulating player-sized collision hulls.
-
-<ParamField path="start" type="Vector" required>Sweep origin.</ParamField>
-<ParamField path="end" type="Vector" required>Sweep destination.</ParamField>
-<ParamField path="radius" type="number" required>Capsule radius.</ParamField>
-<ParamField path="halfHeight" type="number" required>Half the height of the cylindrical section.</ParamField>
-<ParamField path="filter" type="string | TraceFilter | FilterOptions">
-  Collision filter. Defaults to `"bullet"`.
-</ParamField>
+Moves a shape from `start` to `end` and stops at the first hit. Box `mins`/`maxs` are relative to the moving position. A negative sphere `radius` is a `RangeError`.
 
 ```ts
-const result = Trace.capsule(start, end, 16.0, 36.0, "player_movement");
-```
-
-{/* ------------------------------------------------------------------ */}
-
-### Trace.rayAll
-
-<br />
-
-```ts
-Trace.rayAll(start: Vector, end: Vector, filter?, maxHits?: number): TraceResult[]
-```
-
-Casts a ray and returns **all** hits along the path, not just the first.
-Useful for penetration simulation - you get every surface the ray passes
-through.
-
-<ParamField path="start" type="Vector" required>Ray origin.</ParamField>
-<ParamField path="end" type="Vector" required>Ray endpoint.</ParamField>
-<ParamField path="filter" type="string | TraceFilter | FilterOptions">
-  Collision filter. Defaults to `"bullet"`.
-</ParamField>
-<ParamField path="maxHits" type="number" default="32">
-  Maximum number of hits to return. Clamped to `1..128`.
-</ParamField>
-
-```ts
-const hits = Trace.rayAll(eye, target, "bullet", 8);
-
-for (const hit of hits) {
-    console.log(`Hit at fraction ${hit.fraction.toFixed(3)}`);
-    if (hit.surface) {
-        console.log(`  Material: ${hit.surface.name}`);
-    }
-}
+// would a standing player fit 64 units ahead?
+const box = trace.box(origin, origin.add([64, 0, 0]), [-16, -16, 0], [16, 16, 72], "player_movement");
+const blocked = box?.hit ?? true;
 ```
 
 ---
 
-## Spatial queries
-
-Fast utility functions that answer spatial questions without giving you
-a full `TraceResult`.
+## Point queries
 
 {/* ------------------------------------------------------------------ */}
 
-### Trace.isVisible
+### isVisible
 
 <br />
 
 ```ts
-Trace.isVisible(from: Vector, to: Vector): boolean
+trace.isVisible(from: Vec3Like, to: Vec3Like): boolean | null
 ```
 
-The **fastest** way to check line of sight. Returns `true` if nothing
-blocks the path between `from` and `to`. Skips normal, material,
-and entity resolution entirely - just a yes/no answer.
-
-<ParamField path="from" type="Vector" required>Start position (e.g. eye position).</ParamField>
-<ParamField path="to" type="Vector" required>Target position (e.g. enemy head).</ParamField>
+Line of sight through world geometry. It's the cheap occlusion trace, and players never block it. `null` without a map.
 
 ```ts
-import Entities from "@native/entities";
-
-const local = Entities.getLocalPlayer();
-const enemy = Entities.getPlayers({ skipLocal: true })[0];
-
-const localPos = local.m_pGameSceneNode.m_vecAbsOrigin;
-const enemyPos = enemy.m_pGameSceneNode.m_vecAbsOrigin;
-
-if (Trace.isVisible(localPos, enemyPos)) {
-    console.log("Target is visible");
-}
+if (trace.isVisible(myEye, enemyEye)) console.log("in sight");
 ```
 
-<Tip>
-  Use `isVisible` over `Trace.ray` when you only need a boolean - it's
-  significantly faster because it doesn't resolve any hit data.
-</Tip>
+Checking one entity from another? [entity.isVisible](/api/entities#isvisible) picks the eye positions for you.
 
 {/* ------------------------------------------------------------------ */}
 
-### Trace.isSolid
+### isSolid
 
 <br />
 
 ```ts
-Trace.isSolid(point: Vector): boolean
+trace.isSolid(point: Vec3Like): boolean | null
 ```
 
-Returns `true` if the given point is inside solid geometry. Useful for
-checking whether a calculated position is valid or stuck in a wall.
-
-<ParamField path="point" type="Vector" required>World position to test.</ParamField>
+Whether `point` is inside solid geometry, using the `"everything"` preset. `null` without a map.
 
 ```ts
-if (Trace.isSolid(position)) {
-    console.log("Point is inside a wall");
-}
+const stuck = trace.isSolid(origin.add([0, 0, 36]));
 ```
 
 {/* ------------------------------------------------------------------ */}
 
-### Trace.overlapSphere
+### overlapSphere
 
 <br />
 
 ```ts
-Trace.overlapSphere(origin: Vector, radius: number, filter?): OverlapResult[]
+trace.overlapSphere(origin: Vec3Like, radius: number, filter?: TraceFilterArg): OverlapResult[] | null
 ```
 
-Returns all colliders overlapping a sphere centered at `origin`.
-
-<ParamField path="origin" type="Vector" required>Center of the sphere.</ParamField>
-<ParamField path="radius" type="number" required>Sphere radius in game units.</ParamField>
-<ParamField path="filter" type="string | TraceFilter | FilterOptions">
-  Collision filter. Defaults to `"bullet"`.
-</ParamField>
+Every collider touching the sphere. `null` without a map.
 
 ```ts
-import Entities from "@native/entities";
-
-const local = Entities.getLocalPlayer();
-const localPos = local.m_pGameSceneNode.m_vecAbsOrigin;
-
-const nearby = Trace.overlapSphere(localPos, 256.0);
-
-for (const overlap of nearby) {
-    if (overlap.entity) {
-        console.log(`${overlap.entity.className} - depth: ${overlap.depth}`);
-    }
-}
+const near = trace.overlapSphere(origin, 128, { type: "everything" }) ?? [];
+for (const o of near) console.log(o.entity?.className ?? "world", o.depth);
 ```
 
 {/* ------------------------------------------------------------------ */}
 
-### Trace.closestPoint
+### closestPoint
 
 <br />
 
 ```ts
-Trace.closestPoint(origin: Vector, maxDistance: number, filter?): ClosestPointResult
+trace.closestPoint(origin: Vec3Like, maxDistance: number, filter?: TraceFilterArg): ClosestPointResult | null
 ```
 
-Finds the closest point on any surface within `maxDistance` of `origin`.
-
-<ParamField path="origin" type="Vector" required>Search center.</ParamField>
-<ParamField path="maxDistance" type="number" required>Maximum search radius in game units.</ParamField>
-<ParamField path="filter" type="string | TraceFilter | FilterOptions">
-  Collision filter. Defaults to `"bullet"`.
-</ParamField>
+The nearest surface point within `maxDistance`, or `null` when there's none (or no map).
 
 ```ts
-import Entities from "@native/entities";
-
-const local = Entities.getLocalPlayer();
-const localPos = local.m_pGameSceneNode.m_vecAbsOrigin;
-
-const closest = Trace.closestPoint(localPos, 128.0);
-if (closest.hit) {
-    console.log(`Nearest wall at distance ${closest.distance.toFixed(1)}`);
-}
+const wall = trace.closestPoint(origin, 64);
+if (wall) console.log(wall.distance, wall.normal);
 ```
+
+<Warning>
+  Of the filter only `static` and `dynamic` apply here. Preset rules, tags and `ignore` are not honoured.
+</Warning>
 
 ---
 
 ## Results
 
-### TraceResult
+| `TraceResult` | |
+|:--------------|:--|
+| `hit` | something was hit |
+| `fraction` | 0–1, how far along the path (`1` = no hit) |
+| `position`, `normal` | where it stopped, surface normal |
+| `startSolid`, `allSolid` | started inside / stayed inside solid |
+| `hitSky`, `hitWindow`, `hitLadder`, `hitPassBullets` | surface flags |
+| `entity` | the hit entity while it exists; `null` for world, with `resolveEntity` off, or once it's gone |
+| `entityIndex` | its slot, still set after `entity` is gone; `null` for world |
+| `hitGroup` | player hitbox group with `players: true`, else `null` |
+| `surface` | `{ name, penetration, damage }`, `null` on no hit or with `resolveMaterials` off |
 
-Returned by `Trace.ray`, `Trace.box`, `Trace.sphere`, `Trace.capsule`,
-and each element of `Trace.rayAll`.
+`OverlapResult` has `position`, `normal`, `depth` (penetration), `entity` and `entityIndex`. `ClosestPointResult` has `position`, `normal`, `distance`, `entity` and `entityIndex`.
 
-| Property | Type | Description |
-|:---------|:-----|:------------|
-| `hit` | `boolean` | Whether the trace hit anything |
-| `fraction` | `number` | `0..1` - how far along the path the hit occurred |
-| `position` | [`Vector`](/api/types/vector) | Impact point in world space |
-| `normal` | [`Vector`](/api/types/vector) | Surface normal at the impact point |
-| `startSolid` | `boolean` | `true` if the trace started inside solid geometry |
-| `allSolid` | `boolean` | `true` if the entire trace was inside solid |
-| `hitSky` | `boolean` | Hit the skybox |
-| `hitWindow` | `boolean` | Hit a window surface |
-| `hitLadder` | `boolean` | Hit a ladder surface |
-| `hitPassBullets` | `boolean` | Hit a pass-bullets surface |
-| `entity` | `object \| null` | Entity info (see below) |
-| `surface` | `object \| null` | Surface material info (see below) |
+---
 
-**`entity`** - populated when `resolveEntity` is `true` and the trace hit a dynamic entity:
+## Example
 
-| Property | Type | |
-|:---------|:-----|:--|
-| `className` | `string` | Entity class name, e.g. `"C_CSPlayerPawn"` |
-| `handle` | `number` | Entity handle |
-| `origin` | [`Vector`](/api/types/vector) | Entity origin |
-
-**`surface`** - populated when `resolveMaterials` is `true`:
-
-| Property | Type | |
-|:---------|:-----|:--|
-| `name` | `string` | Material name |
-| `penetration` | `number` | Penetration factor (higher = easier to shoot through) |
-| `damage` | `number` | Damage modifier for this surface |
+Shows what's under your crosshair.
 
 ```ts
-const result = Trace.ray(eye, target);
+import entities from "@native/entities";
+import render from "@native/render";
+import trace from "@native/trace";
 
-if (result.hit) {
-    console.log(`Hit at ${result.position}, fraction: ${result.fraction}`);
+const shots = trace.filter({ type: "bullet", players: true });
+let label = "";
 
-    if (result.entity) {
-        console.log(`Entity: ${result.entity.className}`);
-    }
-    if (result.surface) {
-        console.log(`Material: ${result.surface.name}`);
-        console.log(`Penetration: ${result.surface.penetration}`);
-    }
-}
-```
+on("tick", () => {
+    label = "";
+    const me = entities.getLocalPlayer();
+    if (me?.className !== "C_CSPlayerPawn") return;
+    const eye = me.getEyePosition();
+    const view = me.getViewAngles();
+    if (!eye || !view) return;
 
----
+    const hit = trace.ray(eye, eye.add(view.forward().scale(8192)), shots.clearIgnore().ignore(me));
+    if (!hit?.hit) return;
+    label = hit.entity?.className ?? hit.surface?.name ?? "world";
+    if (hit.hitGroup !== null) label += ` (group ${hit.hitGroup})`;
+});
 
-### OverlapResult
-
-Returned by each element of `Trace.overlapSphere`.
-
-| Property | Type | Description |
-|:---------|:-----|:------------|
-| `position` | [`Vector`](/api/types/vector) | Contact point |
-| `normal` | [`Vector`](/api/types/vector) | Contact normal |
-| `depth` | `number` | Penetration depth |
-| `entity` | `{ className: string } \| null` | Entity class if the overlap is with an entity |
-
----
-
-### ClosestPointResult
-
-Returned by `Trace.closestPoint`.
-
-| Property | Type | Description |
-|:---------|:-----|:------------|
-| `hit` | `boolean` | Whether a surface was found within range |
-| `position` | [`Vector`](/api/types/vector) | Closest point on the surface |
-| `normal` | [`Vector`](/api/types/vector) | Surface normal at that point |
-| `distance` | `number` | Distance from origin to the closest point |
-
----
-
-## Collision tags
-
-Tags control which collision layers are included or excluded in a
-[filter's](#tracefilter) `includeTags` / `excludeTags` arrays.
-
-| Tag | Description |
-|:----|:------------|
-| `"pass_bullets"` | Surfaces that bullets pass through |
-| `"player_clip"` | Player clip brushes - block players, not bullets |
-| `"npc_clip"` | NPC clip brushes |
-| `"grenade_clip"` | Grenade clip brushes |
-| `"ladder"` | Ladder surfaces |
-| `"window"` | Breakable windows |
-| `"sky"` | Skybox surfaces |
-| `"player"` | Player collision hulls |
-
----
-
-## Recipes
-
-### Fast visibility check
-
-`Trace.isVisible` is the fastest way to check line of sight - it skips
-normal / material / entity resolution and just returns a boolean.
-
-```ts
-const local = Entities.getLocalPlayer();
-if (!local) return;
-
-const myEyes = local.m_pGameSceneNode.m_vecAbsOrigin;
-
-for (const enemy of Entities.getPlayers({ skipLocal: true })) {
-    if (enemy.m_iHealth <= 0) continue;
-
-    const head = enemy.m_pGameSceneNode.m_vecAbsOrigin;
-    if (Trace.isVisible(myEyes, head)) {
-        console.log(`${enemy.controller?.m_iszPlayerName} is visible`);
-    }
-}
-```
-
-### Ground trace
-
-```ts
-import Entities from "@native/entities";
-
-const local = Entities.getLocalPlayer();
-if (!local) return;
-
-const feet = local.m_pGameSceneNode.m_vecAbsOrigin;
-const below = new Vector(feet.x, feet.y, feet.z - 64);
-
-const ground = Trace.ray(feet, below, "player_movement");
-if (ground.hit) {
-    console.log(`Ground at Z=${ground.position.z.toFixed(1)}`);
-    console.log(`Normal: ${ground.normal}`);
-}
+on("render", () => {
+    if (!label) return;
+    const { x, y } = render.screenSize;
+    render.text([x / 2 + 12, y / 2 + 12], label, "#ffffff", { outline: true });
+});
 ```

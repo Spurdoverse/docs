@@ -1,40 +1,46 @@
 ---
 title: "localStorage"
 sidebarTitle: "localStorage"
-description: "Persistent key-value storage that survives script reloads and restarts - the familiar browser API, but better."
+description: "Persistent per-script key-value storage that keeps value types."
 icon: "database"
 ---
 
-```ts
-// No import needed - available globally
-localStorage.setItem("key", value);
-```
-
-Your favorite browser API in a modern version. `localStorage` provides persistent key-value storage that survives script reloads and restarts. Each script has its own isolated storage - scripts cannot access each other's data.
-
-Unlike the browser version, values are serialized using the **structured clone algorithm** (same as IndexedDB), so any JS type is supported - not just strings.
+The browser's `localStorage`, persistent across script reloads and game restarts. Global, no import.
 
 <Note>
-  **Supported value types:** objects, arrays, numbers, strings, booleans, `null`, `Date`, `RegExp`, `Map`, `Set`, `ArrayBuffer`, `TypedArray`.
-  No more `JSON.stringify` / `JSON.parse` wrappers - just store and retrieve.
+  Storage is per script **folder**, not `manifest.name`: two scripts never see each other's keys, even
+  with the same name.
 </Note>
 
-## Overview
-
-<CardGroup cols={2}>
-  <Card title="Methods" icon="code" href="#methods">
-    setItem, getItem, removeItem, clear, key, length.
-  </Card>
-  <Card title="Property access" icon="arrow-right" href="#property-access">
-    Read and write values using direct property syntax.
-  </Card>
-</CardGroup>
+Unlike the browser, values aren't stringified. They're stored with structured clone, so you get back
+the type you stored: numbers, booleans, plain objects, arrays, `Map`, `Set`, `Date`, `RegExp`, typed
+arrays, `BigInt`. Class instances come back as plain objects. Functions, symbols and native objects
+(`Vector`, `Pointer`, …) throw a `DataCloneError`.
 
 ---
 
 ## Methods
 
-### localStorage.setItem
+{/* ------------------------------------------------------------------ */}
+
+### getItem
+
+<br />
+
+```ts
+localStorage.getItem<T = any>(key: string): T | null
+```
+
+A copy of the stored value, or `null` when the key doesn't exist. Throws `EIO` when the stored value is
+corrupt.
+
+```ts
+const runs = localStorage.getItem<number>("runs") ?? 0;
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### setItem
 
 <br />
 
@@ -42,201 +48,75 @@ Unlike the browser version, values are serialized using the **structured clone a
 localStorage.setItem(key: string, value: any): void
 ```
 
-Stores a value under the given key. The value can be any type supported by the structured clone algorithm.
-
-<ParamField path="key" type="string" required>
-  The key to store the value under.
-</ParamField>
-<ParamField path="value" type="any" required>
-  The value to store. Any serializable type.
-</ParamField>
+Stores `value` under `key`. `undefined` removes the key, `null` is stored as a value.
 
 ```ts
-localStorage.setItem("name", "Player1");
-localStorage.setItem("score", 42);
-localStorage.setItem("settings", { fov: 90, crosshair: true });
-localStorage.setItem("teammates", new Set(["Alice", "Bob"]));
+localStorage.setItem("runs", runs + 1);
+localStorage.setItem("seen", new Set([1, 2, 3]));
+localStorage.setItem("runs", undefined);   // removed
 ```
 
----
+{/* ------------------------------------------------------------------ */}
 
-### localStorage.getItem
+### Others
 
-<br />
+| Member | |
+|:-------|:--|
+| `removeItem(key: string): void` | deletes the key |
+| `clear(): void` | deletes every key of this script |
+| `key(index: number): string \| null` | the key at `index`, `null` when out of range |
+| `length: number` | number of keys |
 
-```ts
-localStorage.getItem(key: string): any | null
-```
-
-Retrieves a value by key. Returns `null` if the key doesn't exist.
-
-```ts
-const name = localStorage.getItem("name");         // "Player1"
-const score = localStorage.getItem("score");        // 42
-const settings = localStorage.getItem("settings");  // { fov: 90, crosshair: true }
-
-const missing = localStorage.getItem("nope");       // null
-```
-
----
-
-### localStorage.removeItem
-
-<br />
-
-```ts
-localStorage.removeItem(key: string): void
-```
-
-Removes a key and its value from storage.
-
-```ts
-localStorage.removeItem("name");
-localStorage.getItem("name"); // null
-```
-
----
-
-### localStorage.clear
-
-<br />
-
-```ts
-localStorage.clear(): void
-```
-
-Removes **all** keys for this script. Other scripts' storage is not affected.
-
-```ts
-localStorage.clear();
-console.log(localStorage.length); // 0
-```
-
----
-
-### localStorage.key
-
-<br />
-
-```ts
-localStorage.key(index: number): string | null
-```
-
-Returns the key name at the given index. Returns `null` if out of bounds.
-
-<ParamField path="index" type="number" required>
-  Zero-based index into the key list.
-</ParamField>
-
-```ts
-localStorage.setItem("a", 1);
-localStorage.setItem("b", 2);
-
-localStorage.key(0); // "a"
-localStorage.key(1); // "b"
-localStorage.key(2); // null
-```
-
-<Warning>
-  `key()` and `length` scan storage internally - avoid calling them in hot loops or inside `on("render", ...)`.
-</Warning>
-
----
-
-### localStorage.length
-
-<br />
-
-```ts
-localStorage.length: number  // read-only
-```
-
-Returns the number of stored keys.
-
-```ts
-console.log(`${localStorage.length} keys in storage`);
-```
+Keys must be strings; anything else is a `TypeError`, not converted.
 
 ---
 
 ## Property access
 
-You can also use direct property syntax via a `Proxy` - reads, writes, and deletes all work as expected.
+Keys work as properties too.
 
 ```ts
-// Write
-localStorage.config = { fov: 90, sens: 2.5 };
-
-// Read
-console.log(localStorage.config); // { fov: 90, sens: 2.5 }
-
-// Delete
+localStorage.config = { fov: 90 };
+localStorage.config.fov;          // 90
 delete localStorage.config;
-
-// Iterate
-for (const key in localStorage) {
-    console.log(key, localStorage[key]);
-}
+Object.keys(localStorage);        // every key
+localStorage.fov = undefined;     // removes "fov"
 ```
 
-<Warning>
-  Built-in property names (`setItem`, `getItem`, `removeItem`, `clear`, `key`, `length`)
-  cannot be used as storage keys via property syntax. Use `setItem` / `getItem` for these names:
-  ```ts
-  // Won't work - "length" is a built-in
-  localStorage.length = 42;
-
-  // Use methods instead
-  localStorage.setItem("length", 42);
-  localStorage.getItem("length"); // 42
-  ```
-</Warning>
+This doesn't work for the method names, `length` and inherited `Object.prototype` members
+(`toString`, `constructor`, …). Use `getItem` / `setItem` for those keys.
 
 ---
 
-## Recipes
+## Errors
 
-### Persistent settings
+| Error | When |
+|:------|:-----|
+| `TypeError` | key isn't a string |
+| `DataCloneError` | value can't be cloned |
+| `RangeError` | key longer than about 500 bytes of UTF-8 (reading or removing it just finds nothing) |
+| `ENOSPC` | storage is full |
+| `EIO` | any other failed write, or a stored value that can't be read back |
 
-```ts
-// Load saved settings or use defaults
-const defaults = { fov: 90, crosshair: true, sensitivity: 2.0 };
-const settings = localStorage.getItem("settings") ?? defaults;
+---
 
-function updateSetting(key, value) {
-    settings[key] = value;
-    localStorage.setItem("settings", settings);
-}
+## Example
 
-updateSetting("fov", 110);
-```
-
-### Kill counter across reloads
+Remember the last few maps played.
 
 ```ts
-const stats = localStorage.getItem("stats") ?? { kills: 0, deaths: 0 };
+import game from "@native/game";
 
-function onKill() {
-    stats.kills++;
-    localStorage.setItem("stats", stats);
-}
+let lastMap: string | null = null;
 
-console.log(`K/D: ${(stats.kills / (stats.deaths || 1)).toFixed(2)}`);
-```
+on("tick", () => {
+    const map = game.shortMapName;
+    if (!map || map === lastMap) return;
+    lastMap = map;
 
-### Per-player notes
-
-```ts
-function setNote(steamId, note) {
-    const notes = localStorage.getItem("notes") ?? {};
-    notes[steamId] = note;
-    localStorage.setItem("notes", notes);
-}
-
-function getNote(steamId) {
-    const notes = localStorage.getItem("notes") ?? {};
-    return notes[steamId] ?? null;
-}
-
-setNote("76561199517768849", "suspicious movement");
+    const recent = localStorage.getItem<string[]>("recentMaps") ?? [];
+    const next = [map, ...recent.filter((m) => m !== map)].slice(0, 5);
+    localStorage.setItem("recentMaps", next);
+    console.log("recent maps:", next.join(", "));
+});
 ```

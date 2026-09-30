@@ -1,355 +1,244 @@
 ---
 title: "Pointer"
 sidebarTitle: "Pointer"
-description: "A typed wrapper around a memory address with arithmetic, dereference, and structured read operations."
+description: "An address in the game process, with arithmetic and typed reads."
 icon: "arrow-pointer"
 ---
 
-`Pointer` wraps a single memory address. You get one from `ptr()`, from
-`Memory.scan()`, or by following another pointer - and then use it to
-navigate and read game memory.
+An address in the game process. Immutable: arithmetic returns a new `Pointer`. Global class, no import.
 
 <Note>
-  `.address` is always a **BigInt** (`0n`, `0x12345678n`, etc.).
-  All methods accept `number`, `BigInt`, or another `Pointer` as an address
-  argument - the engine converts automatically.
+  `Pointer` is always game memory. Host-process addresses in [ffi](/api/ffi) are plain `bigint`s, and
+  the two never mix. Game memory is read-only.
 </Note>
 
 ## Overview
 
 <CardGroup cols={2}>
-  <Card title="Arithmetic" icon="calculator" href="#arithmetic">
-    Offset and compare pointers with add, sub, and equals.
+  <Card title="Creating" icon="plus" href="#creating">
+    `new Pointer`, `Pointer.from`, `Pointer.null`.
   </Card>
-  <Card title="Dereference" icon="arrow-turn-down" href="#dereference">
-    Follow a pointer to get the value it points to.
+  <Card title="Address and arithmetic" icon="calculator" href="#address-and-arithmetic">
+    `address`, `isNull`, `add`, `sub`, `equals`.
   </Card>
-  <Card title="Resolve" icon="link" href="#resolve">
-    Walk multi-level pointer chains in one call.
+  <Card title="Reading" icon="book-open" href="#reading">
+    `deref`, `resolve`, `read`, the `…Raw` variants.
   </Card>
-  <Card title="Read" icon="database" href="#read">
-    Read typed scalars, strings, arrays, or raw byte snapshots.
+  <Card title="Scalar types" icon="list" href="#scalar-types">
+    `int32`, `float`, `ptr`, `vector`…
+  </Card>
+  <Card title="Snapshot" icon="camera" href="#snapshot">
+    `read`, `bytes`, `as`.
   </Card>
 </CardGroup>
 
 ---
 
-## Properties
+## Creating
 
-| Name | Type | |
-|:-----|:-----|:--|
-| `address` | `BigInt` | The raw address. Readonly. |
-| `isNull` | `boolean` | `true` when address is `0`. Readonly. |
+{/* ------------------------------------------------------------------ */}
 
----
-
-## Creating a pointer
-
-```ts
-new Pointer(address: number | BigInt | Pointer): Pointer
-ptr(address: number | BigInt | Pointer): Pointer   // shorthand
-```
-
-Both forms are equivalent. `ptr()` is the idiomatic shorthand in scripts.
-
-```ts
-const p = ptr(0x12345678n);
-console.log(p.address);  // 12345678n
-console.log(p.isNull);   // false
-```
-
-### Pointer.null
-
-A pre-built null pointer - use it as a sentinel or default value.
-
-```ts
-const empty = Pointer.null;
-console.log(empty.isNull); // true
-```
-
----
-
-## Arithmetic
-
-### .add
+### new Pointer
 
 <br />
 
 ```ts
-ptr.add(offset: number | BigInt): Pointer
+new Pointer(address: PointerLike)
+Pointer.from(address: PointerLike): Pointer
+Pointer.null: Pointer
 ```
 
-Returns a new `Pointer` shifted forward by `offset` bytes. The original is
-not modified.
+`PointerLike` is a `Pointer`, a `bigint`, a non-negative safe integer or a `"0x…"` string. Anything else is a `TypeError`, a negative or unsafe number a `RangeError`. `Pointer.null` is a shared, frozen null pointer.
 
 ```ts
-const base = ptr(moduleBase);
-const field = base.add(0x3C);   // base + 0x3C
+const a = new Pointer(0x7FF6_1234_0000n);
+const b = Pointer.from("0x7FF612340000");
+a.equals(b);   // true
 ```
+
+Most pointers come from [memory.module](/api/memory#module), [memory.scan](/api/memory#scan) or `entity.address`.
 
 ---
 
-### .sub
+## Address and arithmetic
+
+| Member | |
+|:-------|:--|
+| `address: bigint` | the address, unsigned 64-bit |
+| `isNull: boolean` | `address === 0n` |
+| `add(offset: number \| bigint): Pointer` | `offset` bytes further, negative goes back |
+| `sub(offset: number \| bigint): Pointer` | `offset` bytes back |
+| `equals(other: PointerLike): boolean` | same address |
+| `toString(): string` | `"Pointer(0x7FF612340000)"` |
+| `toJSON(): string` | `"0x7FF612340000"`, accepted back by `new Pointer()` |
+
+`add` and `sub` throw `RangeError` if the result leaves the 64-bit range.
+
+---
+
+## Reading
+
+A read of unmapped memory, or of a null pointer, throws `Error` with `code: "EREAD"`.
+
+{/* ------------------------------------------------------------------ */}
+
+### deref
 
 <br />
 
 ```ts
-ptr.sub(offset: number | BigInt): Pointer
+ptr.deref(): Pointer
 ```
 
-Returns a new `Pointer` shifted backward by `offset` bytes.
+The pointer stored at this address.
 
 ```ts
-const prev = ptr.sub(8);
+const local = client.base.add(0x1A2B3C0).deref();
 ```
 
----
+{/* ------------------------------------------------------------------ */}
 
-### .equals
+### resolve
 
 <br />
 
 ```ts
-ptr.equals(other: number | BigInt | Pointer): boolean
+ptr.resolve(...offsets: (number | bigint)[]): Pointer
 ```
 
-Returns `true` if both pointers point to the same address.
+Follows a pointer chain: every offset but the last is added and dereferenced, the last is only added. No offsets returns a copy.
 
 ```ts
-if (entityPtr.equals(localPlayerPtr)) {
-    console.log("That's us!");
-}
+ptr.resolve(0x10, 0x20, 0x30);
+// same as ptr.add(0x10).deref().add(0x20).deref().add(0x30)
 ```
 
----
+{/* ------------------------------------------------------------------ */}
 
-## Dereference
-
-### .deref / .derefRaw
+### read
 
 <br />
 
 ```ts
-ptr.deref(): Pointer      // uses cache
-ptr.derefRaw(): Pointer   // bypasses cache
-```
-
-Reads a pointer-sized value from this address and returns it as a new
-`Pointer`. Use `deref` in most cases - `derefRaw` forces a live read.
-
-```ts
-const entity = ptr(entityListBase).deref();
-if (!entity.isNull) {
-    // entity now points to the actual entity object
-}
-```
-
-<Tip>
-  **Cached vs raw** - `deref` reads through the SDK cache (fast, data
-  is up-to-date within a frame). `derefRaw` always hits process memory
-  directly. Prefer cached reads in per-frame code.
-</Tip>
-
----
-
-## Resolve
-
-### .resolve / .resolveRaw
-
-<br />
-
-```ts
-ptr.resolve(...offsets: (number | BigInt)[]): Pointer
-ptr.resolveRaw(...offsets: (number | BigInt)[]): Pointer
-```
-
-Walks a multi-level pointer chain. For each offset except the last, adds the
-offset then dereferences. The final offset is only added - not dereferenced.
-
-Equivalent to writing a chain of `add` + `deref` calls manually.
-
-```ts
-// Read a classic multi-level pointer: base → +0x10 → +0x3C → +0x8
-const value = ptr(moduleBase).resolve(0x10, 0x3C, 0x8);
-```
-
-```ts
-// Base → deref → +0x2F0 → deref → +0x58   (two dereferences)
-const health = ptr(clientBase).resolve(0x2F0, 0x58);
-```
-
-<Warning>
-  If any intermediate pointer in the chain is null, `resolve` throws
-  `"Pointer.resolve: null in chain"`. Check `.isNull` on the result
-  when the chain might not exist yet.
-</Warning>
-
----
-
-## Read
-
-### .read / .readRaw
-
-<br />
-
-```ts
-// Raw snapshot - read byteCount bytes
+ptr.read(type: FixedScalarType): value
+ptr.read(type: FixedScalarType, count: number): TypedArray | value[]
+ptr.read(type: "string" | "wstring", maxLength?: number): string
+ptr.read(struct: StructType): GameStruct
+ptr.read(struct: StructType, count: number): GameStruct[]
 ptr.read(byteCount: number): Snapshot
-
-// Typed scalar
-ptr.read(type: string): number | BigInt | boolean | string | Pointer
-
-// Typed array - returns a TypedArray
-ptr.read(type: string, count: number): TypedArray | Pointer[]
-
-// Struct view (from FFI.struct)
-ptr.read(StructType): StructView
-
-// Array of struct views
-ptr.read(StructType, count: number): StructView[]
 ```
 
-`readRaw` mirrors every overload but bypasses the cache.
+Reads by [scalar type](#scalar-types), by struct, or copies raw bytes into a [Snapshot](#snapshot).
 
-<Note>
-  Reads that fail (bad address, access denied) throw an error. Check
-  `.isNull` before reading from a pointer you're not sure about.
-</Note>
+| Call | Returns |
+|:-----|:--------|
+| `read("float")` | one value |
+| `read("float", 16)` | `count` values (0 to 1,000,000): a typed array for numbers (`Float32Array` here), a plain array otherwise |
+| `read("string")` | inline text up to its NUL; `maxLength` is bytes for `"string"` (default 4096), UTF-16 units for `"wstring"` (default 2048) |
+| `read(Struct)` | one struct copied out, as a view |
+| `read(Struct, 64)` | `count` structs sharing one copied buffer |
+| `read(0x400)` | a `Snapshot` of 0 to 256 MiB |
 
-### Type names
-
-| Name | Returns | Notes |
-|:-----|:--------|:------|
-| `'int8'` | `number` | |
-| `'uint8'`, `'byte'` | `number` | |
-| `'int16'` | `number` | |
-| `'uint16'` | `number` | |
-| `'int32'` | `number` | |
-| `'uint32'` | `number` | |
-| `'int64'` | `BigInt` | |
-| `'uint64'` | `BigInt` | |
-| `'float'` | `number` | |
-| `'double'` | `number` | |
-| `'bool'` | `boolean` | |
-| `'string'` | `string` | Reads up to 4096 bytes; pass `count` to override |
-| `'wstring'` | `string` | Reads up to 2048 UTF-16 chars |
-| `'ptr'`, `'pointer'` | `Pointer` | |
-
-<CodeGroup>
-```ts Scalars
-const hp    = entityPtr.add(0x100).read('int32');
-const speed = entityPtr.add(0x11C).read('float');
-const name  = entityPtr.add(0x344).read('string');
+```ts
+const health = pawn.add(0x34C).read("int32");
+const matrix = viewMatrix.read("float", 16);
+const name = pawn.resolve(0x6E8, 0x10).read("string");
 ```
 
-```ts Arrays
-// Read 64 floats starting at this address
-const floats = ptr(addr).read('float', 64);   // Float32Array
+Struct types come from [memory.struct](/api/memory#struct). In a struct read from the game, `ptr` fields are `Pointer`s and nested structs are views too. Writing a field changes only the local copy.
 
-// Read 16 pointers
-const ptrs = ptr(addr).read('ptr', 16);       // Pointer[]
+{/* ------------------------------------------------------------------ */}
+
+### Cached and raw reads
+
+<br />
+
+```ts
+ptr.derefRaw(): Pointer
+ptr.resolveRaw(...offsets: (number | bigint)[]): Pointer
+ptr.readRaw(...): same as read
 ```
 
-```ts Struct
-const PlayerInfo = FFI.struct("PlayerInfo", { ... });
-const player = entityPtr.read(PlayerInfo);
-console.log(player.health, player.name);
+`read`, `deref` and `resolve` go through the per-frame read cache: cheap, but up to one cache frame old. Reads above 64 KiB always go direct. The `…Raw` variants take the same arguments and always read fresh.
 
-// Array of 64 players
-const list = ptr(entityList).read(PlayerInfo, 64);
+```ts
+const cached = ptr.read("int32");
+const fresh = ptr.readRaw("int32");
 ```
-</CodeGroup>
+
+---
+
+## Scalar types
+
+The one set of type names every memory read uses: `Pointer.read`, `Snapshot.read`, `entity.read` and struct fields. Any other name is a `TypeError`.
+
+| Type | Size | Value |
+|:-----|:-----|:------|
+| `int8` `uint8` `int16` `uint16` `int32` `uint32` | 1–4 | `number` |
+| `int64` `uint64` | 8 | `bigint` |
+| `float` `double` | 4 / 8 | `number` |
+| `bool` | 1 | `boolean` |
+| `bool32` | 4 | `boolean` (Win32 `BOOL`) |
+| `ptr` | 8 | `Pointer` |
+| `string` `wstring` | to NUL | `string`, inline UTF-8 / UTF-16 |
+| `vector2` `vector` `qangle` | 8 / 12 / 12 | [Vector2](/api/types/vector2), [Vector](/api/types/vector), [QAngle](/api/types/qangle) |
+| `quaternion` | 16 | [Quaternion](/api/types/quaternion) |
+| `color` | 4 | [Color](/api/types/color), RGBA bytes |
 
 ---
 
 ## Snapshot
 
-`Snapshot` is what `.read(byteCount)` returns - a frozen copy of raw bytes
-together with helpers to interpret them.
+What `read(byteCount)` returns: bytes copied out of the game once. Reading from it never touches game memory again; anything outside it is a `RangeError`.
+
+| Member | |
+|:-------|:--|
+| `base: Pointer` | where the bytes came from |
+| `size: number` | byte count |
+| `bytes: Uint8Array` | the snapshot's own bytes; a view, so writing to it changes later reads |
+| `read(type, offset?)` | one value at `offset` (default 0); inline strings end at their NUL or the snapshot's end |
+| `as(struct, offset?)` | a struct view over the bytes; `offset` must be a multiple of the struct's alignment |
+| `as(struct, offset, count)` | `count` consecutive views (0 to 1,000,000) |
+| `toString()` | `"Snapshot(0x…, N bytes)"` |
 
 ```ts
-const snap = ptr(someBase).read(0x200);
+const snap = pawn.read(0x1000);
+const health = snap.read("int32", 0x34C);
+const origin = snap.read("vector", 0x1224);
+const name = snap.read("string", 0x6E8);
 ```
 
-| Member | Type | Description |
-|:-------|:-----|:------------|
-| `.buffer` | `ArrayBuffer` | The raw byte backing store |
-| `.at(offset)` | `Accessor` | Returns a typed accessor at `offset` bytes |
-| `.as(StructType, offset?, count?)` | `StructView \| StructView[]` | Interpret bytes as a struct or array |
-
-### Accessor
-
-`.at(offset)` returns an object whose getter properties decode bytes in-place:
-
-| Property | Returns |
-|:---------|:--------|
-| `.int8` | `number` |
-| `.uint8` / `.byte` | `number` |
-| `.int16` | `number` |
-| `.uint16` | `number` |
-| `.int32` | `number` |
-| `.uint32` | `number` |
-| `.int64` | `BigInt` |
-| `.uint64` | `BigInt` |
-| `.float` | `number` |
-| `.double` | `number` |
-| `.bool` | `boolean` |
-| `.string` | `string` |
-| `.wstring` | `string` |
-| `.ptr` | `Pointer` |
-
-```ts
-const snap = ptr(base).read(0x100);
-
-const flags    = snap.at(0x00).int32;
-const velocity = snap.at(0x10).float;
-const namePtr  = snap.at(0x28).ptr;
-const tag      = snap.at(0x50).string;
-```
-
-```ts
-// Struct via .as()
-const WeaponData = FFI.struct("WeaponData", { ... });
-
-const weapon = snap.as(WeaponData);
-const mags   = snap.as(WeaponData, 0x80, 4); // array of 4 starting at offset 0x80
-```
+One snapshot and many reads is cheaper than many small reads.
 
 ---
 
-## Recipes
+## Example
 
-### Follow a pointer chain and read a field
-
-```ts
-const hp = ptr(clientBase)
-    .resolve(0x2F0, 0x58)   // two-level chain
-    .read('int32');          // read the int at the end
-
-console.log("Health:", hp);
-```
-
-### Read multiple fields from one snapshot
+Reads a list of player records behind a signature.
 
 ```ts
-// Read once - avoid hammering the read path per field
-const snap = ptr(entityBase).read(0x400);
+import memory from "@native/memory";
 
-const info = {
-    health:  snap.at(0x100).int32,
-    armor:   snap.at(0x104).int32,
-    velocity: snap.at(0x10C).float,
-    name:    snap.at(0x344).string,
-};
-```
+const Player = memory.struct({
+    name: "char[32]",
+    pawn: "ptr",
+    health: "int32",
+    team: "uint8",
+});
 
-### Null-safe pointer walk
+const hit = memory.scan("client.dll", "48 8B 0D ? ? ? ? 8B 41 10");
+const list = hit && hit.add(7).add(hit.add(3).read("int32"));
 
-```ts
-const entity = ptr(entityListBase).deref();
-
-if (!entity.isNull) {
-    const health = entity.add(0x100).read('int32');
-    console.log("HP:", health);
-}
+on("tick", () => {
+    if (!list) return;
+    try {
+        const base = list.deref();
+        const count = base.add(0x10).read("int32");
+        const players = base.add(0x18).deref().read(Player, Math.min(count, 64));
+        for (const p of players)
+            if (!p.pawn.isNull) console.log(p.name, p.health, p.team, p.pawn);
+    } catch (e) {
+        if ((e as { code?: string }).code !== "EREAD") throw e;
+    }
+});
 ```

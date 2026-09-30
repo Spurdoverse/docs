@@ -1,275 +1,183 @@
 ---
 title: "Input"
 sidebarTitle: "Input"
-description: "Simulate keyboard and mouse input, and read game input state."
+description: "Key and mouse state, input injection and the engine's input snapshot."
 icon: "keyboard"
 ---
 
+Reads keys and mouse buttons, sends input to the game, and exposes the engine's view angles and
+movement.
+
 ```ts
-import Input from "@native/input";  // requires "input" permission
+import input from "@native/input";
 ```
 
 <Note>
-  Requires the **`input`** permission in your
-  [manifest](/api/manifest#permissions):
-
-  ```json
-  { "permissions": ["input"] }
-  ```
+  Keys are [Win32 virtual-key codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes),
+  integers `1..254` (`0x41` is A). Mouse buttons use DOM numbering: `0` left, `1` middle, `2` right,
+  `3` back, `4` forward. Anything else throws `TypeError` or `RangeError`.
 </Note>
-
-The `Input` module lets you simulate keyboard and mouse actions and read
-the current game input state. Mouse movements, key presses, and button
-clicks are injected at the engine level.
 
 ## Overview
 
 <CardGroup cols={2}>
-  <Card title="Actions" icon="computer-mouse" href="#actions">
-    Simulate mouse movement, key presses, and mouse clicks.
+  <Card title="Reading" icon="eye" href="#reading">
+    `isKeyDown`, `isMouseDown`.
   </Card>
-  <Card title="Game state" icon="gamepad" href="#game-state">
-    Read-only cached input state — view angles, movement, mouse delta.
+  <Card title="Injection" icon="computer-mouse" href="#injection">
+    `keyDown`, `keyPress`, `mouseClick`, `moveMouse`, `moveToAngle`.
+  </Card>
+  <Card title="State" icon="gauge" href="#state">
+    `viewAngles`, movement, mouse delta.
   </Card>
 </CardGroup>
 
 ---
 
-## Actions
+## Reading
 
-### Input.moveMouse
+Reading always works, focused or not.
 
-<br />
+{/* ------------------------------------------------------------------ */}
 
-```ts
-Input.moveMouse(dx: number, dy: number): void
-```
-
-Applies a raw mouse delta. Values are in pixels.
-
-<ParamField path="dx" type="number" required>
-  Horizontal delta (positive = right).
-</ParamField>
-<ParamField path="dy" type="number" required>
-  Vertical delta (positive = down).
-</ParamField>
-
-```ts
-// Nudge the crosshair 10px right
-Input.moveMouse(10, 0);
-```
-
----
-
-### Input.moveToAngle
+### isKeyDown
 
 <br />
 
 ```ts
-Input.moveToAngle(pitch: number, yaw: number): void
-Input.moveToAngle(angle: QAngle): void
+input.isKeyDown(key: number): boolean
 ```
 
-Converts a target angle into the appropriate mouse delta using the
-current sensitivity settings, then applies it.
-
-<ParamField path="pitch" type="number" required>
-  Target pitch (vertical angle).
-</ParamField>
-<ParamField path="yaw" type="number" required>
-  Target yaw (horizontal angle).
-</ParamField>
-
-Or pass a [`QAngle`](/api/types/qangle) directly:
-
-<ParamField path="angle" type="QAngle" required>
-  Target angle.
-</ParamField>
+Whether a key is held right now. Mouse-button virtual keys (`0x01`, `0x02`, …) work too.
 
 ```ts
-// With pitch/yaw
-Input.moveToAngle(-5.2, 130.0);
-
-// With QAngle
-const target = Math.calcAngle(myPos, enemyPos);
-Input.moveToAngle(target);
+if (input.isKeyDown(0x12)) console.log("Alt held"); // VK_MENU
 ```
 
----
+{/* ------------------------------------------------------------------ */}
 
-### Input.keyDown
+### isMouseDown
 
 <br />
 
 ```ts
-Input.keyDown(vk: number): void
+input.isMouseDown(button?: 0 | 1 | 2 | 3 | 4): boolean
 ```
 
-Holds down a key by its virtual key code.
-
-<ParamField path="vk" type="number" required>
-  Virtual key code (e.g. `0x57` for W).
-</ParamField>
+Whether a mouse button is held. Default `0` (left).
 
 ```ts
-Input.keyDown(0x57); // hold W
+if (input.isMouseDown(3)) console.log("back button held");
 ```
+
+For presses as events, listen to `keydown` and `mousedown` on the [global target](/api/globals)
+instead of polling.
 
 ---
 
-### Input.keyUp
+## Injection
+
+Input is only sent while the game window has focus, the menu is closed and no text input (chat,
+IME) is active. Every call returns `true` when the input was sent and `false` when it was refused.
+
+| Call | |
+|:-----|:--|
+| `keyDown(key)` | Presses a key and keeps it down. |
+| `keyUp(key)` | Releases it. |
+| `keyPress(key)` | Down, then up. |
+| `mouseDown(button?)` | Default left. |
+| `mouseUp(button?)` | Default left. |
+| `mouseClick(button?)` | Down, then up. Default left. |
+
+```ts
+if (!input.keyPress(0x20)) console.log("jump refused"); // VK_SPACE
+input.mouseClick(0);
+```
+
+<Warning>
+  A `keyDown` that was sent stays down until a `keyUp` gets through. If the user opens the menu
+  in between, the `keyUp` returns `false`, so retry it on the next tick.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### moveMouse
 
 <br />
 
 ```ts
-Input.keyUp(vk: number): void
+input.moveMouse(dx: number, dy: number): boolean
 ```
 
-Releases a previously held key.
-
-<ParamField path="vk" type="number" required>
-  Virtual key code.
-</ParamField>
+A raw relative mouse move. `dx` and `dy` are integers in the int32 range.
 
 ```ts
-Input.keyUp(0x57); // release W
+input.moveMouse(0, 4); // pull down a little
 ```
 
----
+{/* ------------------------------------------------------------------ */}
 
-### Input.keyPress
+### moveToAngle
 
 <br />
 
 ```ts
-Input.keyPress(vk: number): void
+input.moveToAngle(angle: AngleLike): boolean
 ```
 
-Performs a full key press — down followed by up.
-
-<ParamField path="vk" type="number" required>
-  Virtual key code.
-</ParamField>
+Moves the mouse by what it takes to turn the view to `angle` (degrees), using `sensitivity`,
+`m_yaw` and `m_pitch`. Also `false` when the view angles or those convars can't be read. Already
+there is `true` with nothing sent.
 
 ```ts
-Input.keyPress(0x52); // tap R (reload)
-```
-
----
-
-### Input.mouseDown
-
-<br />
-
-```ts
-Input.mouseDown(btn?: number): void
-```
-
-Holds down a mouse button.
-
-<ParamField path="btn" type="number" default="0">
-  Mouse button index (`0` = left, `1` = right, `2` = middle).
-</ParamField>
-
-```ts
-Input.mouseDown();  // hold left click
-Input.mouseDown(1); // hold right click
+const view = input.state.viewAngles;
+if (view) input.moveToAngle(view.lerp(target, 0.2)); // a fifth of the way per call
 ```
 
 ---
 
-### Input.mouseUp
+## State
 
-<br />
+`input.state` is the engine's input as of the current tick. Every field is `null` while it can't
+be read, e.g. while the game is loading.
 
-```ts
-Input.mouseUp(btn?: number): void
-```
-
-Releases a mouse button.
-
-<ParamField path="btn" type="number" default="0">
-  Mouse button index.
-</ParamField>
-
-```ts
-Input.mouseUp(); // release left click
-```
-
----
-
-### Input.mouseClick
-
-<br />
+| Field | Type |
+|:------|:-----|
+| `viewAngles` | [QAngle](/api/types/qangle), a new one on every read |
+| `thirdPersonAngles` | `QAngle` |
+| `forwardMove`, `leftMove`, `upMove` | `number` |
+| `mouseDeltaX`, `mouseDeltaY` | `number` |
+| `inThirdPerson` | `boolean` |
 
 ```ts
-Input.mouseClick(btn?: number): void
-```
-
-Performs a full mouse click — down followed by up.
-
-<ParamField path="btn" type="number" default="0">
-  Mouse button index.
-</ParamField>
-
-```ts
-Input.mouseClick();  // left click
-Input.mouseClick(1); // right click
+const { viewAngles, forwardMove } = input.state;
+if (viewAngles && forwardMove !== null) console.log(viewAngles.yaw, forwardMove);
 ```
 
 ---
 
-### Input.isKeyDown
+## Example
 
-<br />
-
-```ts
-Input.isKeyDown(vk: number): boolean
-```
-
-Returns the current state of a key.
-
-<ParamField path="vk" type="number" required>
-  Virtual key code.
-</ParamField>
+Hold the back mouse button to pull toward the nearest enemy head in a 5° cone.
 
 ```ts
-if (Input.isKeyDown(0x10)) { // Shift
-    console.log("Shift is held");
-}
-```
+import entities from "@native/entities";
+import input from "@native/input";
 
----
+on("tick", () => {
+    const me = entities.getLocalPlayer();
+    const view = input.state.viewAngles;
+    const eye = me?.getEyePosition();
+    if (!me || !view || !eye || !input.isMouseDown(3)) return;
 
-## Game state
-
-`Input.state` exposes read-only, per-frame cached input values from the
-engine. All properties are updated automatically each tick.
-
-```ts
-const state = Input.state;
-```
-
-| Property | Type | |
-|:---------|:-----|:--|
-| `viewAngles` | [`QAngle`](/api/types/qangle) | Current view angles |
-| `thirdPersonAngles` | [`QAngle`](/api/types/qangle) | Third-person camera angles |
-| `forwardMove` | `number` | W/S movement value |
-| `leftMove` | `number` | A/D movement value |
-| `upMove` | `number` | Jump/crouch movement value |
-| `mouseDeltaX` | `number` | Game mouse delta X |
-| `mouseDeltaY` | `number` | Game mouse delta Y |
-| `inThirdPerson` | `boolean` | Whether third-person mode is active |
-
-```ts
-on("render", () => {
-    const { viewAngles, forwardMove, leftMove } = Input.state;
-
-    console.log(`Looking: pitch=${viewAngles.pitch.toFixed(1)} yaw=${viewAngles.yaw.toFixed(1)}`);
-    console.log(`Moving: forward=${forwardMove} left=${leftMove}`);
-
-    if (Input.state.inThirdPerson) {
-        console.log("Third person active");
+    let best: QAngle | null = null;
+    for (const pawn of entities.getPlayers({ skipLocal: true })) {
+        if (pawn.m_iHealth <= 0 || !pawn.isEnemy(me)) continue;
+        const head = pawn.getEyePosition();
+        const aim = head && eye.angleTo(head);
+        if (aim && view.fovTo(aim) < 5 && (!best || view.fovTo(aim) < view.fovTo(best))) best = aim;
     }
+
+    if (best) input.moveToAngle(view.lerp(best, 0.15));
 });
 ```

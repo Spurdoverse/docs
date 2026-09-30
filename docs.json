@@ -40,10 +40,10 @@
             "group": "Overview",
             "pages": [
               "api/globals",
+              "api/conventions",
               "api/manifest",
               "api/web",
-              "api/networking",
-              "api/wasm"
+              "api/networking"
             ]
           },
           {
@@ -53,14 +53,15 @@
               "api/render",
               "api/esp",
               "api/ui",
-              "api/game",
-              "api/ffi",
-              "api/fs",
-              "api/memory",
               "api/entities",
+              "api/game",
+              "api/trace",
               "api/input",
               "api/convars",
-              "api/trace",
+              "api/memory",
+              "api/ffi",
+              "api/fs",
+              "api/wasi",
               "api/localStorage"
             ]
           },

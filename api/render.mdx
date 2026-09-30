@@ -1,487 +1,308 @@
 ---
 title: "Render"
 sidebarTitle: "Render"
-description: "Draw lines, shapes, text, and images on the screen overlay."
+description: "Shapes, text and images on the overlay, plus world-to-screen."
 icon: "paintbrush"
 ---
 
+Immediate-mode 2D drawing on the overlay, in screen pixels with the origin at the top-left.
+
 ```ts
-import Render from "@native/render";
+import render from "@native/render";
 ```
 
-The `Render` module draws primitives on the screen overlay. Everything is drawn on top of the game in screen-space pixel coordinates.
-
-<Warning>
-  **All draw calls must happen inside the `on("render", ...)` callback.**
-  Drawing from `"tick"`, timers, or other events will cause flickering or
-  invisible output - the overlay only accepts commands during the render
-  frame. See [Events → render](/api/globals#render) for details.
-</Warning>
-
 <Note>
-  **Pro tip:** All position arguments accept both [Vector2](/api/types/vector2) instances and plain `{ x, y }` objects. 
-  All color arguments accept [Color](/api/types/color) instances and packed hex integers (e.g. `0xFF0000FF`). If a color is omitted, white is used.
+  Draw calls only work inside an `on("render")` listener. Anywhere else (a `tick`, a timer, after
+  an `await`) they throw an `Error` with code `EPHASE`. Queries (`measureText`, `worldToScreen`,
+  `screenTransform`, `boundsOf`, `screenSize`) work in any phase.
 </Note>
 
 ## Overview
 
 <CardGroup cols={2}>
-  <Card title="Screen size" icon="display" href="#screen-size">
-    Get the current overlay dimensions.
+  <Card title="Shapes" icon="shapes" href="#shapes">
+    `line`, `rect`, `circle`, `triangle`, `polyline` and their filled versions.
   </Card>
-  <Card title="Rectangles & Circles" icon="shapes" href="#rectangles--circles">
-    Draw bounding boxes, health bars, and FOV rings.
+  <Card title="Text and images" icon="font" href="#text-and-images">
+    `text`, `measureText`, `image`, fonts.
   </Card>
-  <Card title="Lines & Polygons" icon="draw-polygon" href="#lines--polygons">
-    Connect points, draw custom radar shapes and crosshairs.
-  </Card>
-  <Card title="Text" icon="font" href="#text">
-    Render custom strings and player names.
-  </Card>
-  <Card title="Images" icon="image" href="#images">
-    Draw loaded textures with optional rounding.
+  <Card title="Screen and projection" icon="crosshairs" href="#screen-and-projection">
+    `screenSize`, `worldToScreen`, `screenTransform`, `boundsOf`.
   </Card>
 </CardGroup>
 
----
-
-## Screen size
-
-### Render.getScreenSize
-
-<br />
-
-```ts
-Render.getScreenSize(): Vector2
-```
-
-Returns the current overlay dimensions in pixels as a
-[Vector2](/api/types/vector2) (`x` = width, `y` = height).
-
-Call this once per frame - the size can change if the user resizes the window
-or switches resolution.
+Positions are [Vec2Like](/api/types/vector2): `[x, y]`, `{ x, y }` or a `Vector2`. Colors are
+[ColorLike](/api/types/color) and always required: `"#ff4040"`, `[255, 64, 64, 200]`, a `Color`
+or a packed `0xAABBGGRR`. The last argument is an optional options object. A bad argument throws a
+`TypeError` (or `RangeError`) before anything is drawn.
 
 ```ts
 on("render", () => {
-    const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
-    const center = { x: screenWidth / 2, y: screenHeight / 2 };
-    Render.circleFilled(center, 3, Color.white());
+    render.line([10, 10], [200, 10], "#fff", { thickness: 2 });
+    render.rect([10, 20], [200, 60], Color.red(), { thickness: 1.5, rounding: 4 });
+    render.text([16, 28], "hello", "#fff", { size: 16, font: "segoe-bold", outline: true });
 });
 ```
 
 ---
 
-## Rectangles & Circles
+## Shapes
 
-Instead of listing separate functions for outlines and filled shapes, we group them here. The parameters are nearly identical, with the exception of `thickness`.
+| Call | Options |
+|:-----|:--------|
+| `line(from, to, color, options?)` | `thickness` |
+| `rect(min, max, color, options?)` | `thickness`, `rounding` |
+| `rectFilled(min, max, color, options?)` | `rounding` |
+| `rectGradient(min, max, from, to, options?)` | `direction` |
+| `circle(center, radius, color, options?)` | `thickness`, `segments` |
+| `circleFilled(center, radius, color, options?)` | `segments` |
+| `triangle(a, b, c, color, options?)` | `thickness` |
+| `triangleFilled(a, b, c, color)` | |
+| `polyline(points, color, options?)` | `thickness`, `closed` |
+| `polygonFilled(points, color)` | |
 
-### Rectangles
+| Option | Default | |
+|:-------|:--------|:--|
+| `thickness` | `1` | Line width in pixels, `>= 0`. |
+| `rounding` | `0` | Corner radius in pixels, `>= 0`. |
+| `segments` | `0` | `0..512`. `0` picks a count from the radius. |
+| `closed` | `false` | Connects the last point back to the first. |
+| `direction` | `"horizontal"` | `"horizontal"` blends `from` left to `to` right, `"vertical"` top to bottom. |
 
-```ts
-Render.rect(min: Vector2, max: Vector2, color?: Color, thickness?: number, rounding?: number): void
-Render.rectFilled(min: Vector2, max: Vector2, color?: Color, rounding?: number): void
-```
-
-<ParamField path="min" type="Vector2" required>
-  Top-left corner of the rectangle in screen coordinates.
-</ParamField>
-<ParamField path="max" type="Vector2" required>
-  Bottom-right corner of the rectangle in screen coordinates.
-</ParamField>
-<ParamField path="color" type="Color" default="Color.white()">
-  Outline or fill color.
-</ParamField>
-<ParamField path="thickness" type="number" default="1.0">
-  Border width in pixels. **(Ignored in `rectFilled`)**
-</ParamField>
-<ParamField path="rounding" type="number" default="0.0">
-  Corner radius in pixels. Use for UI backgrounds or modern-looking ESP boxes.
-</ParamField>
-
-<Tabs>
-  <Tab title="Box ESP (Outline)">
-    ```ts
-    import Entities from "@native/entities";
-
-    function getBoundingBox(entity) {
-        const origin = entity.m_pGameSceneNode.m_vecAbsOrigin;
-        const collision = entity.m_pCollision;
-        if (!collision) return null;
-
-        const mins = collision.m_vecMins;
-        const maxs = collision.m_vecMaxs;
-
-        let screenMins = new Vector2(Infinity, Infinity);
-        let screenMaxs = new Vector2(-Infinity, -Infinity);
-
-        for (let i = 0; i < 8; i++) {
-            const world = new Vector(
-                origin.x + (i & 1 ? maxs.x : mins.x),
-                origin.y + (i & 2 ? maxs.y : mins.y),
-                origin.z + (i & 4 ? maxs.z : mins.z),
-            );
-            const { success, screen } = Math.worldToScreen(world);
-            if (!success) return null;
-
-            screenMins.x = Math.min(screenMins.x, screen.x);
-            screenMins.y = Math.min(screenMins.y, screen.y);
-            screenMaxs.x = Math.max(screenMaxs.x, screen.x);
-            screenMaxs.y = Math.max(screenMaxs.y, screen.y);
-        }
-
-        return { mins: screenMins, maxs: screenMaxs };
-    }
-
-    on("render", () => {
-        for (const enemy of Entities.getPlayers({ skipLocal: true })) {
-            if (enemy.m_iHealth <= 0) continue;
-
-            const box = getBoundingBox(enemy);
-            if (!box) continue;
-
-            Render.rect(box.mins, box.maxs, Color.red(), 1.5);
-        }
-    });
-    ```
-  </Tab>
-  <Tab title="Health Bar (Filled)">
-    ```ts
-    // Assuming screen position (top-left of the bar) is already calculated
-    const barWidth = 60;
-    const barHeight = 4;
-    const fillWidth = (enemy.m_iHealth / 100) * barWidth;
-
-    const barMin = screen;
-    const barMax = new Vector2(screen.x + barWidth, screen.y + barHeight);
-
-    // 1. Draw dark background
-    Render.rectFilled(barMin, barMax, new Color(0, 0, 0, 150));
-
-    // 2. Draw green fill on top
-    const fillMax = new Vector2(screen.x + fillWidth, screen.y + barHeight);
-    Render.rectFilled(barMin, fillMax, Color.green());
-    ```
-  </Tab>
-</Tabs>
-
----
-
-### Circles
+A negative `radius` throws `RangeError`. `polyline` draws nothing with fewer than 2 points,
+`polygonFilled` with fewer than 3; both take at most 65536.
 
 ```ts
-Render.circle(center: Vector2, radius: number, color?: Color, thickness?: number): void
-Render.circleFilled(center: Vector2, radius: number, color?: Color): void
-```
-
-<ParamField path="center" type="Vector2" required>
-  The center point of the circle on the screen.
-</ParamField>
-<ParamField path="radius" type="number" required>
-  The radius in pixels.
-</ParamField>
-<ParamField path="color" type="Color" default="Color.white()">
-  Outline or fill color.
-</ParamField>
-<ParamField path="thickness" type="number" default="1.0">
-  Line width for the outline. **(Ignored in `circleFilled`)**
-</ParamField>
-
-<CodeGroup>
-```ts FOV Ring (Outline)
 on("render", () => {
-    const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
-    const center = { x: screenWidth / 2, y: screenHeight / 2 };
-    const fovRadius = 150;
-
-    Render.circle(center, fovRadius, Color.white().withAlpha(100), 1);
+    const { x: w, y: h } = render.screenSize;
+    render.circle([w / 2, h / 2], 60, "#ffffff80");
+    render.rectGradient([10, 50], [210, 56], "#ff0000", "#0000ff");
+    render.polyline([[0, 0], [50, 20], [100, 0]], "#0f0", { closed: true });
 });
 ```
-
-```ts Head Dot (Filled)
-import Entities from "@native/entities";
-
-on("render", () => {
-    for (const enemy of Entities.getPlayers({ skipLocal: true })) {
-        if (enemy.m_iHealth <= 0) continue;
-
-        const pos = enemy.m_pGameSceneNode.m_vecAbsOrigin;
-        const head = new Vector(pos.x, pos.y, pos.z + 72);
-        const { success, screen } = Math.worldToScreen(head);
-        if (success) {
-            Render.circleFilled(screen, 4, Color.red());
-        }
-    }
-});
-```
-</CodeGroup>
-
----
-
-## Lines & Polygons
-
-<AccordionGroup>
-  <Accordion title="Render.line" icon="minus">
-    Draws a single straight line between two points.
-
-    ```ts
-    Render.line(start: Vector2, end: Vector2, color?: Color, thickness?: number): void
-    ```
-    
-    <ParamField path="start" type="Vector2" required>Starting point.</ParamField>
-    <ParamField path="end" type="Vector2" required>Ending point.</ParamField>
-    
-    **Example:** Draw a snapline from the bottom center of the screen to an enemy.
-    ```ts
-    import Entities from "@native/entities";
-
-    on("render", () => {
-        const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
-        const bottomCenter = { x: screenWidth / 2, y: screenHeight };
-
-        for (const enemy of Entities.getPlayers({ skipLocal: true })) {
-            if (enemy.m_iHealth <= 0) continue;
-
-            const { success, screen } = Math.worldToScreen(enemy.m_pGameSceneNode.m_vecAbsOrigin);
-            if (success) {
-                Render.line(bottomCenter, screen, Color.yellow(), 1);
-            }
-        }
-    });
-    ```
-  </Accordion>
-
-  <Accordion title="Render.triangle" icon="play">
-    Draws a triangle outline using three specific vertices.
-
-    ```ts
-    Render.triangle(p1: Vector2, p2: Vector2, p3: Vector2, color?: Color, thickness?: number): void
-    ```
-
-    **Example:** Draw a directional arrow indicating where an off-screen enemy is.
-    ```ts
-    const tip = center.add({ x: 0, y: -15 });
-    const left = center.add({ x: -8, y: 5 });
-    const right = center.add({ x: 8, y: 5 });
-
-    Render.triangle(tip, left, right, Color.white(), 1.5);
-    ```
-  </Accordion>
-
-  <Accordion title="Render.polyline" icon="draw-polygon">
-    Draws a series of connected line segments through an array of points. Best used for custom complex shapes like radar blips or star polygons.
-
-    ```ts
-    Render.polyline(points: Vector2[], color?: Color, thickness?: number, closed?: boolean): void
-    ```
-
-    <ParamField path="points" type="Vector2[]" required>Array of vertices.</ParamField>
-    <ParamField path="closed" type="boolean" default="false">If true, automatically draws a line from the last point back to the first point.</ParamField>
-
-    **Example:** Draw a diamond shape.
-    ```ts
-    const points = [
-        center.add({ x: 0, y: -20 }),
-        center.add({ x: 15, y: 0 }),
-        center.add({ x: 0, y: 20 }),
-        center.add({ x: -15, y: 0 }),
-    ];
-    // 'closed: true' completes the diamond automatically
-    Render.polyline(points, Color.white(), 1, true);
-    ```
-  </Accordion>
-</AccordionGroup>
-
----
-
-## Text
-
-### Render.text
-
-<br />
-
-```ts
-Render.text(pos: Vector2, text: string, color?: Color, fontSize?: number, fontName?: string): void
-```
-
-Draws a text string on the screen. The position defines the **top-left** corner of the rendered text block.
-
-<ParamField path="pos" type="Vector2" required>
-  Top-left coordinate for the text.
-</ParamField>
-<ParamField path="text" type="string" required>
-  The string to render.
-</ParamField>
-<ParamField path="color" type="Color" default="Color.white()">
-  Text color.
-</ParamField>
-<ParamField path="fontSize" type="number" default="14">
-  Font size in pixels.
-</ParamField>
-<ParamField path="fontName" type="string" default='"segoe"'>
-  Font name. See [available fonts](#available-fonts).
-</ParamField>
-
-```ts
-import Entities from "@native/entities";
-
-// getBoundingBox defined above - see Box ESP example
-
-on("render", () => {
-    for (const enemy of Entities.getPlayers({ skipLocal: true })) {
-        if (enemy.m_iHealth <= 0) continue;
-
-        const box = getBoundingBox(enemy);
-        if (!box) continue;
-
-        // center the name above the bounding box
-        const name = enemy.controller?.m_iszPlayerName ?? "unknown";
-        const textSize = Render.calcTextSize(name);
-        const centerX = (box.mins.x + box.maxs.x) / 2 - textSize.x / 2;
-        Render.text(new Vector2(centerX, box.mins.y - 16), name, Color.white());
-    }
-});
-```
-
----
-
-### Render.calcTextSize
-
-<br />
-
-```ts
-Render.calcTextSize(text: string, fontSize?: number, fontName?: string): Vector2
-```
-
-Returns the pixel dimensions of a text string without drawing it.
-Use this to center or align text precisely.
-
-<Note>
-  The measurement is exact on every call, including the first one, and costs
-  nothing worth measuring - it walks the font's glyph table directly and caches
-  the result. It is safe to call in `render` for every entity on screen.
-</Note>
-
-<ParamField path="text" type="string" required>
-  The string to measure.
-</ParamField>
-<ParamField path="fontSize" type="number" default="14">
-  Font size in pixels. Must match the size you pass to `Render.text`.
-</ParamField>
-<ParamField path="fontName" type="string" default='"segoe"'>
-  Font name. Must match the font you pass to `Render.text`. See [available fonts](#available-fonts).
-</ParamField>
-
-<Tip>
-  Pass the **same** `fontSize` and `fontName` you will pass to `Render.text` -
-  measuring with one and drawing with another is the only way to get a mismatch.
-  Both default to `14` and `"segoe"`.
-</Tip>
-
-```ts
-const text = "Hello World";
-const size = Render.calcTextSize(text, 18);
-console.log(`Text is ${size.x}px wide, ${size.y}px tall`);
-
-// measure with a specific font
-const size2 = Render.calcTextSize(text, 18, "verdana");
-
-// center text on screen
-on("render", () => {
-    const screen = Render.getScreenSize();
-    const textSize = Render.calcTextSize(text, 18, "segoe-semibold");
-    const pos = new Vector2(
-        screen.x / 2 - textSize.x / 2,
-        screen.y / 2 - textSize.y / 2
-    );
-    Render.text(pos, text, Color.white(), 18, "segoe-semibold");
-});
-```
-
----
-
-### Available fonts {#available-fonts}
-
-| Name | Description |
-|:-----|:------------|
-| `"segoe"` | Segoe UI Regular (default) |
-| `"segoe-semibold"` | Segoe UI Semibold |
-| `"segoe-bold"` | Segoe UI Bold |
-| `"dewi"` | RF Dewi Expanded |
-| `"dewi-semibold"` | RF Dewi Semibold |
-| `"tahoma"` | Tahoma |
-| `"verdana"` | Verdana |
-| `"arial"` | Arial |
-| `"weapons"` | Weapon icons |
-
----
-
-## Images
-
-Draw loaded [Texture](/api/types/texture) objects. 
 
 <Warning>
-  Always check `texture.isReady` before drawing. Textures load asynchronously from the disk. Attempting to draw a texture that hasn't finished loading is a silent no-op.
+  `polygonFilled` only handles convex polygons. A concave outline fills wrong, so split it into
+  triangles.
 </Warning>
-
-```ts
-Render.image(texture: Texture, min: Vector2, max: Vector2, color?: Color): void
-Render.imageRounded(texture: Texture, min: Vector2, max: Vector2, rounding?: number, color?: Color): void
-```
-
-<ParamField path="texture" type="Texture" required>
-  A previously loaded texture instance.
-</ParamField>
-<ParamField path="min" type="Vector2" required>
-  Top-left corner of the image rectangle.
-</ParamField>
-<ParamField path="max" type="Vector2" required>
-  Bottom-right corner of the image rectangle.
-</ParamField>
-<ParamField path="rounding" type="number" default="0.0">
-  Corner radius in pixels. *(Only available in `imageRounded`)*
-</ParamField>
-<ParamField path="color" type="Color" default="Color.white()">
-  Acts as a tint mask. Using `Color.white()` draws the image in its original colors.
-</ParamField>
-
-```ts
-// Do this ONCE outside your render loop
-const avatar = new Texture("path/to/avatar.png");
-
-// Inside your tick callback:
-on("render", () => {
-    if (!avatar.isReady) return;
-
-    // Draw a 48x48 avatar in the top-left corner as a circle
-    Render.imageRounded(avatar, new Vector2(10, 10), new Vector2(58, 58), 24, Color.white());
-});
-```
 
 ---
 
-## Cookbook: Custom Crosshairs
+## Text and images
 
-A quick example showing how to combine basic primitives to build custom UI elements.
+{/* ------------------------------------------------------------------ */}
+
+### text
+
+<br />
+
+```ts
+render.text(position: Vec2Like, text: unknown, color: ColorLike, options?: TextOptions): void
+```
+
+Draws `text` with its top-left corner at `position`. Anything goes through `String()`, except
+`undefined`, which is a `TypeError`.
+
+| Option | Default | |
+|:-------|:--------|:--|
+| `size` | `14` | Font size in pixels, `> 0`. |
+| `font` | `"segoe"` | One of the [fonts](#fonts). |
+| `outline` | `false` | `true` is a 1px black outline at the text's alpha, a color is that color. |
+
+```ts
+on("render", () => {
+    render.text([10, 10], "spurdo", "#fff", { outline: true });
+    render.text([10, 30], "LOW HP", "#ff4040", { size: 18, font: "segoe-bold", outline: "#400000" });
+});
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### measureText
+
+<br />
+
+```ts
+render.measureText(text: unknown, options?: { size?: number; font?: FontName }): Vector2
+```
+
+The size `render.text` covers with the same `size` and `font`. It's the real layout, not an
+estimate, and works in any phase.
+
+```ts
+const label = "Planted";
+const { x: w } = render.measureText(label, { size: 16 });
+
+on("render", () => {
+    const center = render.screenSize.x / 2;
+    render.text([center - w / 2, 40], label, "#fff", { size: 16 });
+});
+```
+
+<Tip>
+  The first measurement of a new `font`/`size` pair waits for the next overlay frame, then the
+  pair is cached. Every distinct `size` is its own pair, so use a few fixed sizes instead of
+  animating it.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### image
+
+<br />
+
+```ts
+render.image(texture: Texture, min: Vec2Like, max: Vec2Like, options?: { tint?: ColorLike; rounding?: number }): void
+```
+
+Stretches a [Texture](/api/types/texture) over `min`–`max`. Draws nothing until the texture is
+`ready`. `tint` is multiplied with the texture.
+
+```ts
+const logo = new Texture("assets/logo.png");
+
+on("render", () => {
+    render.image(logo, [10, 10], [74, 74], { rounding: 8, tint: [255, 255, 255, 180] });
+});
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Fonts
+
+| Font | ESP text |
+|:-----|:---------|
+| `"segoe"` (default) | yes |
+| `"segoe-semibold"` | |
+| `"segoe-bold"` | |
+| `"dewi"` | |
+| `"dewi-semibold"` | |
+| `"tahoma"` | yes |
+| `"verdana"` | yes |
+| `"arial"` | yes |
+| `"weapon-icons"` | yes, weapon glyphs |
+
+[ESP](/api/esp) text elements accept only the fonts marked in the second column. An unknown name
+throws `TypeError`.
+
+---
+
+## Screen and projection
+
+{/* ------------------------------------------------------------------ */}
+
+### screenSize
+
+<br />
+
+```ts
+render.screenSize: Vector2
+```
+
+The overlay size in pixels, a new `Vector2` on every read. It's a live value, so there's no named
+export: read it as `render.screenSize`.
+
+```ts
+const { x: w, y: h } = render.screenSize;
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### worldToScreen
+
+<br />
+
+```ts
+render.worldToScreen(point: Vec3Like): Vector2 | null
+```
+
+World position to overlay pixels. Returns `null` when the point is behind the camera (closer than
+the 8-unit near plane). Points off to the side still project, to coordinates outside the screen.
 
 <Frame>
-  <img src="/images/crosshair-example.png" alt="A custom drawn crosshair" />
+  <img src="/images/world-to-screen.png" alt="World space to screen space" />
 </Frame>
 
 ```ts
 on("render", () => {
-    const { x: screenWidth, y: screenHeight } = Render.getScreenSize();
-    const cx = screenWidth / 2;
-    const cy = screenHeight / 2;
-    const gap = 4;
-    const size = 10;
-    const col = Color.green();
-
-    // Center dot
-    Render.circleFilled({ x: cx, y: cy }, 1, col);
-
-    // 4 radiating lines
-    Render.line({ x: cx - gap - size, y: cy }, { x: cx - gap, y: cy }, col);
-    Render.line({ x: cx + gap, y: cy }, { x: cx + gap + size, y: cy }, col);
-    Render.line({ x: cx, y: cy - gap - size }, { x: cx, y: cy - gap }, col);
-    Render.line({ x: cx, y: cy + gap }, { x: cx, y: cy + gap + size }, col);
+    const pos = render.worldToScreen([0, 0, 64]);
+    if (pos) render.circleFilled(pos, 3, "#ff0");
 });
+```
+
+<Tip>
+  Inside `render` it uses the camera of the frame being drawn, elsewhere the camera of the last
+  tick. Project in `render`, or boxes lag behind when you turn.
+</Tip>
+
+{/* ------------------------------------------------------------------ */}
+
+### screenTransform
+
+<br />
+
+```ts
+render.screenTransform(point: Vec3Like): Vector2 | null
+```
+
+Same as `worldToScreen`, but in normalized device coordinates: `-1..1` across the screen, y up.
+`null` behind the camera.
+
+```ts
+const ndc = render.screenTransform([0, 0, 64]);
+const onScreen = ndc !== null && Math.abs(ndc.x) <= 1 && Math.abs(ndc.y) <= 1;
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### boundsOf
+
+<br />
+
+```ts
+render.boundsOf(target: EntityRef | { mins: Vec3Like; maxs: Vec3Like }): { min: Vector2; max: Vector2 } | null
+```
+
+The screen rectangle around an entity's collision bounds, or around a world box. Returns `null`
+when the entity is gone or has no bounds, or when any corner is behind the camera.
+
+```ts
+on("render", () => {
+    for (const pawn of entities.getPlayers({ skipLocal: true })) {
+        const box = render.boundsOf(pawn);
+        if (box) render.rect(box.min, box.max, "#ff4040");
+    }
+});
+```
+
+---
+
+## Example
+
+Boxes and health bars for enemies. Logic on the tick, drawing in `render`.
+
+```ts
+import entities from "@native/entities";
+import render from "@native/render";
+
+let enemies: IPlayerPawn[] = [];
+
+on("tick", () => {
+    const me = entities.getLocalPlayer();
+    enemies = me ? entities.getPlayers({ skipLocal: true }).filter((p) => p.m_iHealth > 0 && p.isEnemy(me)) : [];
+});
+
+on("render", () => {
+    for (const pawn of enemies) {
+        const box = render.boundsOf(pawn);
+        if (!box) continue;
+
+        const hp = Math.clamp(pawn.m_iHealth / 100, 0, 1);
+        const top = Math.lerp(box.max.y, box.min.y, hp);
+
+        render.rect(box.min, box.max, "#ff4040", { thickness: 1.5 });
+        render.rectFilled([box.min.x - 5, box.min.y], [box.min.x - 2, box.max.y], [0, 0, 0, 160]);
+        render.rectFilled([box.min.x - 5, top], [box.min.x - 2, box.max.y], Color.green());
+    }
+});
+```

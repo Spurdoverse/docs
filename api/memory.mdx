@@ -1,229 +1,182 @@
 ---
 title: "Memory"
 sidebarTitle: "Memory"
-description: "Construct pointers, resolve loaded modules, and scan memory for byte patterns."
+description: "Game modules, pattern scans and struct layouts."
 icon: "memory"
 ---
 
+Finds modules and byte patterns in the game process and defines struct layouts to read with. The reading itself is done through [Pointer](/api/types/pointer).
+
 ```ts
-import Memory from "@native/memory";  // requires "memory" permission
+import memory from "@native/memory";
 ```
 
 <Note>
-  Requires the **`memory`** permission in your
-  [manifest](/api/manifest#permissions):
-
-  ```json
-  { "permissions": ["memory"] }
-  ```
-</Note>
-
-The `Memory` module gives scripts access to the process address space.
-Use it to find a module's base address, scan for signatures, and create
-[Pointer](/api/types/pointer) values to navigate from there.
-
-<Note>
-  `ptr(addr)` is also available as a **global shorthand** - you don't need
-  to write `Memory.ptr(addr)` everywhere.
+  Game memory is read-only, there is no write API. No manifest permission is needed.
 </Note>
 
 ## Overview
 
 <CardGroup cols={2}>
-  <Card title="ptr()" icon="arrow-pointer" href="#ptr">
-    Wrap any address in a Pointer.
+  <Card title="Modules" icon="cube" href="#modules">
+    `module`.
   </Card>
-  <Card title="Memory.module()" icon="box" href="#memorymodule">
-    Resolve a loaded module to its base address and size.
+  <Card title="Pattern scans" icon="magnifying-glass" href="#pattern-scans">
+    `scan`, `scanAll`, pattern syntax.
   </Card>
-  <Card title="Memory.scan()" icon="magnifying-glass" href="#memoryscan">
-    Find the first occurrence of a byte pattern in a module.
-  </Card>
-  <Card title="Memory.scanAll()" icon="list" href="#memoryscanall">
-    Collect every occurrence of a pattern across a module.
+  <Card title="Structs" icon="table-cells" href="#structs">
+    `struct`, `union`.
   </Card>
 </CardGroup>
 
 ---
 
-## ptr
+## Modules
+
+{/* ------------------------------------------------------------------ */}
+
+### module
 
 <br />
 
 ```ts
-ptr(address: number | BigInt | Pointer): Pointer
-Memory.ptr(address: number | BigInt | Pointer): Pointer
+memory.module(name: string): ModuleInfo | null
 ```
 
-Creates a [Pointer](/api/types/pointer) from a raw address. The two forms
-are identical - `ptr()` is the global shorthand.
+A loaded module by file name, case-insensitive, as `{ name, base, size }`. `null` when it isn't loaded or isn't tracked. Tracked modules: `client.dll`, `engine2.dll`, `inputsystem.dll`, `matchmaking.dll`, `soundsystem.dll`.
 
 ```ts
-const p = ptr(0x7FFE0000n);
-console.log(p.address);  // 7FFE0000n
-console.log(p.isNull);   // false
+const client = memory.module("client.dll");
+if (client) console.log(`${client.name} at ${client.base}, ${client.size} bytes`);
+```
 
-const zero = ptr(0);
-console.log(zero.isNull); // true
+`name` is lower-case, `base` is a [Pointer](/api/types/pointer), `size` is the image size in bytes.
+
+---
+
+## Pattern scans
+
+Patterns are IDA-style: space-separated hex bytes of 1–2 digits, `?` or `??` for any byte. A malformed or empty pattern is a `TypeError`.
+
+```ts
+"48 8B 05 ? ? ? ? 48 85 C0"
+"E8 ?? ?? ?? ?? 48 8B D8"
+```
+
+Scans read the whole module image synchronously and skip unreadable pages. Scan once at load, not every tick.
+
+{/* ------------------------------------------------------------------ */}
+
+### scan
+
+<br />
+
+```ts
+memory.scan(module: string, pattern: string): Pointer | null
+```
+
+The first match, or `null` when there's none. Throws `Error` with `code` `"ENOENT"` when the module isn't loaded, `"EREAD"` when its image can't be read.
+
+```ts
+const hit = memory.scan("client.dll", "48 8B 05 ? ? ? ? 48 85 C0");
+const target = hit && hit.add(7).add(hit.add(3).read("int32"));   // rip-relative
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### scanAll
+
+<br />
+
+```ts
+memory.scanAll(module: string, pattern: string): Pointer[]
+```
+
+Every match in address order, `[]` when none. Same errors as `scan`, plus `RangeError` past 1,000,000 matches.
+
+```ts
+const calls = memory.scanAll("client.dll", "E8 ? ? ? ? 48 8B D8");
+console.log(calls.length, calls[0]);
 ```
 
 ---
 
-## Memory.module
+## Structs
+
+{/* ------------------------------------------------------------------ */}
+
+### struct
 
 <br />
 
 ```ts
-Memory.module(name: string): { base: Pointer, size: number }
+memory.struct(name: string, fields: FieldDefs): StructType
+memory.struct(fields: FieldDefs): StructType
 ```
 
-Looks up a loaded module by name and returns its base address and byte size.
-Throws if the module is not found.
-
-| Param | Type | |
-|:------|:-----|:--|
-| `name` | `string` | Module file name, e.g. `"client.dll"` |
-
-| Returns | Type | |
-|:--------|:-----|:--|
-| `base` | `Pointer` | Start of the module in the process |
-| `size` | `number` | Total byte size of the module |
+Defines a C layout to read with [Pointer.read](/api/types/pointer#read) or [Snapshot.as](/api/types/pointer#snapshot). Fields are laid out in order with natural C alignment. It's the same function as [ffi.struct](/api/ffi) and makes the same objects, without needing the `ffi` permission.
 
 ```ts
-const { base, size } = Memory.module("client.dll");
-console.log(`client.dll → 0x${base.address.toString(16)} (${size} bytes)`);
+const Vec3 = memory.struct("Vec3", { x: "float", y: "float", z: "float" });
+const Bone = memory.struct({ pos: Vec3, scale: "float", rot: "quaternion" });
+
+const bones = boneArray.read(Bone, 128);
+console.log(bones[0].pos.x, bones[0].rot);
 ```
 
-```ts
-// Store base for repeated offset calculations
-const client = Memory.module("engine2.dll").base;
-const someField = client.add(0x1234AB).read('int32');
-```
+Field types are the [scalar types](/api/types/pointer#scalar-types), C names (`"DWORD"`, `"void*"`), arrays (`"float[16]"`, `"Vec3[4]"`, `"char[32]"`) or another struct. A named struct can be used by name in later definitions. In game memory `ptr` fields read as `Pointer`.
 
 <Warning>
-  Throws `"Memory.module: '<name>' not found"` if the module isn't loaded.
-  Make sure the target process has already mapped the DLL before calling this.
+  `"string"` and `"char*"` fields are pointers, not text. Follow them with `view.name.read("string")`.
+  Inline text is `"char[N]"`.
 </Warning>
 
----
+The type's `view()` and `decode()` work on buffers without a permission. Passing them a raw `bigint` host address needs `ffi` (`EPERM` otherwise).
 
-## Memory.scan
+{/* ------------------------------------------------------------------ */}
 
-<br />
-
-```ts
-Memory.scan(moduleName: string, pattern: string): Pointer | null
-```
-
-Scans the entire module for the **first** occurrence of `pattern` and returns
-a [Pointer](/api/types/pointer) to it. Returns `null` if not found.
-
-| Param | Type | |
-|:------|:-----|:--|
-| `moduleName` | `string` | Module to scan, e.g. `"client.dll"` |
-| `pattern` | `string` | IDA-style byte pattern (see [Pattern syntax](#pattern-syntax)) |
-
-```ts
-const result = Memory.scan("client.dll", "48 8B 05 ? ? ? ? 48 85 C0 74");
-
-if (result) {
-    // result points to the first matching byte
-    const offset = result.read('int32', 1)[0];
-    const target = result.add(7).add(offset);
-}
-```
-
----
-
-## Memory.scanAll
+### union
 
 <br />
 
 ```ts
-Memory.scanAll(moduleName: string, pattern: string): Pointer[]
+memory.union(name: string, fields: FieldDefs): UnionType
+memory.union(fields: FieldDefs): UnionType
 ```
 
-Returns an array of [Pointer](/api/types/pointer) values - one for each
-occurrence of `pattern` in the module. Returns an empty array if none found.
+Same as `struct`, but every field starts at offset 0.
 
 ```ts
-const hits = Memory.scanAll("server.dll", "FF 25 ? ? ? ? 90");
-console.log(`Found ${hits.length} matches`);
-
-for (const hit of hits) {
-    console.log(hit.address.toString(16));
-}
+const Value = memory.union({ i: "int32", f: "float", p: "ptr" });
+const v = slot.read(Value);
+console.log(v.i, v.f, v.p);
 ```
 
 ---
 
-## Pattern syntax
+## Example
 
-Patterns are space-separated hex bytes. Use `?` or `??` as wildcards to
-match any byte at that position.
-
-```
-48 8B 05 ? ? ? ? 48 85 C0 74 ??
-```
-
-| Token | Matches |
-|:------|:--------|
-| `AB` | Exactly `0xAB` |
-| `?` | Any byte |
-| `??` | Any byte (same as `?`) |
-
-<Tip>
-  Patterns are usually copied from a disassembler (IDA, Ghidra, x64dbg).
-  Wildcard the bytes that change between builds - typically relative offsets,
-  addresses, and immediate values that the linker patches at link time.
-</Tip>
-
----
-
-## Recipes
-
-### Signature scan + relative offset resolution
-
-A common pattern: scan for a `lea`/`mov` instruction, read the embedded
-relative offset, and resolve the final address.
+Finds a global through a signature once, then reads it every tick.
 
 ```ts
-// Find: MOV RAX, [rip+????]   →   48 8B 05 ?? ?? ?? ??
-const sig = Memory.scan("client.dll", "48 8B 05 ? ? ? ? 48 85 C0");
-if (!sig) throw new Error("Signature not found");
+import memory from "@native/memory";
 
-// Read the 4-byte signed offset at +3, instruction ends at +7
-const rel = sig.add(3).read('int32');
-const target = sig.add(7).add(rel);
-console.log("Target:", target.address.toString(16));
-```
+const Globals = memory.struct({
+    realTime: "float",
+    frameCount: "int32",
+    absFrameTime: "float",
+});
 
-### Walk a pointer chain from a scanned base
+const hit = memory.scan("client.dll", "48 8B 05 ? ? ? ? 48 85 C0");
+const slot = hit && hit.add(7).add(hit.add(3).read("int32"));
 
-```ts
-const { base } = Memory.module("client.dll");
-
-// Static offset from module base, then walk a pointer chain
-const health = base
-    .add(0x1234AB)    // static offset
-    .deref()          // follow pointer
-    .add(0x100)       // field offset
-    .read('int32');
-
-console.log("Health:", health);
-```
-
-### Collect all occurrences and filter by context
-
-```ts
-const hits = Memory.scanAll("client.dll", "FF 15 ? ? ? ?");
-
-for (const hit of hits) {
-    // Read 2 bytes before the match for context
-    const snap = hit.sub(2).read(8);
-    const prefix = snap.at(0).uint16;
-    if (prefix === 0x4889) {
-        console.log("Interesting hit at", hit.address.toString(16));
+on("tick", () => {
+    if (!slot) return;
+    try {
+        const globals = slot.deref().read(Globals);
+        console.log(globals.frameCount, globals.realTime.toFixed(2));
+    } catch (e) {
+        if ((e as { code?: string }).code !== "EREAD") throw e;
     }
-}
+});
 ```

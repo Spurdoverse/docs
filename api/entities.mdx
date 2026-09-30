@@ -1,768 +1,411 @@
 ---
 title: "Entities"
 sidebarTitle: "Entities"
-description: "Query, iterate, and read schema fields from any game entity - players, weapons, projectiles, and everything else."
+description: "Find entities, read their schema fields, and use the built-in helpers."
 icon: "users"
 ---
 
+Players, weapons, grenades, the bomb: every entity in the game as a read-only object.
+
 ```ts
-import Entities from "@native/entities";
+import entities from "@native/entities";
 ```
 
-The `Entities` module exposes the game's entity list. Every entity is backed
-by a **cached snapshot** that is refreshed each frame - reads are fast and
-safe to call in per-frame callbacks without worrying about memory access.
-
 <Note>
-  Entity objects are **lazy** - they hold an index, not a pointer. The
-  actual data is fetched from the per-frame cache on first property access.
-  Always check `.isValid` before reading fields in contexts where an entity
-  might have just died or despawned.
+  Everything reads the tick snapshot, refreshed right before `tick`. Values don't change within a tick.
 </Note>
 
 ## Overview
 
 <CardGroup cols={2}>
-  <Card title="Fetching entities" icon="magnifying-glass" href="#fetching-entities">
-    Get all entities, look up by index, or grab players.
+  <Card title="Lookup" icon="magnifying-glass" href="#lookup">
+    `getByIndex`, `getByHandle`, `getEntities`, `find`, `getPlayers`, `getLocalPlayer`, `getLocalController`.
   </Card>
-  <Card title="Query builder" icon="filter" href="#query-builder">
-    Chain class filters and iterators - forEach, map, filter, first.
+  <Card title="Entity objects" icon="fingerprint" href="#entity-objects">
+    `alive`, `index`, `handle`, `className`, `address`.
   </Card>
-  <Card title="Entity object" icon="cube" href="#entity-object">
-    Reserved properties, helper methods, schema fields, and raw-buffer API.
+  <Card title="Schema fields" icon="table-list" href="#schema-fields">
+    `m_iHealth` and friends, `read`, `bytes`.
   </Card>
-  <Card title="Supported field types" icon="code" href="#supported-field-types">
-    How the engine maps every C++ type to a JS value.
+  <Card title="Helpers" icon="wrench" href="#helpers">
+    Origin, eyes, bounds, visibility, hitboxes, bones, weapon data.
+  </Card>
+  <Card title="EntityQuery" icon="filter" href="#entityquery">
+    `filter`, `forEach`, `toArray`, `first`, `count`, `map`, `some`, `every`.
   </Card>
 </CardGroup>
 
+Anywhere an entity is expected you can also pass its index (`EntityRef`).
+
 ---
 
-## Fetching entities
+## Lookup
 
-### Entities.getByIndex
+{/* ------------------------------------------------------------------ */}
+
+### getByIndex
 
 <br />
 
 ```ts
-Entities.getByIndex(index: number): Entity
+entities.getByIndex(index: number): IEntityBase | null
 ```
 
-Returns an `Entity` handle for a given entity list index. The entity may or
-may not be valid - always check `.isValid`.
+The entity in slot `index`, or `null` for an empty slot. `RangeError` outside 0–32767.
 
 ```ts
-const ent = Entities.getByIndex(1);
-if (ent.isValid) {
-    console.log(ent.className, ent.m_iHealth);
+const ent = entities.getByIndex(64);
+console.log(ent?.className ?? "empty slot");
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### getByHandle
+
+<br />
+
+```ts
+entities.getByHandle(handle: number): IEntityBase | null
+```
+
+Exactly the entity with this handle (slot + serial), or `null` once it's gone. Handles are what `entity.handle` returns and what `CHandle` fields store in memory.
+
+```ts
+const saved = pawn.handle;
+// later
+const same = entities.getByHandle(saved);   // null if that pawn was destroyed
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### getEntities
+
+<br />
+
+```ts
+entities.getEntities(): IEntityBase[]
+```
+
+Every entity in the current snapshot.
+
+```ts
+const counts = new Map<string, number>();
+for (const ent of entities.getEntities())
+    counts.set(ent.className, (counts.get(ent.className) ?? 0) + 1);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### find
+
+<br />
+
+```ts
+entities.find(className: string): EntityQuery
+entities.find(options: { className?: string; parent?: string }): EntityQuery
+```
+
+`className` matches exactly that class, `parent` matches it and every class deriving from it. Both together is an AND. An unknown name matches nothing, it's not an error. Returns a lazy [EntityQuery](#entityquery), typed by the class you asked for.
+
+```ts
+const bomb = entities.find("C_PlantedC4").first();
+const grenades = entities.find({ parent: "C_BaseCSGrenadeProjectile" }).count();
+const loaded = entities.find({ parent: "C_CSWeaponBase" }).filter((w) => w.m_iClip1 > 0).toArray();
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### getPlayers
+
+<br />
+
+```ts
+entities.getPlayers(options?: { skipLocal?: boolean }): IPlayerPawn[]
+```
+
+The pawn of every player, in controller order. `skipLocal` leaves yours out.
+
+```ts
+for (const pawn of entities.getPlayers({ skipLocal: true })) {
+    if (pawn.className !== "C_CSPlayerPawn") continue;   // dead or spectating
+    console.log(pawn.controller?.m_iszPlayerName, pawn.m_iHealth);
 }
 ```
 
----
+<Warning>
+  A dead or spectating player's pawn is a `C_CSObserverPawn`, not a `C_CSPlayerPawn`.
+  Check `className` before using player-only fields or `getViewAngles()`.
+</Warning>
 
-### Entities.getEntities
+{/* ------------------------------------------------------------------ */}
+
+### getLocalPlayer
 
 <br />
 
 ```ts
-Entities.getEntities(): Entity[]
+entities.getLocalPlayer(): IPlayerPawn | null
 ```
 
-Returns every entity currently in the snapshot as a flat array.
+Your pawn, `null` when you're not in a game. Same observer-pawn rule as `getPlayers`.
 
 ```ts
-const all = Entities.getEntities();
-console.log(`${all.length} entities in snapshot`);
+const me = entities.getLocalPlayer();
+if (me?.className === "C_CSPlayerPawn") console.log(me.m_iHealth, me.getViewAngles());
+```
 
-for (const ent of all) {
-    console.log(`#${ent.index} ${ent.className}`);
+{/* ------------------------------------------------------------------ */}
+
+### getLocalController
+
+<br />
+
+```ts
+entities.getLocalController(): ICCSPlayerController | null
+```
+
+Your player controller, `null` when you're not in a game. Name, score, money and other per-player state live here.
+
+```ts
+const ctrl = entities.getLocalController();
+console.log(ctrl?.m_iszPlayerName, ctrl?.m_iPing);
+```
+
+---
+
+## Entity objects
+
+| Member | |
+|:-------|:--|
+| `alive: boolean` | the entity still exists |
+| `index: number` | entity list slot, 0–32767 |
+| `handle: number` | slot + serial, for [getByHandle](#getbyhandle) |
+| `className: string` | schema class, e.g. `"C_CSPlayerPawn"` |
+| `address: Pointer \| null` | where it lives in game memory, see [Pointer](/api/types/pointer) |
+| `toString(): string` | `"Entity(12, C_CSPlayerPawn)"`, with `", stale"` once it's gone |
+
+An entity object is bound to one entity (slot + serial). Looking it up twice gives the same object, so `===` and `Map` keys work.
+
+When the entity is destroyed `alive` turns `false` for good. The object never re-binds to whatever takes the slot next. From then on schema fields, `address`, `read`, `bytes` and every helper return `null`. `index`, `handle`, `className` and `toString()` keep working.
+
+```ts
+let target: IPlayerPawn | null = null;
+
+on("tick", () => {
+    if (target && !target.alive) target = null;
+    target ??= entities.getPlayers({ skipLocal: true })[0] ?? null;
+});
+```
+
+<Warning>
+  Field types don't include `null` (`m_iHealth` is typed `number`), but a stale entity reads `null`.
+  Check `alive` on anything you keep across ticks.
+</Warning>
+
+---
+
+## Schema fields
+
+Every field of the game schema is a read-only property with its schema name: `pawn.m_iHealth`, `pawn.m_ArmorValue`. Autocompletion shows what each class has; the types come from `entities.d.ts`, where class `C_CSPlayerPawn` is `IC_CSPlayerPawn`. Assigning a field throws `TypeError`.
+
+| Schema type | Reads as |
+|:------------|:---------|
+| integers, floats, enums | `number` (`bigint` for 64-bit) |
+| `bool` | `boolean` |
+| `Vector`, `QAngle`, `Quaternion`, `Vector2D`, `Color` | [Vector](/api/types/vector), [QAngle](/api/types/qangle), [Quaternion](/api/types/quaternion), [Vector2](/api/types/vector2), [Color](/api/types/color) |
+| `char[N]`, `CUtlString`, `CUtlSymbolLarge` | `string` |
+| `CHandle` (`m_h*`) | the entity, or `null` |
+| pointer to a struct or entity (`m_p*`) | that object, or `null` |
+| other pointers | [Pointer](/api/types/pointer), or `null` |
+| `T[N]`, `CUtlVector` | an array (`CUtlVector` can be `null`) |
+| anything else | `Uint8Array` copy of the bytes |
+
+```ts
+const me = entities.getLocalPlayer();
+if (me?.className === "C_CSPlayerPawn") {
+    const weapon = me.m_pWeaponServices?.m_hActiveWeapon;   // struct pointer, then handle
+    console.log(me.m_iHealth, me.m_ArmorValue, me.m_bIsScoped, weapon?.className);
 }
 ```
 
-<Tip>
-  Prefer `Entities.find()` when you only need a specific class - it avoids
-  allocating the full array and skips irrelevant entities early.
-</Tip>
+Nested structs (`m_pWeaponServices` above, `getWeaponData()`) have `address`, `read`, `bytes` and `toString` as well.
 
----
+{/* ------------------------------------------------------------------ */}
 
-### Entities.getPlayers
+### read
 
 <br />
 
 ```ts
-Entities.getPlayers(options?: { skipLocal?: boolean }): Entity[]
+entity.read<T extends ScalarType>(type: T, offset: number): ScalarValue<T> | null
 ```
 
-Returns all **player pawns** in the game (`C_CSPlayerPawn` and
-`C_CSObserverPawn`). Each element is the pawn entity - use `.controller`
-to reach the `CCSPlayerController`.
-
-| Option | Type | Default | |
-|:-------|:-----|:--------|:--|
-| `skipLocal` | `boolean` | `false` | Exclude the local player's pawn |
+Decodes one value `offset` bytes into the tick-cached copy of the object, for data the schema doesn't name. Types are the [Pointer](/api/types/pointer#scalar-types) ones; strings end at the first NUL. `RangeError` past the end of the object, `null` once it's gone.
 
 ```ts
-// All players including self
-for (const player of Entities.getPlayers()) {
-    const hp = player.m_iHealth;
-    console.log(`HP: ${hp}`);
-}
-
-// Enemies only
-for (const player of Entities.getPlayers({ skipLocal: true })) {
-    const pos = player.m_pGameSceneNode.m_vecAbsOrigin;
-    console.log(`Enemy at ${pos.x}, ${pos.y}, ${pos.z}`);
-}
+const health = pawn.read("int32", 0x34C);
+const origin = pawn.read("vector", 0x1224);
 ```
 
----
+{/* ------------------------------------------------------------------ */}
 
-### Entities.getLocalPlayer
+### bytes
 
 <br />
 
 ```ts
-Entities.getLocalPlayer(): Entity | null
+entity.bytes(offset?: number, size?: number): Uint8Array | null
 ```
 
-Returns the local player's **pawn** entity, or `null` if not in-game.
+A copy of `size` bytes from `offset`, defaulting to the whole object. `RangeError` past the end, `null` once it's gone.
 
 ```ts
-const local = Entities.getLocalPlayer();
-if (local) {
-    console.log(`You are alive, HP: ${local.m_iHealth}`);
-}
+const raw = pawn.bytes(0x300, 0x40);
 ```
 
 ---
 
-## Query builder
+## Helpers
 
-`Entities.find()` returns a **Query** - a lazy, chainable object that filters
-entities from the snapshot. Nothing is read until you call a terminal method
-(`toArray`, `forEach`, `first`, `count`, `map`, `some`, `every`).
+Every helper returns `null` once the entity is gone or when the data isn't there (no model, no scene node).
 
-### Entities.find
+| Every entity | |
+|:-------------|:--|
+| `getOrigin(): Vector \| null` | scene-node absolute origin |
+| `getVelocity(): Vector \| null` | |
+| `getBounds(): Bounds \| null` | world-space collision box `{ mins, maxs }` at the current origin |
+| `isEnemy(other: EntityRef): boolean \| null` | on a different team, honours `mp_teammates_are_enemies`; `null` when either is gone |
+
+| Model entities (pawns, weapons, props) | |
+|:---------------------------------------|:--|
+| `getEyePosition(): Vector \| null` | origin + `m_vecViewOffset` |
+| `getModelName(): string \| null` | |
+| `isVisible(target: EntityRef, point?: Vec3Like): boolean \| null` | see [isVisible](#isvisible) |
+| `getHitboxes()`, `getHitbox(nameOrIndex)` | see [Hitboxes and bones](#hitboxes-and-bones) |
+| `getBones()`, `getBone(nameOrIndex)` | |
+
+| Players and weapons | |
+|:--------------------|:--|
+| `controller: ICCSPlayerController \| null` | the controller owning a pawn |
+| `getViewAngles(): QAngle \| null` | `m_angEyeAngles`, `C_CSPlayerPawn` only |
+| `getWeaponData(): ICCSWeaponBaseVData \| null` | the weapon's VData (a schema struct, not an entity) |
+
+```ts
+const weapon = me.m_pWeaponServices?.m_hActiveWeapon;
+const data = weapon?.getWeaponData();
+console.log(data?.m_szName, data?.m_nDamage, me.getBounds()?.maxs);
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### isVisible
 
 <br />
 
 ```ts
-// Exact class name match
-Entities.find(className: string): Query
-
-// Options object - className for exact match, parent for inheritance
-Entities.find(options: { className?: string, parent?: string }): Query
+entity.isVisible(target: EntityRef, point?: Vec3Like): boolean | null
 ```
 
-| Option | | |
-|:-------|:--|:--|
-| `className` | Exact match - only entities whose class is exactly this | `"C_CSPlayerPawn"` |
-| `parent` | Inheritance match - any entity whose class inherits from this | `"C_BaseEntity"` |
-
-<CodeGroup>
-```ts Exact class
-Entities.find("CCSPlayerController")
-    .forEach(ctrl => {
-        console.log(ctrl.m_iszPlayerName);
-    });
-```
-
-```ts By parent class
-Entities.find({ parent: "C_BaseFlex" })
-    .forEach(ent => {
-        console.log(ent.className, ent.m_flSimulationTime);
-    });
-```
-
-```ts Chained filters
-const snipers = Entities.find("C_CSPlayerPawn")
-    .filter(p => p.m_iHealth > 0)
-    .filter(p => p.m_iTeamNum === 2)
-    .toArray();
-```
-</CodeGroup>
-
----
-
-### Query methods
-
-| Method | Returns | Description |
-|:-------|:--------|:------------|
-| `.filter(fn)` | `Query` | Add a JS-side predicate. Chainable. |
-| `.forEach(fn)` | `void` | Call `fn(entity)` for every match. |
-| `.toArray()` | `Entity[]` | Collect all matches into an array. |
-| `.first()` | `Entity \| null` | First match, or `null`. |
-| `.count()` | `number` | Number of matching entities. |
-| `.map(fn)` | `T[]` | Transform each match. |
-| `.some(fn)` | `boolean` | `true` if any entity passes `fn`. |
-| `.every(fn)` | `boolean` | `true` if all entities pass `fn`. |
+Line of sight through world geometry from this entity's eyes (box centre if it isn't a pawn) to `target`'s eyes or box centre. Pass `point` to test that spot instead. `null` without a map or when either end is unknown.
 
 ```ts
-// Is any enemy alive?
-const anyAlive = Entities.find("C_CSPlayerPawn")
-    .filter(p => p.m_iTeamNum !== Entities.getLocalPlayer()?.m_iTeamNum)
-    .some(p => p.m_iHealth > 0);
+if (me.isVisible(enemy)) console.log("eyes visible");
 
-// Closest enemy
-const enemies = Entities.find("C_CSPlayerPawn")
-    .filter(p => p.m_iHealth > 0)
-    .toArray();
-
-const myPos = Entities.getLocalPlayer()?.m_pGameSceneNode.m_vecAbsOrigin;
-enemies.sort((a, b) =>
-    a.m_pGameSceneNode.m_vecAbsOrigin.distTo(myPos) - b.m_pGameSceneNode.m_vecAbsOrigin.distTo(myPos)
-);
-const nearest = enemies[0];
+const head = enemy.getHitbox("head_0");
+if (head && me.isVisible(enemy, head.start)) console.log("head visible");
 ```
 
----
+Players never block the line. For more control use [trace](/api/trace).
 
-## Entity object
+{/* ------------------------------------------------------------------ */}
 
-Every value returned by the `Entities` API is an **Entity** - a dynamic
-proxy that reads fields directly from the per-frame entity cache.
-
-### Reserved properties
-
-These are always present regardless of the entity's class:
-
-| Property | Type | |
-|:---------|:-----|:--|
-| `index` | `number` | Entity list index. Readonly. |
-| `isValid` | `boolean` | `true` if entity exists in the current snapshot. Readonly. |
-| `className` | `string` | Class name, e.g. `"C_CSPlayerPawn"`. Readonly. |
-| `address` | `BigInt` | In-process memory address of the entity object. Readonly. |
-| `isAlive` | `boolean` | `true` when `m_lifeState == ALIVE` and `m_iHealth > 0`. Readonly. |
-
-```ts
-const ent = Entities.getByIndex(42);
-console.log(ent.index);     // 42
-console.log(ent.className); // "C_CSPlayerPawn"
-console.log(ent.isValid);   // true / false
-console.log(ent.address);   // 0x12345678n
-```
-
----
-
-### Entity methods
-
-Available on all entities.
-
-#### .isEnemy
-
-<br />
-
-```ts
-entity.isEnemy(other: Entity): boolean
-```
-
-Returns whether `other` is an enemy. Respects `mp_teammates_are_enemies`.
-
-```ts
-const local = Entities.getLocalPlayer();
-const enemy = Entities.find("C_CSPlayerPawn").first();
-if (enemy && enemy.isEnemy(local)) {
-    console.log("Enemy!");
-}
-```
-
----
-
-#### .getOrigin
-
-<br />
-
-```ts
-entity.getOrigin(): Vector
-```
-
-Returns the entity's world-space position.
-
-```ts
-const pos = entity.getOrigin();
-console.log(`Position: ${pos.x}, ${pos.y}, ${pos.z}`);
-```
-
----
-
-#### .getVelocity
-
-<br />
-
-```ts
-entity.getVelocity(): Vector
-```
-
-Returns the entity's current velocity.
-
-```ts
-const vel = player.getVelocity();
-const speed = vel.length2D();
-console.log(`Speed: ${speed.toFixed(0)}`);
-```
-
----
-
-#### .getBoundingBox
-
-<br />
-
-```ts
-entity.getBoundingBox(): [Vector2, Vector2] | null
-```
-
-Returns screen-space `[mins, maxs]` for the entity, or `null` if it's
-behind the camera.
-
-```ts
-const local = Entities.getLocalPlayer();
-
-for (const pawn of Entities.getPlayers({ skipLocal: true })) {
-    if (!pawn.isAlive) continue;
-    if (!pawn.isEnemy(local)) continue;
-
-    const box = pawn.getBoundingBox();
-    if (box) {
-        const [mins, maxs] = box;
-        Render.rect(mins, maxs, Color.red());
-    }
-}
-```
-
----
-
-#### .getModelName
-
-<br />
-
-```ts
-entity.getModelName(): string | null
-```
-
-Returns the path to the entity's model (for example
-`"characters/models/ctm_fbi/ctm_fbi.vmdl"`). Returns
-`null` if the scene node or model is invalid.
-
-```ts
-const local = Entities.getLocalPlayer();
-const model = local?.getModelName();
-if (model) console.log(model);
-```
-
----
-
-#### .getBone / .getBones
-
-<br />
-
-```ts
-entity.getBones(): Bone[] | null
-entity.getBone(id: number): Bone | null
-```
-
-Access the entity's skeleton. `getBones()` returns every bone as an
-array; `getBone(id)` returns a single bone by index and only reads the
-32 bytes for that bone, which is much cheaper if you need just one.
-
-Both return `null` when the scene, model, or bone array is invalid.
-`getBone` also returns `null` when `id` is out of range.
-
-<Tabs>
-  <Tab title="Bone shape">
-    | Field | Type | |
-    |:------|:-----|:--|
-    | `index` | `number` | Position in the bone array |
-    | `position` | [`Vector`](/api/types/vector) | World-space position |
-    | `scale` | `number` | Usually `1.0` |
-    | `rotation` | [`Quaternion`](/api/types/quaternion) | World-space orientation |
-  </Tab>
-  <Tab title="All bones">
-    ```ts
-    const bones = entity.getBones();
-    bones?.forEach(b => {
-        const { success, screen } = Math.worldToScreen(b.position);
-        if (success) Render.circleFilled(screen, 2, Color.white());
-    });
-    ```
-  </Tab>
-  <Tab title="Single bone">
-    ```ts
-    const head = entity.getBone(8);
-    if (head) {
-        const { success, screen } = Math.worldToScreen(head.position);
-        if (success) Render.circleFilled(screen, 4, Color.red());
-    }
-    ```
-  </Tab>
-</Tabs>
-
----
-
-#### .getHitbox / .getHitboxes
+### Hitboxes and bones
 
 <br />
 
 ```ts
 entity.getHitboxes(): Hitbox[] | null
-entity.getHitbox(id: number): Hitbox | null
+entity.getHitbox(nameOrIndex: string | number): Hitbox | null
+entity.getBones(): Bone[] | null
+entity.getBone(nameOrIndex: string | number): Bone | null
 ```
 
-Access the entity's hitboxes. `getHitboxes()` returns every hitbox;
-`getHitbox(id)` returns a single hitbox by index (`0 .. length - 1`)
-and only touches the one bone needed to resolve `start` / `end`.
+Hitboxes and bones of the current pose, in model order. Look one up by name, or by `Hitbox.index` (the model's hitbox id) / bone index. `null` when the model has none or the name doesn't exist.
 
-`getHitboxes()` returns `null` on error or `[]` when the model has no
-hitboxes. `getHitbox` returns `null` when `id` is out of range or the
-bone / model is invalid.
+| `Hitbox` | |
+|:---------|:--|
+| `index`, `name` | model hitbox id and name |
+| `bone`, `boneName` | the bone it's attached to |
+| `group` | 1 head, 2 chest, 3 stomach, 4/5 arms, 6/7 legs, 8 neck |
+| `radius` | capsule radius, 0 for boxes |
+| `start`, `end` | world-space ends (`mins`/`maxs` through the bone) |
+| `mins`, `maxs` | bone-space bounds |
+| `shapeType`, `surfaceProperty` | |
 
-<Tabs>
-  <Tab title="Hitbox shape">
-    **Static** fields (cached per model):
+`Bone` has `index`, `name` (`null` if the model has none), `position`, `rotation` and `scale`.
 
-    | Field | Type | |
-    |:------|:-----|:--|
-    | `name` | `string` | Hitbox name |
-    | `surfaceProperty` | `string` | Surface property name |
-    | `boneName` | `string` | Name of the bone this hitbox is attached to |
-    | `mins` | [`Vector`](/api/types/vector) | Local-space bounds min (relative to bone) |
-    | `maxs` | [`Vector`](/api/types/vector) | Local-space bounds max |
-    | `shapeRadius` | `number` | Capsule radius |
-    | `boneNameHash` | `number` | Hash of `boneName` |
-    | `groupId` | `number` | `EHitGroup` |
-    | `shapeType` | `number` | `EHitboxShape` - `0` = box, `1` = capsule, ... |
-    | `translationOnly` | `boolean` | |
-    | `crc` | `number` | |
-    | `hitBoxIndex` | `number` | |
+```ts
+const head = enemy.getHitbox("head_0");
+const aimAt = head && head.start.lerp(head.end, 0.5);
 
-    **Dynamic** fields (recomputed each call):
+for (const bone of enemy.getBones() ?? [])
+    if (bone.name?.startsWith("hand")) console.log(bone.name, bone.position);
+```
 
-    | Field | Type | |
-    |:------|:-----|:--|
-    | `bone` | `number` | Bone array index (after remapping) |
-    | `start` | [`Vector`](/api/types/vector) | World-space = `bone.pos + bone.rotation.rotate(mins)` |
-    | `end` | [`Vector`](/api/types/vector) | World-space = `bone.pos + bone.rotation.rotate(maxs)` |
-  </Tab>
-  <Tab title="All hitboxes">
-    ```ts
-    for (const hb of entity.getHitboxes() ?? []) {
-        const a = Math.worldToScreen(hb.start);
-        const b = Math.worldToScreen(hb.end);
-        if (a.success && b.success) Render.line(a.screen, b.screen, Color.yellow());
+---
+
+## EntityQuery
+
+What [find](#find) returns. It's lazy and immutable: `filter` returns a new query, and every other call walks the snapshot again. A callback that throws stops the walk.
+
+| Method | Returns |
+|:-------|:--------|
+| `filter(predicate)` | a new `EntityQuery`, narrowed by type guards |
+| `forEach(callback)` | `void` |
+| `toArray()` | `T[]` |
+| `first()` | `T \| null` |
+| `count()` | `number` |
+| `map(callback)` | `R[]` |
+| `some(predicate)`, `every(predicate)` | `boolean` |
+
+```ts
+const weapons = entities.find({ parent: "C_CSWeaponBase" });
+const dropped = weapons.filter((w) => w.m_hOwnerEntity === null);   // weapons is unchanged
+
+console.log(weapons.count(), dropped.count());
+dropped.forEach((w) => console.log(w.className, w.getOrigin()));
+```
+
+---
+
+## Example
+
+Name and distance of the closest visible enemy.
+
+```ts
+import entities from "@native/entities";
+import render from "@native/render";
+
+let closest: { pawn: IPlayerPawn; dist: number } | null = null;
+
+on("tick", () => {
+    closest = null;
+    const me = entities.getLocalPlayer();
+    const eye = me?.getEyePosition();
+    if (!me || !eye) return;
+
+    for (const pawn of entities.getPlayers({ skipLocal: true })) {
+        if (pawn.className !== "C_CSPlayerPawn" || pawn.m_iHealth <= 0 || !pawn.isEnemy(me)) continue;
+        const pos = pawn.getEyePosition();
+        if (!pos || !me.isVisible(pawn)) continue;
+        const dist = eye.distTo(pos);
+        if (!closest || dist < closest.dist) closest = { pawn, dist };
     }
-    ```
-  </Tab>
-  <Tab title="Single hitbox">
-    ```ts
-    // Head hitbox world-space center
-    const head = entity.getHitbox(0);
-    if (head) {
-        const center = head.start.add(head.end).scale(0.5);
-        const { success, screen } = Math.worldToScreen(center);
-        if (success) Render.circleFilled(screen, 4, Color.red());
-    }
-    ```
-  </Tab>
-</Tabs>
-
----
-
-### Player methods
-
-Available on player pawns (`C_CSPlayerPawn`, `C_CSObserverPawn`).
-
-#### .controller
-
-<br />
-
-```ts
-pawn.controller: Entity
-```
-
-The `CCSPlayerController` linked to this pawn.
-
-```ts
-for (const pawn of Entities.getPlayers()) {
-    const ctrl = pawn.controller;
-    if (ctrl) {
-        console.log(ctrl.m_iszPlayerName, pawn.m_iHealth);
-    }
-}
-```
-
----
-
-#### .getEyePosition
-
-<br />
-
-```ts
-pawn.getEyePosition(): Vector
-```
-
-Returns the eye position (origin + view offset).
-
-```ts
-const local = Entities.getLocalPlayer();
-const eyePos = local.getEyePosition();
-```
-
----
-
-#### .isVisible
-
-<br />
-
-```ts
-pawn.isVisible(other: Entity): boolean
-```
-
-Traces from this entity's eye position to `other`'s origin.
-
-```ts
-const local = Entities.getLocalPlayer();
-
-Entities.find("C_CSPlayerPawn")
-    .filter(p => p.isAlive && p.isEnemy(local))
-    .forEach(enemy => {
-        if (local.isVisible(enemy)) {
-            console.log("Enemy visible!", enemy.controller?.m_iszPlayerName);
-        }
-    });
-```
-
----
-
-### Weapon methods
-
-Available on weapons (`C_BasePlayerWeapon`).
-
-#### .getWeaponData
-
-<br />
-
-```ts
-weapon.getWeaponData(): CCSWeaponBaseVData
-```
-
-Returns weapon VData — `damage`, `range`, `spread`, `weaponType`,
-`price`, and all schema fields.
-
-```ts
-const local = Entities.getLocalPlayer();
-const weapon = local?.m_pWeaponServices?.m_hActiveWeapon;
-
-if (weapon) {
-    const data = weapon.getWeaponData();
-    console.log(`Damage: ${data.m_nDamage}`);
-    console.log(`Range: ${data.m_flRange}`);
-    console.log(`Price: ${data.m_nPrice}`);
-    console.log(`Type: ${data.m_WeaponType}`);
-}
-```
-
----
-
-### Schema fields
-
-Any field in the entity's C++ class hierarchy is accessible by name directly
-on the entity object. The engine resolves the field through the full
-inheritance chain automatically.
-
-```ts
-const player = Entities.getLocalPlayer();
-
-// Primitives
-const hp       = player.m_iHealth;            // number
-const armor    = player.m_ArmorValue;         // number
-const alive    = player.m_bIsAlive;           // boolean
-
-// Vectors and angles
-const pos      = player.m_pGameSceneNode.m_vecAbsOrigin;       // Vector
-const vel      = player.m_vecVelocity;        // Vector
-const eyeAngle = player.m_angEyeAngles;       // QAngle
-
-// Strings
-const name     = player.m_iszPlayerName;      // string (CUtlString)
-
-// Handles - automatically resolved to Entity | null
-const weapon   = player.m_hActiveWeapon;      // Entity | null
-
-// Inline nested structs - returns a nested object with its own fields
-const collision = player.m_Collision;
-const mins = collision.m_vMinBounds;          // Vector
-```
-
-<Warning>
-  Builtin fields (`bool`, `int32`, `float`, etc.) are **writable** - you can
-  set them directly: `player.m_iHealth = 100`. All other field types (pointers,
-  nested structs, vectors, handles) are read-only.
-</Warning>
-
----
-
-### CUtlVector fields
-
-Fields of type `CUtlVector` (or `CNetworkUtlVectorBase`) return a
-**UtlVector** object - a lazy wrapper around the native array that
-reads elements on demand.
-
-| Method | Returns | Description |
-|:-------|:--------|:------------|
-| `.length` | `number` | Element count |
-| `.get(index)` | element | Element at index, or `null` |
-| `.toArray()` | element[] | All elements as a JS array |
-| `.forEach(fn)` | `void` | `fn(element, index)` for each element |
-| `.map(fn)` | `T[]` | Transform each element |
-| `.filter(fn)` | element[] | Keep elements where `fn` returns true |
-| `.find(fn)` | element \| `null` | First element where `fn` returns true |
-
-```ts
-const weapons = player.m_hMyWeapons;  // CUtlVector<CHandle>
-
-console.log(`Carrying ${weapons.length} weapons`);
-
-weapons.forEach((weapon, i) => {
-    if (weapon) console.log(`Slot ${i}: ${weapon.className}`);
 });
 
-const activeWpn = weapons.find(w => w?.m_bInReload);
-```
-
----
-
-### Raw buffer API
-
-Every entity (and nested struct) exposes low-level read methods for
-reading raw bytes at a fixed byte offset from the entity's base address.
-Useful for fields not exposed in the generated schema.
-
-```ts
-obj.readInt8(offset)           // → number
-obj.readUint8(offset)          // → number
-obj.readInt16(offset)          // → number
-obj.readUint16(offset)         // → number
-obj.readInt32(offset)          // → number
-obj.readUint32(offset)         // → number
-obj.readInt64(offset)          // → BigInt
-obj.readUint64(offset)         // → BigInt
-obj.readFloat(offset)          // → number
-obj.readDouble(offset)         // → number
-obj.readBool(offset)           // → boolean
-obj.readPointer(offset)        // → BigInt  (raw address)
-obj.readString(offset, max?)   // → string  (null-terminated, max 4096 by default)
-obj.readVector(offset)         // → Vector
-obj.readAngle(offset)          // → QAngle
-obj.buffer(offset?, length?)   // → Uint8Array
-obj.size()                     // → number  (cached byte size of this object)
-```
-
-```ts
-// Read an undocumented field at a known offset
-const rawFlags = player.readUint32(0x3AC);
-
-// Grab a raw slice for manual parsing
-const chunk = player.buffer(0x100, 64); // 64 bytes starting at +0x100
-```
-
----
-
-### `.toString()`
-
-```ts
-const ent = Entities.getByIndex(5);
-console.log(ent.toString()); // "[Entity #5] (C_CSPlayerPawn)"
-```
-
----
-
-## Supported field types
-
-The engine maps every C++ schema type to a JavaScript value automatically.
-
-| C++ type | JS value | Notes |
-|:---------|:---------|:------|
-| `bool` | `boolean` | |
-| `int8`, `int16`, `int32` | `number` | Signed |
-| `uint8`, `uint16`, `uint32` | `number` | Unsigned |
-| `int64` | `BigInt` | |
-| `uint64` | `BigInt` | |
-| `float`, `float32` | `number` | |
-| `double`, `float64` | `number` | |
-| `Vector`, `VectorWS` | [`Vector`](/api/types/vector) | |
-| `QAngle`, `QAngle_t` | [`QAngle`](/api/types/qangle) | |
-| `Quaternion`, `Quaternion_t` | [`Quaternion`](/api/types/quaternion) | |
-| `GameTick_t` | `number` | Stored as float |
-| `CUtlString`, `CUtlSymbolLarge` | `string` | |
-| `CUtlVector`, `CNetworkUtlVectorBase` | `UtlVector` | See [CUtlVector fields](#cutlvector-fields) |
-| `C_EntityHandle`, `CHandle<T>` | `Entity \| null` | Resolved to entity |
-| Pointer to known class | nested object \| `null` | Cache-backed |
-| Inline nested struct | nested object | Same buffer as parent |
-| Unknown / unrecognized | `Uint8Array` | Raw bytes |
-
----
-
-## Recipes
-
-### Find the closest visible enemy
-
-```ts
-const local = Entities.getLocalPlayer();
-if (!local) return;
-
-const myPos = local.m_pGameSceneNode.m_vecAbsOrigin;
-const myTeam = local.m_iTeamNum;
-
-let closest = null;
-let bestDist = Infinity;
-
-Entities.find("C_CSPlayerPawn")
-    .filter(p => p.m_iHealth > 0)
-    .filter(p => p.m_iTeamNum !== myTeam)
-    .forEach(enemy => {
-        const dist = enemy.m_pGameSceneNode.m_vecAbsOrigin.distTo(myPos);
-        if (dist < bestDist) {
-            bestDist = dist;
-            closest = enemy;
-        }
-    });
-```
-
-### Iterate all controllers and their pawns
-
-```ts
-Entities.find("CCSPlayerController").forEach(ctrl => {
-    const pawn = ctrl.m_hPawn;
-    if (!pawn || !pawn.isValid) return;
-
-    console.log(
-        ctrl.m_iszPlayerName,
-        "HP:", pawn.m_iHealth,
-        "Team:", pawn.m_iTeamNum
-    );
+on("render", () => {
+    if (!closest?.pawn.alive) return;
+    const name = closest.pawn.controller?.m_iszPlayerName ?? "?";
+    render.text([20, 200], `${name}  ${Math.round(closest.dist)}u`, "#ff4040");
 });
-```
-
-### List all weapons on the map
-
-```ts
-Entities.find({ parent: "C_BaseFlex" })
-    .filter(e => e.className.includes("Weapon") || e.className.includes("weapon"))
-    .forEach(w => {
-        const pos = w.m_pGameSceneNode.m_vecAbsOrigin;
-        console.log(`${w.className} at (${pos.x.toFixed(0)}, ${pos.y.toFixed(0)})`);
-    });
-```
-
-### Read schema field + raw fallback
-
-```ts
-const player = Entities.getLocalPlayer();
-
-// Prefer schema field
-const hp = player.m_iHealth;
-
-// Fall back to raw offset if field isn't in schema
-const shotsFired = player.readInt32(0x9B4);
 ```
