@@ -6,13 +6,11 @@ icon: "globe-pointer"
 ---
 
 Scripts run in a context shaped like a Web Worker. The APIs below are globals and follow the specs, so
-[MDN](https://developer.mozilla.org/en-US/docs/Web/API) is the reference. This page only lists what's
-there and where it differs.
+[MDN](https://developer.mozilla.org/en-US/docs/Web/API) is the reference.
 
 <Note>
   There's no `window`, `document`, `sessionStorage`, `indexedDB`, `Worker`, `alert`/`prompt` or
-  `onmessage`. TypeScript's DOM types still declare them, but at runtime they don't exist. `self` and
-  `globalThis` do. `Symbol.dispose` exists (`using` works); `DisposableStack` and `SuppressedError` don't.
+  `onmessage`, even though TypeScript's DOM types declare them. `using` works; `DisposableStack` doesn't exist.
 </Note>
 
 ## What's there
@@ -28,7 +26,7 @@ there and where it differs.
 | Scheduling | `queueMicrotask`, `requestAnimationFrame`, `requestIdleCallback`, `MessageChannel`, `performance`, `reportError` |
 | Other | `navigator`, `origin`, `WebAssembly` (with [WASI](/api/wasi)) |
 
-Timers, `console` and the host events are on [Globals](/api/globals), storage on
+Timers, `console` and the game events are on [Globals](/api/globals), storage on
 [localStorage](/api/localStorage).
 
 ---
@@ -37,15 +35,11 @@ Timers, `console` and the host events are on [Globals](/api/globals), storage on
 
 | API | Here |
 |:----|:-----|
-| `URL` | no IDNA/punycode, non-ASCII host names aren't converted |
-| `TextDecoder` | only `utf-8`, `utf-16le`, `utf-16be`, `windows-1251`, `windows-1252` (also `latin1`, `ascii`) and `koi8-r`; other labels throw `RangeError` |
+| `TextDecoder` | only `utf-8`, `utf-16le`, `utf-16be`, `windows-1251`, `windows-1252` and `koi8-r`; other labels throw `RangeError` |
 | `CompressionStream` | `gzip`, `deflate`, `deflate-raw` |
 | `DecompressionStream` | the same plus `br` |
-| `ReadableStream` | no transferable streams; a BYOB read copies into your buffer instead of filling it in place |
-| `structuredClone` | the `transfer` option is ignored |
-| `requestAnimationFrame`, `requestIdleCallback` | run from the `render` event, once per overlay frame |
-| `performance` | `now`, `timeOrigin`, `mark`, `measure`; no entry buffer |
-| `navigator` | fixed values (`platform: "Win32"`, `language: "en-US"`, …), nothing is detected |
+| `requestAnimationFrame`, `requestIdleCallback` | run once per overlay frame, like `render` |
+| `performance` | only `now`, `timeOrigin`, `mark`, `measure` |
 
 ---
 
@@ -61,13 +55,11 @@ Timers, `console` and the host events are on [Globals](/api/globals), storage on
 | Curves | P-256, P-384, P-521 |
 | Key formats | `raw`, `jwk`, `spki`, `pkcs8` |
 
-Other algorithms (Ed25519, X25519, SHA-3, …) reject with `NotSupportedError`. `wrapKey` / `unwrapKey` go
-through the ciphers above; AES-KW keys can be created but not used to wrap. AES-GCM `tagLength` must be 96,
-104, 112, 120 or 128 and the `iv` 1–64 bytes. RSA `modulusLength` is 1024–8192, a multiple of 8.
+Other algorithms (Ed25519, X25519, SHA-3, …) reject with `NotSupportedError`.
 
 <Warning>
-  `crypto.subtle` runs on the script thread. Hashes, HMAC and AES are instant, but RSA `generateKey` takes
-  tens of milliseconds (4096-bit far more). Generate keys once and keep them.
+  RSA `generateKey` blocks the script for tens of milliseconds (4096-bit far more). Generate keys once
+  and keep them.
 </Warning>
 
 ```ts

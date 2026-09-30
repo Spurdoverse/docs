@@ -16,7 +16,7 @@ const aim = view.add([0, 45]);             // [pitch, yaw, roll?] and { pitch, y
 
 <Note>
   Pitch positive looks down, yaw turns counter-clockwise from +X, roll spins around the view direction.
-  Fields `pitch`, `yaw`, `roll` are 32-bit floats. Assigning a non-number throws `TypeError`, NaN, Infinity or a value beyond float range throws `RangeError`.
+  Fields are 32-bit floats; assigning a non-number or NaN throws.
 </Note>
 
 ## Overview

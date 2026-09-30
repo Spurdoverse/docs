@@ -8,14 +8,12 @@ icon: "database"
 The browser's `localStorage`, persistent across script reloads and game restarts. Global, no import.
 
 <Note>
-  Storage is per script **folder**, not `manifest.name`: two scripts never see each other's keys, even
-  with the same name.
+  Storage is per script **folder**, not `manifest.name`. Scripts never see each other's keys.
 </Note>
 
-Unlike the browser, values aren't stringified. They're stored with structured clone, so you get back
-the type you stored: numbers, booleans, plain objects, arrays, `Map`, `Set`, `Date`, `RegExp`, typed
-arrays, `BigInt`. Class instances come back as plain objects. Functions, symbols and native objects
-(`Vector`, `Pointer`, …) throw a `DataCloneError`.
+Unlike the browser, values aren't stringified: you get back the type you stored (numbers, booleans,
+objects, arrays, `Map`, `Set`, `Date`, typed arrays, `BigInt`). Class instances come back as plain
+objects. Functions and native objects (`Vector`, `Pointer`, …) throw a `DataCloneError`.
 
 ---
 
@@ -31,8 +29,7 @@ arrays, `BigInt`. Class instances come back as plain objects. Functions, symbols
 localStorage.getItem<T = any>(key: string): T | null
 ```
 
-A copy of the stored value, or `null` when the key doesn't exist. Throws `EIO` when the stored value is
-corrupt.
+A copy of the stored value, or `null` when the key doesn't exist.
 
 ```ts
 const runs = localStorage.getItem<number>("runs") ?? 0;
@@ -67,7 +64,7 @@ localStorage.setItem("runs", undefined);   // removed
 | `key(index: number): string \| null` | the key at `index`, `null` when out of range |
 | `length: number` | number of keys |
 
-Keys must be strings; anything else is a `TypeError`, not converted.
+Keys must be strings; anything else throws `TypeError`.
 
 ---
 
@@ -83,20 +80,7 @@ Object.keys(localStorage);        // every key
 localStorage.fov = undefined;     // removes "fov"
 ```
 
-This doesn't work for the method names, `length` and inherited `Object.prototype` members
-(`toString`, `constructor`, …). Use `getItem` / `setItem` for those keys.
-
----
-
-## Errors
-
-| Error | When |
-|:------|:-----|
-| `TypeError` | key isn't a string |
-| `DataCloneError` | value can't be cloned |
-| `RangeError` | key longer than about 500 bytes of UTF-8 (reading or removing it just finds nothing) |
-| `ENOSPC` | storage is full |
-| `EIO` | any other failed write, or a stored value that can't be read back |
+Keys named like a method, `length` or `toString` need `getItem` / `setItem`.
 
 ---
 

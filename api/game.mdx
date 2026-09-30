@@ -11,10 +11,7 @@ Engine globals and your match state, as of the current tick.
 import game from "@native/game";
 ```
 
-<Note>
-  Every property is a read-only live getter, refreshed right before `tick`. Read them as `game.curTime`;
-  the module has no named exports. Engine numbers are `0` until the game client has initialised.
-</Note>
+All properties are read-only. Read them off the default export (`game.curTime`); there are no named exports.
 
 | Property | |
 |:---------|:--|

@@ -12,7 +12,7 @@ const logo = new Texture("assets/logo.png");
 ```
 
 <Note>
-  Loading and the GPU upload happen in the background. `width` and `height` are `0` until `ready` is `true`, and `render.image` draws nothing before that.
+  Loading is asynchronous. `width` and `height` are `0` until `ready` is `true`, and `render.image` draws nothing before that.
 </Note>
 
 ---
@@ -29,17 +29,17 @@ const logo = new Texture("assets/logo.png");
 new Texture(path: string, options?: { width?: number; height?: number })
 ```
 
-Loads a PNG, JPG, BMP, TGA, GIF (first frame) or SVG. `path` is relative to the script folder. A missing file throws `Error` with code `ENOENT`. Textures are cached by resolved path, so loading the same file twice is cheap.
+Loads a PNG, JPG, BMP, TGA, GIF (first frame) or SVG. `path` is relative to the script folder. A missing file throws `Error` with code `ENOENT`.
 
 ```ts
 const icon = new Texture("icons/bomb.png");
 const logo = new Texture("assets/logo.svg", { width: 64 });   // height keeps the aspect ratio
 ```
 
-`width` and `height` (`1`–`8192`) only apply to SVG and set its raster size. By default it's 4× the SVG's own size.
+`width` and `height` only apply to SVG and set its raster size.
 
 <Warning>
-  Without the `filesystem` [permission](/api/manifest#permissions) the file must be inside the script folder. Absolute paths, `..` and symlinks that lead out of it throw `Error` with code `ESANDBOX`.
+  Without the `filesystem` [permission](/api/manifest#permissions) the file must be inside the script folder.
 </Warning>
 
 {/* ------------------------------------------------------------------ */}
@@ -52,12 +52,7 @@ const logo = new Texture("assets/logo.svg", { width: 64 });   // height keeps th
 Texture.fromMemory(data: BufferSource, width: number, height: number): Texture
 ```
 
-A texture from raw RGBA8 pixels: row-major, 4 bytes per pixel, no row padding. The pixels are copied, so you can reuse `data`.
-
-| Throws | When |
-|:-------|:-----|
-| `RangeError` | `width` or `height` outside `1`–`8192`, or `data` shorter than `width * height * 4` bytes |
-| `TypeError` | `data` is a detached buffer |
+A texture from raw RGBA8 pixels: row-major, 4 bytes per pixel, no row padding. `data` is copied, so you can reuse it.
 
 ```ts
 const size = 32;
@@ -75,7 +70,7 @@ const gradient = Texture.fromMemory(pixels, size, size);
 
 | Property | Type | |
 |:---------|:-----|:--|
-| `ready` | `boolean` | `true` once uploaded. Stays `false` if the file couldn't be decoded. |
+| `ready` | `boolean` | `true` once loaded. Stays `false` if the file couldn't be decoded. |
 | `width`, `height` | `number` | Size in pixels, `0` until `ready` |
 | `path` | `string` or `null` | The resolved file path, `null` for `fromMemory` textures |
 

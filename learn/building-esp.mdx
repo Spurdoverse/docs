@@ -70,7 +70,7 @@ keep whatever the user set in the builder.
 ## Step 3: Boxes on the overlay
 
 Builder elements are laid out for you. For free-form drawing, use [render](/api/render).
-Reading entities goes in `tick`, drawing in `render`: draw calls throw `EPHASE` anywhere else.
+Reading entities goes in `tick`, drawing in `render`: draw calls throw anywhere else.
 
 Add the imports at the top and the listeners at the bottom:
 
@@ -98,9 +98,8 @@ on("render", () => {
 });
 ```
 
-[`render.boundsOf`](/api/render#boundsof) projects the pawn's collision box and returns the
-screen rectangle, or `null` when part of it is behind the camera. Called inside `render`, it
-uses the camera of the frame being drawn, so boxes stay glued to players while you turn.
+[`render.boundsOf`](/api/render#boundsof) returns the pawn's box on screen, or `null` when part
+of it is behind the camera.
 
 ---
 
@@ -137,8 +136,7 @@ on("render", () => {
 });
 ```
 
-`isVisible` traces from your eyes to theirs against world geometry. It returns `null` without a
-map, hence the `=== true`. [`render.worldToScreen`](/api/render#worldtoscreen) returns `null`
+`isVisible` returns `null` without a map, hence the `=== true`. [`render.worldToScreen`](/api/render#worldtoscreen) returns `null`
 for points behind the camera.
 
 ---
@@ -171,7 +169,6 @@ if (!me || !boxes.value) return; // [!code ++]
 const color = (visible ? visibleColor.value : hiddenColor.value) ?? "#ffffff"; // [!code ++]
 ```
 
-A control's `value` is `null` only after it's disposed, so the fallback never shows in practice.
 Pressing F6 flips the switch in the menu too.
 
 ---

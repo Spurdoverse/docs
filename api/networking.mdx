@@ -6,12 +6,10 @@ icon: "globe"
 ---
 
 `fetch`, `XMLHttpRequest`, `WebSocket` and `EventSource` are globals. No import, no permission. They
-follow the specs, so [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) is the reference;
-this page covers what's different here.
+follow the specs, so [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) is the reference.
 
 <Note>
-  URLs must be absolute. There's no page to resolve `"/api/status"` against, so it fails with
-  `the scheme 'spurdo' is not supported`.
+  URLs must be absolute. A relative URL like `"/api/status"` fails.
 </Note>
 
 ```ts
@@ -21,62 +19,19 @@ if (res.ok) console.log(await res.json());
 
 ---
 
-## Transport
+## Differences from a browser
 
-| | |
-|:--|:--|
-| Protocol | HTTP/1.1 only, one connection per request (no pooling, no keep-alive) |
-| Proxies | none, the system proxy is ignored |
-| TLS | certificates are checked against the Windows trust store, like a browser on the same machine; there's no way to skip the check |
-| Headers | no forbidden headers: `User-Agent`, `Cookie`, `Origin`, … go out as you set them. Defaults when missing: `accept: */*`, `accept-encoding: gzip, deflate, br` (decoded for you) and a desktop-Chrome `user-agent` |
-| Cookies, CORS | no cookie jar and no CORS. `credentials`, `mode`, `cache`, `referrerPolicy` and `integrity` are stored and ignored |
-| Redirects | up to 20; `Authorization` and `Cookie` are dropped on a cross-origin hop |
-| `redirect: "manual"` | returns the real 3xx with its headers (a browser gives an opaque response), so you can read `Location` |
-| Request bodies | buffered and sent in one piece; a stream body needs `duplex: "half"` |
-| `data:`, `blob:` | handled locally |
-
-| Timeout | |
-|:--------|:--|
-| TCP connect | 15 s |
-| TLS handshake | 15 s |
-| Sending the request | 30 s |
-| Receiving | 60 s without data |
-
----
-
-## fetch errors
-
-A non-2xx status resolves normally; check `res.ok`. Rejections:
-
-| Rejection | When |
-|:----------|:-----|
-| `TypeError` `Failed to fetch: …` | DNS, connection or TLS failure; `cause` is an `Error` with `code` `ENETWORK` or `ECERT` |
-| `DOMException` `AbortError` | the signal aborted |
-| `DOMException` `TimeoutError` | a transport timeout, or `AbortSignal.timeout` |
-| `TypeError` | bad arguments (a body on `GET`, credentials in the URL, a body read twice, …) |
-
-A failure after the headers arrived (including a corrupt compressed body, `EDECODE`) errors the body
-stream instead.
-
-```ts
-try {
-    await fetch("https://expired.badssl.com/");
-} catch (e) {
-    const code = ((e as Error).cause as { code?: string } | undefined)?.code;
-    console.log(code);   // "ECERT"
-}
-```
+- No CORS and no cookie jar. Any header (`User-Agent`, `Cookie`, `Origin`, …) goes out as you set it.
+- `redirect: "manual"` returns the real 3xx response, so you can read `Location`.
+- The system proxy is ignored.
+- Certificates are always checked; there's no way to skip it.
+- Network and certificate failures reject with a `TypeError` whose `cause.code` is `"ENETWORK"` or `"ECERT"`.
+  A non-2xx status resolves normally, check `res.ok`.
+- `XMLHttpRequest` can't be synchronous (`open(method, url, false)` throws), and `responseXML` is always `null`.
 
 ---
 
 ## WebSocket
-
-| | |
-|:--|:--|
-| URLs | `ws:`/`wss:`; `http:`/`https:` are mapped onto them, anything else throws `SyntaxError` |
-| `close(code, reason)` | `code` must be 1000 or 3000–4999 (`InvalidAccessError`), `reason` at most 123 bytes |
-| Connection failure | never throws: fires `error`, then `close` with `wasClean: false` |
-| Extras | `permessage-deflate` is offered, keep-alive pings and an idle timeout are built in, connecting times out after 15 s |
 
 ```ts
 const ws = new WebSocket("wss://ws.postman-echo.com/raw");
@@ -85,23 +40,6 @@ ws.onopen = () => ws.send("hello");
 ws.onmessage = (e) => console.log(e.data);
 ws.onclose = (e) => console.log("closed", e.code, e.wasClean);
 ```
-
----
-
-## EventSource
-
-Reconnects after 3 s unless the server sends `retry:`, and resends `Last-Event-ID`. A `204` stops it; any
-other non-200 status or a `content-type` other than `text/event-stream` fails without retrying.
-
----
-
-## XMLHttpRequest
-
-Built on `fetch`, for libraries like axios. Differences:
-
-- `open(method, url, false)` (synchronous) throws `InvalidAccessError`.
-- `responseXML` is always `null`, and `responseType: "document"` gives `null`.
-- Upload progress fires once for the whole body.
 
 ---
 

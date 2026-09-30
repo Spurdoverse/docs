@@ -1,21 +1,20 @@
 ---
 title: "Input"
 sidebarTitle: "Input"
-description: "Key and mouse state, input injection and the engine's input snapshot."
+description: "Key and mouse state, input injection, view angles and movement."
 icon: "keyboard"
 ---
 
-Reads keys and mouse buttons, sends input to the game, and exposes the engine's view angles and
-movement.
+Reads keys and mouse buttons, sends input to the game, and exposes view angles and movement.
 
 ```ts
 import input from "@native/input";
 ```
 
 <Note>
-  Keys are [Win32 virtual-key codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes),
-  integers `1..254` (`0x41` is A). Mouse buttons use DOM numbering: `0` left, `1` middle, `2` right,
-  `3` back, `4` forward. Anything else throws `TypeError` or `RangeError`.
+  Keys are [Win32 virtual-key codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes)
+  (`0x41` is A). Mouse buttons use DOM numbering: `0` left, `1` middle, `2` right, `3` back,
+  `4` forward.
 </Note>
 
 ## Overview
@@ -109,7 +108,7 @@ input.mouseClick(0);
 input.moveMouse(dx: number, dy: number): boolean
 ```
 
-A raw relative mouse move. `dx` and `dy` are integers in the int32 range.
+A raw relative mouse move, in whole counts.
 
 ```ts
 input.moveMouse(0, 4); // pull down a little
@@ -125,9 +124,8 @@ input.moveMouse(0, 4); // pull down a little
 input.moveToAngle(angle: AngleLike): boolean
 ```
 
-Moves the mouse by what it takes to turn the view to `angle` (degrees), using `sensitivity`,
-`m_yaw` and `m_pitch`. Also `false` when the view angles or those convars can't be read. Already
-there is `true` with nothing sent.
+Moves the mouse by what it takes to turn the view to `angle` (degrees), using your `sensitivity`,
+`m_yaw` and `m_pitch`.
 
 ```ts
 const view = input.state.viewAngles;
@@ -138,12 +136,12 @@ if (view) input.moveToAngle(view.lerp(target, 0.2)); // a fifth of the way per c
 
 ## State
 
-`input.state` is the engine's input as of the current tick. Every field is `null` while it can't
-be read, e.g. while the game is loading.
+`input.state` is the game's input as of the current tick. Every field is `null` while it can't be
+read, e.g. while the game is loading.
 
 | Field | Type |
 |:------|:-----|
-| `viewAngles` | [QAngle](/api/types/qangle), a new one on every read |
+| `viewAngles` | [QAngle](/api/types/qangle) |
 | `thirdPersonAngles` | `QAngle` |
 | `forwardMove`, `leftMove`, `upMove` | `number` |
 | `mouseDeltaX`, `mouseDeltaY` | `number` |

@@ -11,11 +11,6 @@ Reads engine console variables by exact name.
 import convars from "@native/convars";
 ```
 
-<Note>
-  Values are read at most once per tick. A convar that doesn't exist is `null` and is looked up again
-  later, so one registered after your first try is still found.
-</Note>
-
 ---
 
 ## Reading
@@ -75,14 +70,8 @@ convars.getFloat(name: string): number | null
 convars.getString(name: string): string | null
 ```
 
-Convert by the convar's real type. `null` when it doesn't exist, `TypeError` when its type can't convert (`getFloat` on a string convar).
-
-| Getter | Accepts |
-|:-------|:--------|
-| `getBool` | bool, integers, floats (`!= 0`) |
-| `getInt` | bool (0/1), integers, floats (toward zero); `RangeError` beyond ±2^53 |
-| `getFloat` | bool (0/1), integers, floats |
-| `getString` | string |
+`null` when the convar doesn't exist. Numeric and bool convars convert between each other (`getInt` truncates);
+asking a string convar for a number, or a number convar for a string, throws `TypeError`.
 
 ```ts
 const sens = convars.getFloat("sensitivity") ?? 1;
@@ -113,171 +102,6 @@ on("keydown", (e) => {
 });
 ```
 ---
-title: "Conventions"
-sidebarTitle: "Conventions"
-description: "Errors, null, value types, handles, phases and addresses: the rules every module follows."
-icon: "scale-balanced"
----
-
-Every module follows the same rules. Learn them once and the per-module pages only list what's
-different.
-
----
-
-## Errors
-
-| Situation | Result |
-|:----------|:-------|
-| Wrong type, missing argument, unknown option value, event name or enum string | `TypeError`, thrown right away |
-| Number out of range (`NaN` where an integer is needed, negative size, bad index) | `RangeError` |
-| Operation failed (I/O, sandbox, stale handle, unreadable memory, wrong phase) | `Error` with a `code`. Async calls reject with it. |
-
-Messages name the call and the argument: `render.line: argument 3 (color) must be ColorLike`.
-
-| Code | Meaning |
-|:-----|:--------|
-| `ENOENT` | Not found: file, module, DLL, export |
-| `EACCES` | Access denied |
-| `EEXIST` | Already exists: file, or a ui control on a taken path |
-| `EIO` | I/O failure, corrupt stored value |
-| `ENOSPC` | Storage full |
-| `ESANDBOX` | Path outside the script's folders without the [`filesystem`](/api/manifest#permissions) permission |
-| `EPERM` | Missing permission, e.g. importing `@native/ffi` without `ffi` |
-| `ESTALE` | Action on a disposed handle or a dead entity |
-| `EREAD` | Game memory couldn't be read |
-| `EPHASE` | `render.*` draw call outside `render` |
-| `EFAULT` | Native fault inside an FFI call, or an unreadable host pointer |
-| `ELIBBAD` | A DLL failed to load |
-| `ETHREAD` | FFI callback invoked from a foreign thread |
-| `ESTATE` | WASI instance started twice |
-| `EEXIT` | WASI program called `proc_exit` |
-| `ECRYPTO` | WebCrypto failure |
-| `ENETWORK`, `ETIMEDOUT`, `ECERT`, `EDECODE`, `EABORT` | Network transports |
-
-[fs](/api/fs) also uses the usual Node codes (`EINVAL`, `EISDIR`, `ENOTDIR`, `ENOTEMPTY`, `EBUSY`).
-
-```ts
-import fs from "@native/fs";
-
-try {
-    fs.readFileSync("config.json", "utf8");
-} catch (e) {
-    if ((e as { code?: string }).code !== "ENOENT") throw e;
-}
-```
-
-Exceptions thrown by your callbacks (listeners, timers, ui handlers, ESP evaluators) go to the
-global [`error` event](/api/globals#errors) and the log.
-
----
-
-## null and undefined
-
-| Case | Result |
-|:-----|:-------|
-| Not found or not available: lookup miss, no map loaded, missing convar, entity gone | `null`. Never `undefined`, `0`, `""` or `false`. |
-| A check that can't run (visibility with no map) | `null` |
-| An action the game can refuse (input injection) | `boolean` |
-| Optional parameter or option key set to `undefined` | Same as leaving it out |
-| `null` passed as an argument | A value. Means "omitted" only where the signature says `\| null`. |
-
-Numbers and strings are strict: `"5"` is not a number. Unknown option keys are ignored.
-
----
-
-## Value types
-
-Inputs take a Like-type, outputs are always the class.
-
-| Type | Accepts | Returns |
-|:-----|:--------|:--------|
-| `Vec2Like` | `Vector2`, `Vector` (x, y), `[x, y]`, `{ x, y }` | [Vector2](/api/types/vector2) |
-| `Vec3Like` | `Vector`, `[x, y, z]`, `{ x, y, z }` | [Vector](/api/types/vector) |
-| `AngleLike` | `QAngle`, `[pitch, yaw, roll?]`, `{ pitch, yaw, roll? }` | [QAngle](/api/types/qangle) |
-| `QuatLike` | `Quaternion`, `[x, y, z, w?]`, `{ x, y, z, w? }` | [Quaternion](/api/types/quaternion) |
-| `ColorLike` | `Color`, `0xAABBGGRR`, `"#rgb"`, `"#rgba"`, `"#rrggbb"`, `"#rrggbbaa"`, `[r, g, b, a?]`, `{ r, g, b, a? }` | [Color](/api/types/color) |
-| `BufferSource` | `ArrayBuffer`, any typed array, `DataView` | `Uint8Array` |
-| `EntityRef` | Entity object or entity index | Entity object |
-| `PointerLike` | `Pointer`, `bigint`, safe-integer `number`, `"0x…"` | [Pointer](/api/types/pointer) |
-
-| Rule | |
-|:-----|:-|
-| Components | Finite numbers. Missing optional ones default: `roll` 0, `w` 1, `a` 255. |
-| Colors | Channels 0–255, clamped and rounded. |
-| Angles | Degrees, everywhere. |
-| 64-bit integers | `bigint`. Inputs also take a safe-integer `number`. |
-| Rectangles | 2D: `{ min: Vector2, max: Vector2 }`. 3D boxes: `{ mins: Vector, maxs: Vector }`. |
-
-```ts
-import render from "@native/render";
-
-on("render", () => {
-    render.line([0, 0], new Vector2(100, 100), "#ff4040");
-    render.circle({ x: 200, y: 200 }, 20, [255, 255, 255, 128]);
-});
-```
-
----
-
-## Handles
-
-Objects the script creates and owns (ESP elements, ui controls, signals, FFI libraries and
-callbacks, `WASI`) share one shape.
-
-| Member | |
-|:-------|:-|
-| `alive` | `false` once disposed |
-| `dispose()` | Releases it. Idempotent. |
-| `[Symbol.dispose]` | Same, so `using` works |
-
-After disposal, reads return `null` and writes or actions throw `ESTALE`. A handle never re-binds
-to something new. Entities work the same way: once the entity is destroyed `alive` is `false`
-and its fields return `null`.
-
-Everything a script owns is released when it unloads, so `dispose()` is only for removing
-something early.
-
-```ts
-import ffi from "@native/ffi";
-
-function tickCount(): number {
-    using k32 = ffi.open("kernel32.dll");
-    return k32.func<() => number>("DWORD GetTickCount(void)")();
-} // k32 disposed here
-```
-
-<Warning>
-  `using` at the top level of a module disposes as soon as the module finishes loading. Keep
-  long-lived handles in a plain `const`.
-</Warning>
-
----
-
-## Phases
-
-| | `tick` | `render` |
-|:-|:-------|:---------|
-| Rate | 128 Hz, fixed | Once per overlay frame |
-| For | Logic, reading entities, input | Draw calls |
-| `render.*` draw calls | Throw `EPHASE` | Work, synchronously only |
-| `render.worldToScreen`, `render.boundsOf` | Tick camera | This frame's camera |
-
-Entity, game, convar and input data is refreshed right before each tick. Draw calls also throw
-`EPHASE` at the top level, in timers and after an `await` inside `render`. ESP `evaluate`
-callbacks run on the tick.
-
----
-
-## Address spaces
-
-| Space | Type | Where |
-|:------|:-----|:------|
-| Game process | [Pointer](/api/types/pointer) | [memory](/api/memory), `entity.address`, `Pointer.read("ptr")` |
-| Host process | `bigint`, `null` for NULL | [ffi](/api/ffi) |
-
-The two never mix. A `Pointer` passed to an FFI function becomes its integer value, which is what
-`ReadProcessMemory` wants.
----
 title: "Entities"
 sidebarTitle: "Entities"
 description: "Find entities, read their schema fields, and use the built-in helpers."
@@ -291,7 +115,7 @@ import entities from "@native/entities";
 ```
 
 <Note>
-  Everything reads the tick snapshot, refreshed right before `tick`. Values don't change within a tick.
+  Values update once per tick, so they don't change between `tick` and the `render` frames after it.
 </Note>
 
 ## Overview
@@ -330,7 +154,7 @@ Anywhere an entity is expected you can also pass its index (`EntityRef`).
 entities.getByIndex(index: number): IEntityBase | null
 ```
 
-The entity in slot `index`, or `null` for an empty slot. `RangeError` outside 0–32767.
+The entity at `index`, or `null` when there's none.
 
 ```ts
 const ent = entities.getByIndex(64);
@@ -347,7 +171,7 @@ console.log(ent?.className ?? "empty slot");
 entities.getByHandle(handle: number): IEntityBase | null
 ```
 
-Exactly the entity with this handle (slot + serial), or `null` once it's gone. Handles are what `entity.handle` returns and what `CHandle` fields store in memory.
+The entity with this [`handle`](#entity-objects), or `null` once it's gone.
 
 ```ts
 const saved = pawn.handle;
@@ -365,7 +189,7 @@ const same = entities.getByHandle(saved);   // null if that pawn was destroyed
 entities.getEntities(): IEntityBase[]
 ```
 
-Every entity in the current snapshot.
+Every entity.
 
 ```ts
 const counts = new Map<string, number>();
@@ -384,7 +208,7 @@ entities.find(className: string): EntityQuery
 entities.find(options: { className?: string; parent?: string }): EntityQuery
 ```
 
-`className` matches exactly that class, `parent` matches it and every class deriving from it. Both together is an AND. An unknown name matches nothing, it's not an error. Returns a lazy [EntityQuery](#entityquery), typed by the class you asked for.
+`className` matches exactly that class, `parent` matches it and every class deriving from it. Both together is an AND; an unknown name matches nothing. Returns an [EntityQuery](#entityquery) typed by the class you asked for.
 
 ```ts
 const bomb = entities.find("C_PlantedC4").first();
@@ -457,15 +281,14 @@ console.log(ctrl?.m_iszPlayerName, ctrl?.m_iPing);
 | Member | |
 |:-------|:--|
 | `alive: boolean` | the entity still exists |
-| `index: number` | entity list slot, 0–32767 |
-| `handle: number` | slot + serial, for [getByHandle](#getbyhandle) |
+| `index: number` | entity index |
+| `handle: number` | id for [getByHandle](#getbyhandle); `m_h*` fields hold these |
 | `className: string` | schema class, e.g. `"C_CSPlayerPawn"` |
-| `address: Pointer \| null` | where it lives in game memory, see [Pointer](/api/types/pointer) |
+| `address: Pointer \| null` | address in game memory, see [Pointer](/api/types/pointer) |
 | `toString(): string` | `"Entity(12, C_CSPlayerPawn)"`, with `", stale"` once it's gone |
 
-An entity object is bound to one entity (slot + serial). Looking it up twice gives the same object, so `===` and `Map` keys work.
-
-When the entity is destroyed `alive` turns `false` for good. The object never re-binds to whatever takes the slot next. From then on schema fields, `address`, `read`, `bytes` and every helper return `null`. `index`, `handle`, `className` and `toString()` keep working.
+The same entity is always the same object, so `===` and `Map` keys work. Once it's destroyed, `alive` is `false`
+for good and fields, `address`, `read`, `bytes` and helpers return `null`; `index`, `handle` and `className` still work.
 
 ```ts
 let target: IPlayerPawn | null = null;
@@ -485,7 +308,7 @@ on("tick", () => {
 
 ## Schema fields
 
-Every field of the game schema is a read-only property with its schema name: `pawn.m_iHealth`, `pawn.m_ArmorValue`. Autocompletion shows what each class has; the types come from `entities.d.ts`, where class `C_CSPlayerPawn` is `IC_CSPlayerPawn`. Assigning a field throws `TypeError`.
+Every schema field is a read-only property under its schema name: `pawn.m_iHealth`, `pawn.m_ArmorValue`. Autocompletion shows what each class has; the type for class `C_CSPlayerPawn` is `IC_CSPlayerPawn`.
 
 | Schema type | Reads as |
 |:------------|:---------|
@@ -519,7 +342,7 @@ Nested structs (`m_pWeaponServices` above, `getWeaponData()`) have `address`, `r
 entity.read<T extends ScalarType>(type: T, offset: number): ScalarValue<T> | null
 ```
 
-Decodes one value `offset` bytes into the tick-cached copy of the object, for data the schema doesn't name. Types are the [Pointer](/api/types/pointer#scalar-types) ones; strings end at the first NUL. `RangeError` past the end of the object, `null` once it's gone.
+Reads one value `offset` bytes into the object, for data the schema doesn't name. Types are the [Pointer](/api/types/pointer#scalar-types) ones. `RangeError` past the end of the object.
 
 ```ts
 const health = pawn.read("int32", 0x34C);
@@ -536,7 +359,7 @@ const origin = pawn.read("vector", 0x1224);
 entity.bytes(offset?: number, size?: number): Uint8Array | null
 ```
 
-A copy of `size` bytes from `offset`, defaulting to the whole object. `RangeError` past the end, `null` once it's gone.
+A copy of `size` bytes from `offset`, defaulting to the whole object. `RangeError` past the end.
 
 ```ts
 const raw = pawn.bytes(0x300, 0x40);
@@ -546,14 +369,14 @@ const raw = pawn.bytes(0x300, 0x40);
 
 ## Helpers
 
-Every helper returns `null` once the entity is gone or when the data isn't there (no model, no scene node).
+Helpers return `null` when the data isn't there (entity gone, no model).
 
 | Every entity | |
 |:-------------|:--|
-| `getOrigin(): Vector \| null` | scene-node absolute origin |
+| `getOrigin(): Vector \| null` | world position |
 | `getVelocity(): Vector \| null` | |
 | `getBounds(): Bounds \| null` | world-space collision box `{ mins, maxs }` at the current origin |
-| `isEnemy(other: EntityRef): boolean \| null` | on a different team, honours `mp_teammates_are_enemies`; `null` when either is gone |
+| `isEnemy(other: EntityRef): boolean \| null` | on a different team, honours `mp_teammates_are_enemies` |
 
 | Model entities (pawns, weapons, props) | |
 |:---------------------------------------|:--|
@@ -567,7 +390,7 @@ Every helper returns `null` once the entity is gone or when the data isn't there
 |:--------------------|:--|
 | `controller: ICCSPlayerController \| null` | the controller owning a pawn |
 | `getViewAngles(): QAngle \| null` | `m_angEyeAngles`, `C_CSPlayerPawn` only |
-| `getWeaponData(): ICCSWeaponBaseVData \| null` | the weapon's VData (a schema struct, not an entity) |
+| `getWeaponData(): ICCSWeaponBaseVData \| null` | the weapon's static data: name, damage, clip size… |
 
 ```ts
 const weapon = me.m_pWeaponServices?.m_hActiveWeapon;
@@ -585,7 +408,7 @@ console.log(data?.m_szName, data?.m_nDamage, me.getBounds()?.maxs);
 entity.isVisible(target: EntityRef, point?: Vec3Like): boolean | null
 ```
 
-Line of sight through world geometry from this entity's eyes (box centre if it isn't a pawn) to `target`'s eyes or box centre. Pass `point` to test that spot instead. `null` without a map or when either end is unknown.
+Line of sight through world geometry from this entity's eyes (box centre if it isn't a pawn) to `target`'s eyes or box centre. Pass `point` to test that spot instead. `null` when no map is loaded.
 
 ```ts
 if (me.isVisible(enemy)) console.log("eyes visible");
@@ -617,7 +440,7 @@ Hitboxes and bones of the current pose, in model order. Look one up by name, or 
 | `bone`, `boneName` | the bone it's attached to |
 | `group` | 1 head, 2 chest, 3 stomach, 4/5 arms, 6/7 legs, 8 neck |
 | `radius` | capsule radius, 0 for boxes |
-| `start`, `end` | world-space ends (`mins`/`maxs` through the bone) |
+| `start`, `end` | world-space ends |
 | `mins`, `maxs` | bone-space bounds |
 | `shapeType`, `surfaceProperty` | |
 
@@ -635,7 +458,7 @@ for (const bone of enemy.getBones() ?? [])
 
 ## EntityQuery
 
-What [find](#find) returns. It's lazy and immutable: `filter` returns a new query, and every other call walks the snapshot again. A callback that throws stops the walk.
+What [find](#find) returns. `filter` returns a new query and leaves the original unchanged.
 
 | Method | Returns |
 |:-------|:--------|
@@ -703,8 +526,8 @@ import esp from "@native/esp";
 ```
 
 <Note>
-  `evaluate` runs once per entity every tick (128 Hz), not per frame, so keep it cheap. You don't
-  draw anything yourself: return a value and the builder draws it.
+  `evaluate` runs once per entity every tick, so keep it cheap. You don't draw anything yourself:
+  return a value and the builder draws it.
 </Note>
 
 ## Overview
@@ -738,8 +561,7 @@ import esp from "@native/esp";
 esp.class(kind: "enemy" | "team" | "dropped", options?: { context?: ((entity) => Ctx) | null }): EspClass
 ```
 
-The ESP of one kind of entity. Returns the same object every time for the same kind. An unknown
-kind throws `TypeError`.
+The ESP of one kind of entity. Returns the same object every time for the same kind.
 
 | Kind | Evaluates |
 |:-----|:----------|
@@ -785,15 +607,14 @@ Every element takes the same definition object.
 
 | Field | |
 |:------|:--|
-| `name` | Identity within the class and element type. 1–128 bytes. |
+| `name` | Identity within the class and element type. |
 | `label` | Label in the builder. Default `name`. |
 | `area` | Starting spot: `"top"`, `"bottom"`, `"left"`, `"right"` or `"center"`. The user can drag it elsewhere. |
 | `preview` | What the builder preview shows. Same shape as the `evaluate` result. |
 | `evaluate(entity, ctx)` | Returns the value for one entity this tick. |
 
-A missing name, a non-function `evaluate`, an unknown `area` or a bad `preview` throws `TypeError`.
 A throw inside `evaluate` hides the element on that entity for the tick and is reported through
-the global `error` event, once, until it runs a whole tick clean.
+the global `error` event.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -880,7 +701,7 @@ For `text` and `icon`.
 | `text` | String or number. |
 | `color`, `colorAlt` | `ColorLike`. `colorAlt` switches to a gradient. |
 | `colorMode` | `"solid"` or `"gradient"`. |
-| `size` | Font size in pixels, `> 0`. |
+| `size` | Font size in pixels. |
 | `font` | Text only: `"segoe"`, `"tahoma"`, `"verdana"`, `"arial"` or `"weapon-icons"`. |
 | `outline` | `boolean`. |
 | `visible` | `false` hides the element and ignores the other keys. |
@@ -892,10 +713,10 @@ For `text` and `icon`.
 | `value`, `max` | The bar shows `value / max`, clamped to `0..1`. `max` defaults to `1`. |
 | `color`, `colorAlt` | `ColorLike`. `colorAlt` switches to a gradient. |
 | `colorMode` | `"solid"`, `"gradient"`, or `"value"` (blends `color` when empty to `colorAlt` when full). |
-| `thickness`, `rounding` | Pixels, `>= 0`. |
-| `divisions` | `0` for one bar, `1..64` segments. |
+| `thickness`, `rounding` | Pixels. |
+| `divisions` | Number of segments, `0` for one solid bar. |
 | `reverse`, `outline` | `boolean`. |
-| `outlineThickness` | Whole pixels, `0..16`. |
+| `outlineThickness` | Pixels. |
 | `visible` | `false` hides the element and ignores the other keys. |
 
 ---
@@ -915,8 +736,8 @@ the element: the new one keeps the builder slot and the user's layout, the old h
 | `preview` | Read or replace. `undefined` removes it. |
 | `dispose()` | Removes it from the builder. Also `using`. |
 
-On a dead handle reads return `null` and writes throw an `Error` with code `ESTALE`. Everything is
-removed when the script unloads.
+On a dead handle reads return `null` and writes throw. Everything is removed when the script
+unloads.
 
 ```ts
 const armor = esp.class("enemy").bar({ name: "armor", evaluate: (pawn) => pawn.m_ArmorValue / 100 });
@@ -969,16 +790,15 @@ description: "Load DLLs, call their exports, lay out C structs and pass JS callb
 icon: "plug"
 ---
 
-Calls into native libraries loaded in the host process.
+Load DLLs and call their exports.
 
 ```ts
 import ffi from "@native/ffi";
 ```
 
 <Note>
-  Needs the `ffi` [permission](/api/manifest#permissions); without it the import throws `EPERM`.
-  Addresses here are host-process addresses: `bigint`, with `null` for NULL. Game memory is
-  [Pointer](/api/types/pointer), and a `Pointer` passed to a pointer parameter passes its integer value.
+  Needs the `ffi` [permission](/api/manifest#permissions). Addresses here are addresses in the cheat's
+  own process: `bigint`, with `null` for NULL. Game memory is [Pointer](/api/types/pointer).
 </Note>
 
 ## Overview
@@ -994,13 +814,10 @@ import ffi from "@native/ffi";
     `struct`, `union`, `typedef`, `sizeOf`, views.
   </Card>
   <Card title="Callbacks" icon="reply" href="#callbacks">
-    `callback`, the thread rule.
+    `callback`.
   </Card>
   <Card title="Memory helpers" icon="memory" href="#memory-helpers">
     `alloc`, `free`, `readString`, `lastError`, …
-  </Card>
-  <Card title="Errors" icon="triangle-exclamation" href="#errors">
-    Which code means what.
   </Card>
 </CardGroup>
 
@@ -1018,8 +835,7 @@ import ffi from "@native/ffi";
 ffi.open(path: string): Library
 ```
 
-Loads a DLL with `LoadLibrary`, so bare names use the DLL search order. Throws `ENOENT` when it can't
-be found, `EACCES` or `ELIBBAD` for other load failures.
+Loads a DLL. Bare names use the normal DLL search order. Throws `ENOENT` when it isn't found.
 
 ```ts
 const k32 = ffi.open("kernel32.dll");   // loaded until k32.dispose() or unload
@@ -1036,8 +852,8 @@ lib.func<F>(signature: string): F
 lib.func<F>(name: string, returns: CType, params?: CType[]): F
 ```
 
-Binds an export as a JS function. Throws `ENOENT` for a missing export, `TypeError` for a bad
-signature. The type parameter only types the result; the signature decides the conversion.
+Binds an export as a JS function. Throws `ENOENT` for a missing export. The type parameter only types
+the result; the signature decides the conversion. A crash inside the native call throws `EFAULT`.
 
 ```ts
 const beep = k32.func<(freq: number, ms: number) => boolean>("BOOL Beep(DWORD dwFreq, DWORD dwDuration)");
@@ -1057,9 +873,8 @@ lib.funcAsync<F>(signature: string): (...args) => Promise<ReturnType<F>>
 lib.funcAsync<F>(name: string, returns: CType, params?: CType[]): (...args) => Promise<ReturnType<F>>
 ```
 
-Like `func`, but each call runs on the thread pool. Arguments are converted and buffers kept alive when
-you call; `_Out_` holders are filled before the Promise resolves. A native fault rejects with `EFAULT`.
-`ffi.lastError()` doesn't see async calls.
+Like `func`, but each call runs in the background and returns a Promise. `_Out_` holders are filled
+before it resolves. `ffi.lastError()` doesn't see async calls.
 
 ```ts
 const sleepAsync = k32.funcAsync<(ms: number) => void>("void Sleep(DWORD)");
@@ -1113,8 +928,8 @@ const addr = k32.symbol("GetProcAddress");
 lib.dispose(): void
 ```
 
-Unloads the library once no async call is still running in it. Idempotent. After that, every function
-bound from it throws `ESTALE`. `using` does it at the end of the block.
+Unloads the library. Functions bound from it throw `ESTALE` afterwards. `using` does it at the end of
+the block.
 
 ```ts
 function tickCount(): number {
@@ -1137,7 +952,7 @@ function tickCount(): number {
 param:  [_In_ | _Out_ | _Inout_] <type> [name]
 ```
 
-Parameter names only show up in error messages. Calling conventions are accepted and ignored (x64 has one).
+Parameter names are optional. Calling conventions are accepted and ignored.
 
 | Type names | JS value |
 |:-----------|:---------|
@@ -1152,13 +967,10 @@ Parameter names only show up in error messages. Calling conventions are accepted
 `long` is 32-bit (Windows). `const`, `struct X`, `enum X` (an `int`), the Win32 pointer aliases
 (`LPDWORD`, `PHANDLE`, …) and your own `typedef`/struct names work too. Unknown names throw `TypeError`.
 
-**Strings.** A JS string passed to a string parameter becomes a temporary NUL-terminated copy that lives
-for the call. String parameters also take any pointer value, e.g. a buffer the function writes into.
-Everything else that's a pointer is a raw address. Numbers, bigints and booleans are strict: no coercion,
-`RangeError` when out of range.
+**Strings.** A JS string passed to a string parameter is only valid during the call. String parameters
+also take a buffer the function writes into. Numbers, bigints and booleans aren't coerced.
 
-**Pointer arguments** take a `bigint`, `null`, any `BufferSource` or struct view (its first byte), a
-`Pointer` (its integer value) or a `Callback` (its address). Anything else is a `TypeError`.
+**Pointer arguments** take a `bigint`, `null`, a `BufferSource` or struct view, a `Pointer` or a `Callback`.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -1229,9 +1041,8 @@ ffi.struct(name: string, fields: FieldDefs): StructType
 ffi.struct(fields: FieldDefs): StructType
 ```
 
-Defines a C struct. Fields are laid out in definition order with natural C alignment. A named struct
-can then be used by name in this script's signatures, fields and typedefs; redefining a name only affects
-later uses. Field names can't start with `$`.
+Defines a C struct, laid out in field order with C alignment. A named struct can then be used by name
+in this script's signatures, fields and typedefs.
 
 ```ts
 const Vec3 = ffi.struct("Vec3", { x: "float", y: "float", z: "float" });
@@ -1257,7 +1068,7 @@ for reading game memory.
 | Function | |
 |:---------|:--|
 | `ffi.union(name?, fields): StructType` | all fields at offset 0, `kind: "union"` |
-| `ffi.typedef(alias, type): void` | names a type for this script; built-in names can't be redefined |
+| `ffi.typedef(alias, type): void` | names a type for this script |
 | `ffi.sizeOf(type): number` | size in bytes, `"T[N]"` included |
 
 ```ts
@@ -1265,8 +1076,6 @@ const IntOrFloat = ffi.union("IntOrFloat", { i: "int32", f: "float" });
 ffi.typedef("PPOINT", "POINT*");
 ffi.sizeOf("wchar_t[260]");   // 520
 ```
-
-Typedefs and struct names are per script. Two scripts never see each other's.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -1281,12 +1090,11 @@ Typedefs and struct names are per script. Two scripts never see each other's.
 | `from(init?)` | a new struct from any subset of fields (the rest are zero), or a copy of a view |
 | `view(source, offset?)` | a live view over existing memory, not a copy |
 | `decode(source, offset?)` | a plain-object copy |
-| `array(count)` | `count` zeroed structs in one buffer (up to 256 MB) |
+| `array(count)` | `count` zeroed structs in one buffer |
 | `offsetOf(field)` | byte offset, or `null` for an unknown field |
 
-`view` and `decode` take a `bigint` address, a `BufferSource` or another view. Buffers are bounds-checked,
-and `offset` must be a multiple of `alignment` (`RangeError` otherwise). An address source needs the
-`ffi` permission even for a `memory.struct` type, and `decode` throws `EFAULT` when it's unreadable.
+`view` and `decode` take a `bigint` address, a `BufferSource` or another view. `offset` must be a
+multiple of `alignment`.
 
 ```ts
 const Point = ffi.struct("Point", { x: "int32", y: "int32" });
@@ -1314,9 +1122,7 @@ Fields of a view read and write the memory directly. Besides its fields a view h
 | `$buffer` | the `ArrayBuffer` behind it (shared by all views of one `array()`) |
 | `$offset` | byte offset inside `$buffer` |
 | `$size` | size of the struct |
-| `$address` | host address of the first byte, `null` once the buffer is detached |
-
-If the buffer is detached or shrunk below the view, field reads return `null` and writes throw `ESTALE`.
+| `$address` | address of the first byte |
 
 ---
 
@@ -1334,8 +1140,8 @@ ffi.callback(returns: CType, params: CType[], fn: (...args) => unknown): Callbac
 ```
 
 Exposes `fn` as a native function pointer. Pass the `Callback` (or its `address`) wherever a function
-pointer goes. String arguments arrive as `string | null`, structs as views over a copy. A callback can't
-return a string type (return `ptr`) and can't be variadic.
+pointer goes. String arguments arrive as `string | null`. A callback can't return a string (return
+`ptr`) and can't be variadic.
 
 ```ts
 const enumWindows = user32.func("BOOL EnumWindows(void*, LPARAM)");
@@ -1355,14 +1161,14 @@ function listWindows(): (bigint | null)[] {
 |:---------|:--|
 | `address` | `bigint`, `null` once disposed |
 | `alive` | `false` once disposed |
-| `dispose()` | releases the JS function; the pointer keeps returning 0 for a while before it's reused |
+| `dispose()` | releases `fn`; native code must not call the pointer afterwards |
 
-An exception thrown by `fn` goes to the global `error` event, and native code gets 0.
+If `fn` throws, native code gets 0 and the error goes to the global `error` event.
 
 <Warning>
-  `fn` runs right away only when native code calls it on the script thread during one of your synchronous
-  FFI calls. Called from any other thread, or outside an FFI call (a hook), a `void` callback is queued to
-  the next tick with its arguments copied; any other callback returns 0 at once and reports `ETHREAD` once.
+  `fn` only runs synchronously when native code calls it during one of your own synchronous FFI calls
+  (like `EnumWindows`). Called any other time, such as from another thread, a `void` callback runs on the
+  next tick and any other callback returns 0.
 </Warning>
 
 ---
@@ -1371,16 +1177,13 @@ An exception thrown by `fn` goes to the global `error` event, and native code ge
 
 | Function | |
 |:---------|:--|
-| `ffi.alloc(size): ArrayBuffer` | zeroed, garbage-collected, 0 to 256 MB |
-| `ffi.free(ptr: bigint \| null): void` | frees memory a library allocated with the CRT `malloc`; `null` is a no-op |
+| `ffi.alloc(size): ArrayBuffer` | zeroed, garbage-collected |
+| `ffi.free(ptr: bigint \| null): void` | frees memory a library allocated with `malloc` |
 | `ffi.addressOf(value): bigint \| null` | address of a buffer's or view's first byte, `null` when empty; valid while the buffer lives |
 | `ffi.readString(ptr, maxBytes?): string \| null` | NUL-terminated UTF-8; `null` for NULL |
 | `ffi.readWString(ptr, maxUnits?): string \| null` | same for UTF-16 |
 | `ffi.writeString(buffer, text): number` | writes NUL-terminated UTF-8, returns bytes written without the NUL; `RangeError` if it doesn't fit |
-| `ffi.lastError(): number` | `GetLastError()` right after this script's last synchronous FFI call |
-
-`readString` from a buffer or view stops at its end. From an address it reads at most `maxBytes`
-(default 1 MB) and throws `EFAULT` if the memory is unreadable.
+| `ffi.lastError(): number` | `GetLastError()` after the last synchronous FFI call |
 
 ```ts
 const buf = ffi.alloc(260);
@@ -1390,21 +1193,6 @@ ffi.readString(buf);   // "hello"
 const getModule = k32.func<(name: string) => bigint | null>("HMODULE GetModuleHandleA(LPCSTR)");
 if (getModule("nope.dll") === null) console.log("error", ffi.lastError());   // 126
 ```
-
----
-
-## Errors
-
-| Error | When |
-|:------|:-----|
-| `TypeError` | bad type name or signature, wrong argument type |
-| `RangeError` | number out of range for its type, bad offset or size |
-| `ENOENT` | DLL or export not found |
-| `EACCES`, `ELIBBAD` | the DLL failed to load |
-| `EFAULT` | native fault inside a call (access violation, …), unreadable address |
-| `ESTALE` | disposed `Library` or `Callback`, or a function bound from a disposed library |
-| `EPERM` | import, or `view`/`decode` of an address, without the `ffi` permission |
-| `ETHREAD` | reported (not thrown) for a non-void callback called off the script thread |
 
 ---
 
@@ -1447,17 +1235,16 @@ description: "Node-style file I/O rooted at the script's data/ folder."
 icon: "folder-open"
 ---
 
-File I/O shaped like Node's `fs`. Every async function has a `*Sync` twin with the same behaviour; the
-async ones run on a thread pool and never block the script.
+File I/O shaped like Node's `fs`. Every async function has a `*Sync` twin that blocks until it's done.
 
 ```ts
 import fs from "@native/fs";
 ```
 
 <Note>
-  Relative paths start at the script's `data/` folder (created on first import). Without the `filesystem`
-  [permission](/api/manifest#permissions) everything stays inside it: an absolute path, a `..` escape or a
-  link pointing out throws `ESANDBOX`. With it, absolute paths are used as given.
+  Relative paths start at the script's `data/` folder. Without the `filesystem`
+  [permission](/api/manifest#permissions) everything stays inside it, and paths leading out throw.
+  With it, absolute paths work as usual.
 </Note>
 
 ## Overview
@@ -1477,8 +1264,7 @@ import fs from "@native/fs";
   </Card>
 </CardGroup>
 
-Failures are thrown by the `*Sync` functions and reject the others, as an `Error` with `code`, `syscall`
-and `path`. A wrong argument type is a `TypeError` thrown synchronously by both. See [Errors](#errors).
+Failures throw (or reject) an `Error` with a Node-style `code` such as `ENOENT`. See [Errors](#errors).
 
 ---
 
@@ -1495,16 +1281,14 @@ fs.readFile(path: string, options?: BufferEncoding | { encoding?: BufferEncoding
 fs.readFileSync(path: string, options?: ...): string | Uint8Array
 ```
 
-Reads a whole file: a `Uint8Array` without an encoding, a string with one. Files over 1 GiB throw a
-`RangeError` with code `ERR_FS_FILE_TOO_LARGE`.
+Reads a whole file: a `Uint8Array` without an encoding, a string with one.
 
 ```ts
 const raw = await fs.readFile("icon.png");                 // Uint8Array
 const config = JSON.parse(fs.readFileSync("config.json", "utf8"));
 ```
 
-Encodings (case-insensitive): `utf8`, `latin1` (`binary`), `ascii`, `hex`, `base64`, `base64url`,
-`utf16le` (`ucs2`).
+Encodings: `utf8`, `latin1`, `ascii`, `hex`, `base64`, `base64url`, `utf16le`.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -1517,8 +1301,7 @@ fs.writeFile(path: string, data: string | BufferSource, options?: BufferEncoding
 fs.writeFileSync(path, data, options?): void
 ```
 
-Creates or replaces a file. Strings are encoded as UTF-8 unless you pass an encoding; the encoding is
-ignored for binary data.
+Creates or replaces a file. Strings are written as UTF-8 unless you pass an encoding.
 
 ```ts
 await fs.writeFile("output.txt", "Hello, world!");
@@ -1558,7 +1341,7 @@ fs.exists(path: string): Promise<boolean>
 fs.existsSync(path: string): boolean
 ```
 
-`true` when something exists at `path`. A path outside the sandbox still throws `ESANDBOX`.
+`true` when something exists at `path`.
 
 ```ts
 if (!fs.existsSync("config.json")) fs.writeFileSync("config.json", "{}");
@@ -1575,7 +1358,7 @@ fs.stat(path: string): Promise<Stats>
 fs.statSync(path: string): Stats
 ```
 
-Follows symbolic links. Throws `ENOENT` when nothing is there.
+Throws `ENOENT` when nothing is there.
 
 ```ts
 const st = fs.statSync("config.json");
@@ -1587,7 +1370,7 @@ console.log(st.size, new Date(st.mtimeMs), st.isFile());
 | `size` | bytes, `0` for directories |
 | `atimeMs`, `mtimeMs`, `birthtimeMs` | ms since the Unix epoch |
 | `isFile()`, `isDirectory()` | |
-| `isSymbolicLink()` | always `false`, links are followed |
+| `isSymbolicLink()` | always `false` |
 
 {/* ------------------------------------------------------------------ */}
 
@@ -1600,8 +1383,8 @@ fs.mkdir(path: string, options?: { recursive?: boolean }): Promise<void>
 fs.mkdirSync(path, options?): void
 ```
 
-Throws `EEXIST` when the directory exists and `ENOENT` when the parent is missing. With `recursive`
-it creates the parents and succeeds when the directory is already there.
+Creates a directory. With `recursive` it also creates missing parents and doesn't fail when the
+directory already exists.
 
 ```ts
 await fs.mkdir("saves/p1", { recursive: true });
@@ -1618,8 +1401,7 @@ fs.rmdir(path: string, options?: { recursive?: boolean }): Promise<void>
 fs.rmdirSync(path, options?): void
 ```
 
-Removes a directory: `ENOENT` when missing, `ENOTDIR` for a file, `ENOTEMPTY` when it has entries
-and `recursive` isn't set. Without `filesystem`, `data/` itself can't be removed (`ESANDBOX`).
+Removes a directory. Without `recursive` it must be empty (`ENOTEMPTY`).
 
 ```ts
 fs.rmdirSync("cache", { recursive: true });
@@ -1632,7 +1414,7 @@ fs.rmdirSync("cache", { recursive: true });
 | Function | |
 |:---------|:--|
 | `readdir(path): Promise<string[]>` | entry names (not paths), without `.` and `..` |
-| `unlink(path): Promise<void>` | deletes a file; `ENOENT` when missing, `EISDIR` for a directory |
+| `unlink(path): Promise<void>` | deletes a file |
 | `rename(oldPath, newPath): Promise<void>` | moves or renames, replacing an existing file |
 | `copyFile(src, dest): Promise<void>` | copies a file, replacing an existing one |
 | `truncate(path, length = 0): Promise<void>` | shrinks or zero-extends to `length` bytes |
@@ -1660,24 +1442,21 @@ fs.watch(path: string, listener: (eventType: "rename" | "change", filename: stri
 ```
 
 Calls `listener` for every change: `"rename"` for created, deleted or renamed entries, `"change"` for
-modified ones. `filename` is relative to the watched path, or `null` when the OS didn't report one.
-Throws (`ENOENT`, …) when the path can't be watched.
+modified ones. `filename` is relative to the watched path, and can be `null`.
 
 ```ts
 const watcher = fs.watch("configs", (event, name) => console.log(event, name), { recursive: true });
 watcher.close();
 ```
 
-A listener that throws is reported like any uncaught error and the watcher keeps running. An error in
-the watcher itself closes it and is reported the same way. Watchers close when the script unloads;
-`close()`, `using` or an aborted `signal` close them earlier.
+A listener that throws doesn't stop the watcher. Watchers close on unload, or earlier with `close()`,
+`using` or an aborted `signal`.
 
 ---
 
 ## Paths
 
-`fs.path` is Node's `path` (Windows flavour) for the common helpers. Pure string work: no I/O, no
-sandbox check.
+`fs.path` has the common helpers of Node's `path` (Windows flavour). String work only, no I/O.
 
 | Function | Example |
 |:---------|:--------|
@@ -1691,12 +1470,7 @@ sandbox check.
 
 ## Errors
 
-| Property | |
-|:---------|:--|
-| `code` | `ENOENT`, `EEXIST`, `EISDIR`, `ENOTDIR`, `ENOTEMPTY`, `EACCES`, `EBUSY`, `ESANDBOX`, … |
-| `syscall` | the failed operation (`"open"`, `"mkdir"`, …); absent for `ESANDBOX` |
-| `path` | the path as you passed it |
-| `dest` | the second path of `rename` / `copyFile` |
+Errors carry Node's `code` (`ENOENT`, `EEXIST`, `ENOTEMPTY`, …) and the `path` you passed.
 
 ```ts
 try {
@@ -1750,10 +1524,7 @@ Engine globals and your match state, as of the current tick.
 import game from "@native/game";
 ```
 
-<Note>
-  Every property is a read-only live getter, refreshed right before `tick`. Read them as `game.curTime`;
-  the module has no named exports. Engine numbers are `0` until the game client has initialised.
-</Note>
+All properties are read-only. Read them off the default export (`game.curTime`); there are no named exports.
 
 | Property | |
 |:---------|:--|
@@ -1813,7 +1584,7 @@ What every script has without an import.
 
 <Note>
   Logic goes in `tick` (128 Hz), drawing in `render` (once per overlay frame).
-  `render.*` draw calls anywhere else throw `EPHASE`.
+  `render.*` draw calls anywhere else throw.
 </Note>
 
 ## Overview
@@ -1850,8 +1621,7 @@ and `on<type>` properties see the same events.
 on(type: string, listener: (event: Event) => void, options?: SubscribeOptions): Subscription
 ```
 
-Adds a listener and returns a [Subscription](#subscriptions). The listener gets the event
-object. Throws `TypeError` when `type` isn't a string or `listener` isn't a function.
+Adds a listener and returns a [Subscription](#subscriptions).
 
 ```ts
 const sub = on("keydown", (e) => {
@@ -1882,8 +1652,7 @@ on("scoreChanged", (e) => console.log(e.detail)); // e.detail: number
 emit("scoreChanged", 10);
 ```
 
-Augmenting `ScriptCustomEvents` types `detail` for both calls. Emitting a host type such as
-`"tick"` only reaches its listeners as a `CustomEvent`.
+Augmenting `ScriptCustomEvents` types `detail` for both calls.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -1908,7 +1677,7 @@ onkeydown = (e) => console.log(e.key);
 
 | Type | Event | When |
 |:-----|:------|:-----|
-| `tick` | `Event` | 128 times a second. Entity, game and input data is refreshed right before it. |
+| `tick` | `Event` | 128 times a second. Put logic here. |
 | `render` | `Event` | Once per overlay frame. Draw here. |
 | `unload` | `Event` | Before the script is unloaded or reloaded. Not fired when it stops on an error. |
 | `keydown` / `keyup` | `KeyboardEvent` | Key pressed (again while held, `repeat: true`) / released |
@@ -1940,8 +1709,7 @@ Fields follow the DOM.
 | `deltaY` | `wheel` | `-100` per notch up, `+100` per notch down |
 | `ctrlKey`, `shiftKey`, `altKey`, `metaKey` | all input | Modifier state |
 
-Host events aren't cancelable. The input has already reached the game, so `preventDefault()`
-does nothing.
+`preventDefault()` on input events does nothing; the game still gets the input.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -1970,11 +1738,11 @@ on("unhandledrejection", (e) => {
 
 `on` and every other subscribe-style call (ui `.on(...)`, `ui.effect`, key binds) return a
 `Subscription`: a function that unsubscribes when called. `.dispose()` and `[Symbol.dispose]` do
-the same. All three are idempotent. Dropping the function does not unsubscribe.
+the same. Dropping the function does not unsubscribe.
 
 | Option | Type | Effect |
 |:-------|:-----|:-------|
-| `signal` | `AbortSignal` | Unsubscribes when the signal aborts. An already-aborted signal subscribes nothing. |
+| `signal` | `AbortSignal` | Unsubscribes when the signal aborts. |
 | `once` | `boolean` | Unsubscribes after the first delivery. |
 
 ```ts
@@ -1992,42 +1760,22 @@ controller.abort(); // both gone
 
 ## Timers
 
-`setTimeout`, `setInterval`, `clearTimeout` and `clearInterval` work as in a browser, with
-extra arguments passed to the callback. Timers belong to the script and die with it.
+`setTimeout`, `setInterval`, `clearTimeout` and `clearInterval` work as in a browser. Callbacks
+run at most once per tick, so `setInterval(fn, 0)` repeats every tick.
 
 ```ts
 const id = setInterval((label: string) => console.log(label), 1000, "every second");
 setTimeout(() => clearInterval(id), 5000);
 ```
 
-| Rule | |
-|:-----|:-|
-| Handler | Must be a function. A string throws `TypeError`. |
-| `delay` | A number or omitted (`TypeError` otherwise). `NaN`, negative and infinite mean `0`; above `2^31 - 1` ms it's clamped. |
-| Resolution | Callbacks run on the script thread, at most once per tick. `setInterval(fn, 0)` repeats every tick. |
-| Ids | Per script, shared by both kinds. Either `clear` function cancels either. |
-| Errors | A throwing callback fires `error`. |
-
----
-
-## Time limits
-
-All scripts share one thread, so the host times every call into JavaScript. Only JavaScript time
-counts; slow native calls (a big scan, a sync file read) pause the clock.
-
-| Code | Warning | Stopped |
-|:-----|:--------|:--------|
-| A listener, timer or callback | 250 ms | 2 s |
-| Top-level code while loading | 2 s | 15 s |
-
-A stopped script is unwound and marked as errored.
+A listener or timer that runs for more than 2 seconds is stopped and the script is marked as errored.
 
 ---
 
 ## console
 
-Output goes to the cheat log, tagged with the script name. Objects print inspected
-(`{ a: 1 }`), printf placeholders `%s %d %i %f %o %O %j %c` work, and getters are never called.
+Output goes to the cheat log, tagged with the script name. Objects print inspected (`{ a: 1 }`)
+and printf placeholders (`%s`, `%d`, `%o`, …) work.
 
 | Method | Log level |
 |:-------|:----------|
@@ -2074,20 +1822,8 @@ if (!script.permissions.includes("ffi")) console.warn("ffi disabled");
 
 ## Web runtime
 
-The context is shaped like a Web Worker. These are there, typed by `lib.dom`:
-
-| Area | Globals |
-|:-----|:--------|
-| Network | `fetch`, `WebSocket`, `EventSource`, `XMLHttpRequest`, see [Networking](/api/networking) |
-| Data | `URL`, `TextEncoder`/`TextDecoder`, `Blob`, `File`, `FormData`, `FileReader`, `structuredClone` |
-| Streams | Web Streams, `CompressionStream`, `DecompressionStream` |
-| Crypto | `crypto.getRandomValues`, `crypto.randomUUID`, `crypto.subtle` |
-| Scheduling | `queueMicrotask`, `requestAnimationFrame`, `requestIdleCallback`, `MessageChannel`, `performance` |
-| Misc | `AbortController`, `navigator`, `reportError`, `self`, `globalThis`, [localStorage](/api/localStorage) |
-
-`window`, `document`, `sessionStorage`, `indexedDB`, `Worker`, `alert`, `prompt` and `onmessage`
-don't exist, even though `lib.dom` types them. `Symbol.dispose` exists, `DisposableStack` doesn't.
-Details on [Web APIs](/api/web).
+Standard web APIs (`fetch`, `URL`, `TextEncoder`, `crypto`, …) are globals too, see [Web APIs](/api/web)
+and [Networking](/api/networking). Storage is [localStorage](/api/localStorage).
 
 ---
 
@@ -2119,21 +1855,20 @@ on("unload", () => console.log(`${script.name} unloaded`));
 ---
 title: "Input"
 sidebarTitle: "Input"
-description: "Key and mouse state, input injection and the engine's input snapshot."
+description: "Key and mouse state, input injection, view angles and movement."
 icon: "keyboard"
 ---
 
-Reads keys and mouse buttons, sends input to the game, and exposes the engine's view angles and
-movement.
+Reads keys and mouse buttons, sends input to the game, and exposes view angles and movement.
 
 ```ts
 import input from "@native/input";
 ```
 
 <Note>
-  Keys are [Win32 virtual-key codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes),
-  integers `1..254` (`0x41` is A). Mouse buttons use DOM numbering: `0` left, `1` middle, `2` right,
-  `3` back, `4` forward. Anything else throws `TypeError` or `RangeError`.
+  Keys are [Win32 virtual-key codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes)
+  (`0x41` is A). Mouse buttons use DOM numbering: `0` left, `1` middle, `2` right, `3` back,
+  `4` forward.
 </Note>
 
 ## Overview
@@ -2227,7 +1962,7 @@ input.mouseClick(0);
 input.moveMouse(dx: number, dy: number): boolean
 ```
 
-A raw relative mouse move. `dx` and `dy` are integers in the int32 range.
+A raw relative mouse move, in whole counts.
 
 ```ts
 input.moveMouse(0, 4); // pull down a little
@@ -2243,9 +1978,8 @@ input.moveMouse(0, 4); // pull down a little
 input.moveToAngle(angle: AngleLike): boolean
 ```
 
-Moves the mouse by what it takes to turn the view to `angle` (degrees), using `sensitivity`,
-`m_yaw` and `m_pitch`. Also `false` when the view angles or those convars can't be read. Already
-there is `true` with nothing sent.
+Moves the mouse by what it takes to turn the view to `angle` (degrees), using your `sensitivity`,
+`m_yaw` and `m_pitch`.
 
 ```ts
 const view = input.state.viewAngles;
@@ -2256,12 +1990,12 @@ if (view) input.moveToAngle(view.lerp(target, 0.2)); // a fifth of the way per c
 
 ## State
 
-`input.state` is the engine's input as of the current tick. Every field is `null` while it can't
-be read, e.g. while the game is loading.
+`input.state` is the game's input as of the current tick. Every field is `null` while it can't be
+read, e.g. while the game is loading.
 
 | Field | Type |
 |:------|:-----|
-| `viewAngles` | [QAngle](/api/types/qangle), a new one on every read |
+| `viewAngles` | [QAngle](/api/types/qangle) |
 | `thirdPersonAngles` | `QAngle` |
 | `forwardMove`, `leftMove`, `upMove` | `number` |
 | `mouseDeltaX`, `mouseDeltaY` | `number` |
@@ -2309,14 +2043,12 @@ icon: "database"
 The browser's `localStorage`, persistent across script reloads and game restarts. Global, no import.
 
 <Note>
-  Storage is per script **folder**, not `manifest.name`: two scripts never see each other's keys, even
-  with the same name.
+  Storage is per script **folder**, not `manifest.name`. Scripts never see each other's keys.
 </Note>
 
-Unlike the browser, values aren't stringified. They're stored with structured clone, so you get back
-the type you stored: numbers, booleans, plain objects, arrays, `Map`, `Set`, `Date`, `RegExp`, typed
-arrays, `BigInt`. Class instances come back as plain objects. Functions, symbols and native objects
-(`Vector`, `Pointer`, …) throw a `DataCloneError`.
+Unlike the browser, values aren't stringified: you get back the type you stored (numbers, booleans,
+objects, arrays, `Map`, `Set`, `Date`, typed arrays, `BigInt`). Class instances come back as plain
+objects. Functions and native objects (`Vector`, `Pointer`, …) throw a `DataCloneError`.
 
 ---
 
@@ -2332,8 +2064,7 @@ arrays, `BigInt`. Class instances come back as plain objects. Functions, symbols
 localStorage.getItem<T = any>(key: string): T | null
 ```
 
-A copy of the stored value, or `null` when the key doesn't exist. Throws `EIO` when the stored value is
-corrupt.
+A copy of the stored value, or `null` when the key doesn't exist.
 
 ```ts
 const runs = localStorage.getItem<number>("runs") ?? 0;
@@ -2368,7 +2099,7 @@ localStorage.setItem("runs", undefined);   // removed
 | `key(index: number): string \| null` | the key at `index`, `null` when out of range |
 | `length: number` | number of keys |
 
-Keys must be strings; anything else is a `TypeError`, not converted.
+Keys must be strings; anything else throws `TypeError`.
 
 ---
 
@@ -2384,20 +2115,7 @@ Object.keys(localStorage);        // every key
 localStorage.fov = undefined;     // removes "fov"
 ```
 
-This doesn't work for the method names, `length` and inherited `Object.prototype` members
-(`toString`, `constructor`, …). Use `getItem` / `setItem` for those keys.
-
----
-
-## Errors
-
-| Error | When |
-|:------|:-----|
-| `TypeError` | key isn't a string |
-| `DataCloneError` | value can't be cloned |
-| `RangeError` | key longer than about 500 bytes of UTF-8 (reading or removing it just finds nothing) |
-| `ENOSPC` | storage is full |
-| `EIO` | any other failed write, or a stored value that can't be read back |
+Keys named like a method, `length` or `toString` need `getItem` / `setItem`.
 
 ---
 
@@ -2462,27 +2180,16 @@ All fields are optional. The values end up on the [`script`](/api/globals#script
 
 ## Permissions
 
-Two capabilities: `"filesystem"` and `"ffi"`.
+By default a script can do everything. To restrict it, list only what it needs:
 
-| Manifest | Granted |
-|:---------|:--------|
-| no `permissions` key | both |
-| `["filesystem", "ffi"]` | both |
-| `["filesystem"]` | only `filesystem` |
-| `[]` | nothing |
-| an unknown name, or not an array of strings | the script doesn't load, the log lists the valid names |
-
-| Permission | Without it | With it |
-|:-----------|:-----------|:--------|
-| `filesystem` | [fs](/api/fs) and [WASI](/api/wasi) are confined to the script's `data/` folder, [Texture](/api/types/texture) to the script folder. Absolute paths and `..` escapes throw `ESANDBOX`. | Any path works. |
-| `ffi` | Importing [@native/ffi](/api/ffi) throws `EPERM`. | Load DLLs and call native code in the host process. |
-
-Everything else (entities, render, esp, ui, input, memory, trace, networking, `localStorage`) needs
-no permission. At runtime, `script.permissions` lists what was granted.
-
-```ts
-if (script.permissions.includes("filesystem")) console.log("full disk access");
+```json
+"permissions": ["filesystem"]
 ```
+
+| Permission | Gives |
+|:-----------|:------|
+| `filesystem` | Files outside the script's own folder. Without it [fs](/api/fs) stays in `data/`. |
+| `ffi` | [@native/ffi](/api/ffi): loading DLLs and calling native code. |
 
 ---
 
@@ -2727,7 +2434,7 @@ import memory from "@native/memory";
 memory.module(name: string): ModuleInfo | null
 ```
 
-A loaded module by file name, case-insensitive, as `{ name, base, size }`. `null` when it isn't loaded or isn't tracked. Tracked modules: `client.dll`, `engine2.dll`, `inputsystem.dll`, `matchmaking.dll`, `soundsystem.dll`.
+A loaded module by file name, case-insensitive, as `{ name, base, size }`, or `null`. Only `client.dll`, `engine2.dll`, `inputsystem.dll`, `matchmaking.dll` and `soundsystem.dll` are available.
 
 ```ts
 const client = memory.module("client.dll");
@@ -2740,14 +2447,14 @@ if (client) console.log(`${client.name} at ${client.base}, ${client.size} bytes`
 
 ## Pattern scans
 
-Patterns are IDA-style: space-separated hex bytes of 1–2 digits, `?` or `??` for any byte. A malformed or empty pattern is a `TypeError`.
+Patterns are IDA-style: hex bytes separated by spaces, `?` or `??` for any byte.
 
 ```ts
 "48 8B 05 ? ? ? ? 48 85 C0"
 "E8 ?? ?? ?? ?? 48 8B D8"
 ```
 
-Scans read the whole module image synchronously and skip unreadable pages. Scan once at load, not every tick.
+Scans are slow. Scan once at load, not every tick.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -2759,7 +2466,7 @@ Scans read the whole module image synchronously and skip unreadable pages. Scan 
 memory.scan(module: string, pattern: string): Pointer | null
 ```
 
-The first match, or `null` when there's none. Throws `Error` with `code` `"ENOENT"` when the module isn't loaded, `"EREAD"` when its image can't be read.
+The first match, or `null` when there's none. Throws `ENOENT` when the module isn't loaded.
 
 ```ts
 const hit = memory.scan("client.dll", "48 8B 05 ? ? ? ? 48 85 C0");
@@ -2776,7 +2483,7 @@ const target = hit && hit.add(7).add(hit.add(3).read("int32"));   // rip-relativ
 memory.scanAll(module: string, pattern: string): Pointer[]
 ```
 
-Every match in address order, `[]` when none. Same errors as `scan`, plus `RangeError` past 1,000,000 matches.
+Every match in address order, `[]` when none.
 
 ```ts
 const calls = memory.scanAll("client.dll", "E8 ? ? ? ? 48 8B D8");
@@ -2798,7 +2505,7 @@ memory.struct(name: string, fields: FieldDefs): StructType
 memory.struct(fields: FieldDefs): StructType
 ```
 
-Defines a C layout to read with [Pointer.read](/api/types/pointer#read) or [Snapshot.as](/api/types/pointer#snapshot). Fields are laid out in order with natural C alignment. It's the same function as [ffi.struct](/api/ffi) and makes the same objects, without needing the `ffi` permission.
+Defines a C layout to read with [Pointer.read](/api/types/pointer#read) or [Snapshot.as](/api/types/pointer#snapshot), laid out in field order with C alignment. Same as [ffi.struct](/api/ffi#struct), without needing the `ffi` permission.
 
 ```ts
 const Vec3 = memory.struct("Vec3", { x: "float", y: "float", z: "float" });
@@ -2814,8 +2521,6 @@ Field types are the [scalar types](/api/types/pointer#scalar-types), C names (`"
   `"string"` and `"char*"` fields are pointers, not text. Follow them with `view.name.read("string")`.
   Inline text is `"char[N]"`.
 </Warning>
-
-The type's `view()` and `decode()` work on buffers without a permission. Passing them a raw `bigint` host address needs `ffi` (`EPERM` otherwise).
 
 {/* ------------------------------------------------------------------ */}
 
@@ -2872,12 +2577,10 @@ icon: "globe"
 ---
 
 `fetch`, `XMLHttpRequest`, `WebSocket` and `EventSource` are globals. No import, no permission. They
-follow the specs, so [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) is the reference;
-this page covers what's different here.
+follow the specs, so [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) is the reference.
 
 <Note>
-  URLs must be absolute. There's no page to resolve `"/api/status"` against, so it fails with
-  `the scheme 'spurdo' is not supported`.
+  URLs must be absolute. A relative URL like `"/api/status"` fails.
 </Note>
 
 ```ts
@@ -2887,62 +2590,19 @@ if (res.ok) console.log(await res.json());
 
 ---
 
-## Transport
+## Differences from a browser
 
-| | |
-|:--|:--|
-| Protocol | HTTP/1.1 only, one connection per request (no pooling, no keep-alive) |
-| Proxies | none, the system proxy is ignored |
-| TLS | certificates are checked against the Windows trust store, like a browser on the same machine; there's no way to skip the check |
-| Headers | no forbidden headers: `User-Agent`, `Cookie`, `Origin`, … go out as you set them. Defaults when missing: `accept: */*`, `accept-encoding: gzip, deflate, br` (decoded for you) and a desktop-Chrome `user-agent` |
-| Cookies, CORS | no cookie jar and no CORS. `credentials`, `mode`, `cache`, `referrerPolicy` and `integrity` are stored and ignored |
-| Redirects | up to 20; `Authorization` and `Cookie` are dropped on a cross-origin hop |
-| `redirect: "manual"` | returns the real 3xx with its headers (a browser gives an opaque response), so you can read `Location` |
-| Request bodies | buffered and sent in one piece; a stream body needs `duplex: "half"` |
-| `data:`, `blob:` | handled locally |
-
-| Timeout | |
-|:--------|:--|
-| TCP connect | 15 s |
-| TLS handshake | 15 s |
-| Sending the request | 30 s |
-| Receiving | 60 s without data |
-
----
-
-## fetch errors
-
-A non-2xx status resolves normally; check `res.ok`. Rejections:
-
-| Rejection | When |
-|:----------|:-----|
-| `TypeError` `Failed to fetch: …` | DNS, connection or TLS failure; `cause` is an `Error` with `code` `ENETWORK` or `ECERT` |
-| `DOMException` `AbortError` | the signal aborted |
-| `DOMException` `TimeoutError` | a transport timeout, or `AbortSignal.timeout` |
-| `TypeError` | bad arguments (a body on `GET`, credentials in the URL, a body read twice, …) |
-
-A failure after the headers arrived (including a corrupt compressed body, `EDECODE`) errors the body
-stream instead.
-
-```ts
-try {
-    await fetch("https://expired.badssl.com/");
-} catch (e) {
-    const code = ((e as Error).cause as { code?: string } | undefined)?.code;
-    console.log(code);   // "ECERT"
-}
-```
+- No CORS and no cookie jar. Any header (`User-Agent`, `Cookie`, `Origin`, …) goes out as you set it.
+- `redirect: "manual"` returns the real 3xx response, so you can read `Location`.
+- The system proxy is ignored.
+- Certificates are always checked; there's no way to skip it.
+- Network and certificate failures reject with a `TypeError` whose `cause.code` is `"ENETWORK"` or `"ECERT"`.
+  A non-2xx status resolves normally, check `res.ok`.
+- `XMLHttpRequest` can't be synchronous (`open(method, url, false)` throws), and `responseXML` is always `null`.
 
 ---
 
 ## WebSocket
-
-| | |
-|:--|:--|
-| URLs | `ws:`/`wss:`; `http:`/`https:` are mapped onto them, anything else throws `SyntaxError` |
-| `close(code, reason)` | `code` must be 1000 or 3000–4999 (`InvalidAccessError`), `reason` at most 123 bytes |
-| Connection failure | never throws: fires `error`, then `close` with `wasClean: false` |
-| Extras | `permessage-deflate` is offered, keep-alive pings and an idle timeout are built in, connecting times out after 15 s |
 
 ```ts
 const ws = new WebSocket("wss://ws.postman-echo.com/raw");
@@ -2951,23 +2611,6 @@ ws.onopen = () => ws.send("hello");
 ws.onmessage = (e) => console.log(e.data);
 ws.onclose = (e) => console.log("closed", e.code, e.wasClean);
 ```
-
----
-
-## EventSource
-
-Reconnects after 3 s unless the server sends `retry:`, and resends `Last-Event-ID`. A `204` stops it; any
-other non-200 status or a `content-type` other than `text/event-stream` fails without retrying.
-
----
-
-## XMLHttpRequest
-
-Built on `fetch`, for libraries like axios. Differences:
-
-- `open(method, url, false)` (synchronous) throws `InvalidAccessError`.
-- `responseXML` is always `null`, and `responseType: "document"` gives `null`.
-- Upload progress fires once for the whole body.
 
 ---
 
@@ -3017,8 +2660,8 @@ import render from "@native/render";
 
 <Note>
   Draw calls only work inside an `on("render")` listener. Anywhere else (a `tick`, a timer, after
-  an `await`) they throw an `Error` with code `EPHASE`. Queries (`measureText`, `worldToScreen`,
-  `screenTransform`, `boundsOf`, `screenSize`) work in any phase.
+  an `await`) they throw. Queries (`measureText`, `worldToScreen`, `screenTransform`, `boundsOf`,
+  `screenSize`) work anywhere.
 </Note>
 
 ## Overview
@@ -3037,8 +2680,7 @@ import render from "@native/render";
 
 Positions are [Vec2Like](/api/types/vector2): `[x, y]`, `{ x, y }` or a `Vector2`. Colors are
 [ColorLike](/api/types/color) and always required: `"#ff4040"`, `[255, 64, 64, 200]`, a `Color`
-or a packed `0xAABBGGRR`. The last argument is an optional options object. A bad argument throws a
-`TypeError` (or `RangeError`) before anything is drawn.
+or a packed `0xAABBGGRR`. The last argument is an optional options object.
 
 ```ts
 on("render", () => {
@@ -3067,14 +2709,13 @@ on("render", () => {
 
 | Option | Default | |
 |:-------|:--------|:--|
-| `thickness` | `1` | Line width in pixels, `>= 0`. |
-| `rounding` | `0` | Corner radius in pixels, `>= 0`. |
-| `segments` | `0` | `0..512`. `0` picks a count from the radius. |
+| `thickness` | `1` | Line width in pixels. |
+| `rounding` | `0` | Corner radius in pixels. |
+| `segments` | `0` | `0` picks a count from the radius. |
 | `closed` | `false` | Connects the last point back to the first. |
 | `direction` | `"horizontal"` | `"horizontal"` blends `from` left to `to` right, `"vertical"` top to bottom. |
 
-A negative `radius` throws `RangeError`. `polyline` draws nothing with fewer than 2 points,
-`polygonFilled` with fewer than 3; both take at most 65536.
+`polyline` needs at least 2 points, `polygonFilled` at least 3.
 
 ```ts
 on("render", () => {
@@ -3104,12 +2745,11 @@ on("render", () => {
 render.text(position: Vec2Like, text: unknown, color: ColorLike, options?: TextOptions): void
 ```
 
-Draws `text` with its top-left corner at `position`. Anything goes through `String()`, except
-`undefined`, which is a `TypeError`.
+Draws `text` with its top-left corner at `position`. Non-strings go through `String()`.
 
 | Option | Default | |
 |:-------|:--------|:--|
-| `size` | `14` | Font size in pixels, `> 0`. |
+| `size` | `14` | Font size in pixels. |
 | `font` | `"segoe"` | One of the [fonts](#fonts). |
 | `outline` | `false` | `true` is a 1px black outline at the text's alpha, a color is that color. |
 
@@ -3130,8 +2770,7 @@ on("render", () => {
 render.measureText(text: unknown, options?: { size?: number; font?: FontName }): Vector2
 ```
 
-The size `render.text` covers with the same `size` and `font`. It's the real layout, not an
-estimate, and works in any phase.
+The size `render.text` covers with the same `size` and `font`.
 
 ```ts
 const label = "Planted";
@@ -3142,12 +2781,6 @@ on("render", () => {
     render.text([center - w / 2, 40], label, "#fff", { size: 16 });
 });
 ```
-
-<Tip>
-  The first measurement of a new `font`/`size` pair waits for the next overlay frame, then the
-  pair is cached. Every distinct `size` is its own pair, so use a few fixed sizes instead of
-  animating it.
-</Tip>
 
 {/* ------------------------------------------------------------------ */}
 
@@ -3186,8 +2819,7 @@ on("render", () => {
 | `"arial"` | yes |
 | `"weapon-icons"` | yes, weapon glyphs |
 
-[ESP](/api/esp) text elements accept only the fonts marked in the second column. An unknown name
-throws `TypeError`.
+[ESP](/api/esp) text elements accept only the fonts marked in the second column.
 
 ---
 
@@ -3203,8 +2835,8 @@ throws `TypeError`.
 render.screenSize: Vector2
 ```
 
-The overlay size in pixels, a new `Vector2` on every read. It's a live value, so there's no named
-export: read it as `render.screenSize`.
+The overlay size in pixels. It's a live value, so there's no named export: read it as
+`render.screenSize`.
 
 ```ts
 const { x: w, y: h } = render.screenSize;
@@ -3220,8 +2852,8 @@ const { x: w, y: h } = render.screenSize;
 render.worldToScreen(point: Vec3Like): Vector2 | null
 ```
 
-World position to overlay pixels. Returns `null` when the point is behind the camera (closer than
-the 8-unit near plane). Points off to the side still project, to coordinates outside the screen.
+World position to overlay pixels. Returns `null` when the point is behind the camera. Points off
+to the side still project, to coordinates outside the screen.
 
 <Frame>
   <img src="/images/world-to-screen.png" alt="World space to screen space" />
@@ -3235,8 +2867,7 @@ on("render", () => {
 ```
 
 <Tip>
-  Inside `render` it uses the camera of the frame being drawn, elsewhere the camera of the last
-  tick. Project in `render`, or boxes lag behind when you turn.
+  Project inside `render`, not on the tick, or boxes lag behind when you turn.
 </Tip>
 
 {/* ------------------------------------------------------------------ */}
@@ -3359,8 +2990,6 @@ Every query takes a filter last: a preset name, a `trace.filter()` object, or in
 | `"player_movement"` | what player movement hits |
 | `"occlusion"` | bullet collision without normal, material or entity info (cheapest) |
 
-An unknown preset name is a `TypeError`.
-
 {/* ------------------------------------------------------------------ */}
 
 ### filter
@@ -3392,7 +3021,7 @@ Options you leave out keep the preset's value.
 | `excludeTags` | | never shapes with one of these tags |
 | `ignore` | | `EntityRef` or `EntityRef[]`, at most 8 |
 
-Tags: `pass_bullets`, `player_clip`, `npc_clip`, `grenade_clip`, `ladder`, `window`, `sky`, `player`, `thrown_grenade`, `solid`, `block_los`, `block_light`, `block_sound`. An unknown tag is a `TypeError`.
+Tags: `pass_bullets`, `player_clip`, `npc_clip`, `grenade_clip`, `ladder`, `window`, `sky`, `player`, `thrown_grenade`, `solid`, `block_los`, `block_light`, `block_sound`.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -3405,7 +3034,7 @@ filter.ignore(entities: EntityRef | EntityRef[]): TraceFilter
 filter.clearIgnore(): TraceFilter
 ```
 
-Passes through these entities, matched by slot. At most 8 per filter; past that it's a `RangeError` and the filter is left unchanged. Both return the filter, so they chain.
+Queries pass through these entities, at most 8 per filter. Both return the filter, so they chain.
 
 ```ts
 const shots = trace.filter({ type: "bullet", players: true });
@@ -3447,7 +3076,7 @@ if (result?.hit) console.log("hit", result.surface?.name, "at", result.position)
 trace.rayAll(start: Vec3Like, end: Vec3Like, filter?: TraceFilterArg, maxHits?: number): TraceResult[] | null
 ```
 
-Every hit along the ray, up to `maxHits` (1–128, default 32, `RangeError` otherwise). `null` without a map.
+Every hit along the ray, up to `maxHits` (default 32, max 128). `null` without a map.
 
 ```ts
 const hits = trace.rayAll(eye, end, { type: "bullet", players: true }) ?? [];
@@ -3466,7 +3095,7 @@ trace.sphere(start: Vec3Like, end: Vec3Like, radius: number, filter?: TraceFilte
 trace.capsule(start: Vec3Like, end: Vec3Like, radius: number, halfHeight: number, filter?: TraceFilterArg): TraceResult | null
 ```
 
-Moves a shape from `start` to `end` and stops at the first hit. Box `mins`/`maxs` are relative to the moving position. A negative sphere `radius` is a `RangeError`.
+Moves a shape from `start` to `end` and stops at the first hit. Box `mins`/`maxs` are relative to the moving position.
 
 ```ts
 // would a standing player fit 64 units ahead?
@@ -3488,7 +3117,7 @@ const blocked = box?.hit ?? true;
 trace.isVisible(from: Vec3Like, to: Vec3Like): boolean | null
 ```
 
-Line of sight through world geometry. It's the cheap occlusion trace, and players never block it. `null` without a map.
+Line of sight through world geometry. Players don't block it. `null` without a map.
 
 ```ts
 if (trace.isVisible(myEye, enemyEye)) console.log("in sight");
@@ -3562,7 +3191,7 @@ if (wall) console.log(wall.distance, wall.normal);
 | `startSolid`, `allSolid` | started inside / stayed inside solid |
 | `hitSky`, `hitWindow`, `hitLadder`, `hitPassBullets` | surface flags |
 | `entity` | the hit entity while it exists; `null` for world, with `resolveEntity` off, or once it's gone |
-| `entityIndex` | its slot, still set after `entity` is gone; `null` for world |
+| `entityIndex` | its index, still set after `entity` is gone; `null` for world |
 | `hitGroup` | player hitbox group with `players: true`, else `null` |
 | `surface` | `{ name, penetration, damage }`, `null` on no hit or with `resolveMaterials` off |
 
@@ -3637,7 +3266,7 @@ import ui from "@native/ui";
     `key`, `mode`, `active`, `press` / `release`.
   </Card>
   <Card title="Paths and persistence" icon="floppy-disk" href="#paths-and-persistence">
-    `id`, `persist`, `EEXIST`.
+    `id`, `persist`, `dispose`.
   </Card>
   <Card title="Window" icon="window-maximize" href="#window">
     `open`, `close`, `on`.
@@ -3692,7 +3321,7 @@ middle in declaration order.
 |:-------|:--|
 | `column` | `"left"` or `"right"`. |
 | `toggle` | Puts a switch in the header: `group.value`, `group.on("change")`, `group.reset()`. |
-| `default`, `persist`, `key`, `onChange` | Like on a [switch](#switch). Only with `toggle`, a `TypeError` otherwise. |
+| `default`, `persist`, `key`, `onChange` | Like on a [switch](#switch). Only with `toggle`. |
 
 ```ts
 const trigger = main.group("Triggerbot", { column: "right", toggle: true, key: { mode: "hold" } });
@@ -3709,8 +3338,7 @@ container.row(build?: (row: Row) => void): Row
 container.row(options: { visible?: Reactive<boolean>; disabled?: Reactive<boolean> }, build?: (row: Row) => void): Row
 ```
 
-Lays its children out side by side. `build` runs right away with the row. Rows don't add a path
-segment, so wrapping controls in a row never moves their saved values.
+Lays its children out side by side. `build` runs right away with the row.
 
 ```ts
 trigger.row((row) => {
@@ -3736,7 +3364,7 @@ A control has these members:
 
 | Member | |
 |:-------|:--|
-| `value` | Read or write. Writing updates the menu and fires `change` right away. A bad value throws `TypeError` or `RangeError`. |
+| `value` | Read or write. Writing updates the menu and fires `change`. |
 | `label`, `visible`, `disabled` | Read or write. Writing a function makes it [reactive](#reactive-values). |
 | `on("change", fn)` | Fires after the user, the script, `reset()` or a config changed the value. Returns a `Subscription`. |
 | `reset()` | Back to the declared default. |
@@ -3774,7 +3402,7 @@ container.slider(label: string, options?: SliderOptions): Control<number>
 | `min`, `max` | `0`, `100` | `min` must not exceed `max`. |
 | `default` | `min` | Must lie in `min..max`. |
 | `step` | `0` | Snap step, `0` for none. |
-| `precision` | `0` | Decimals shown, `0..6`. `0` makes it an integer slider: bounds, step and values must be integers. |
+| `precision` | `0` | Decimals shown. `0` makes it an integer slider. |
 | `unit` | | Appended to the printed value, e.g. `"°"` or `" ms"`. |
 
 ```ts
@@ -3800,8 +3428,7 @@ mode.value = 1;           // "Rage"
 mode.items = ["Legit"];   // selection falls back to the default, change fires
 ```
 
-Items must be unique strings (`TypeError`) and not empty (`RangeError`). An unknown item or an
-index out of range throws the same way.
+Items must be unique and non-empty. Writing an unknown item or index throws.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -3912,8 +3539,8 @@ event.
 ui.signal<T>(initial?: T): Signal<T>
 ```
 
-A value holder. Setting `value` to something new (`Object.is`) fires `change` and re-runs whatever
-read it. Mutating an object in place doesn't count.
+A value holder. Setting `value` to something new fires `change` and re-runs whatever read it.
+Mutating an object in place doesn't count.
 
 ```ts
 const kills = ui.signal(0);
@@ -3932,7 +3559,7 @@ ui.computed<T>(compute: () => T): Computed<T>
 ```
 
 A read-only value derived from others. `compute` re-runs when something it read changes; `change`
-fires when the result differs. If it throws, the error is reported and the last value kept.
+fires when the result differs.
 
 ```ts
 const radius = ui.computed(() => Math.tan(Math.toRadians(fov.value ?? 0)) * 400);
@@ -3949,7 +3576,6 @@ ui.effect(fn: () => void, options?: { signal?: AbortSignal }): Subscription
 ```
 
 Runs `fn` now and again whenever anything it read changes, until the Subscription is disposed.
-Errors are reported and the effect keeps running.
 
 ```ts
 const stop = ui.effect(() => console.log("mode is", mode.value));
@@ -3966,9 +3592,7 @@ stop();
 ui.batch<T>(fn: () => T): T
 ```
 
-Defers reactive re-runs until `fn` returns, then runs each affected function once. `change`
-listeners still fire immediately. Returns what `fn` returns; a throw is re-thrown after the
-re-runs.
+Defers reactive re-runs until `fn` returns, then runs each affected function once. Returns what `fn` returns.
 
 ```ts
 ui.batch(() => {
@@ -3986,14 +3610,13 @@ rebind the key and change the mode in the menu; a persisted control saves both.
 
 | Member | |
 |:-------|:--|
-| `key` | Win32 virtual-key code, `0` when unbound. Writing takes an integer `0..255`. |
+| `key` | Win32 virtual-key code, `0` when unbound. |
 | `mode` | `"hold"` (active while down), `"toggle"` (flips on each press) or `"always"`. |
 | `active` | Whether it's active right now. Reactive. |
 | `on("press", fn)`, `on("release", fn)` | When it becomes active and when it stops. Returns a `Subscription`. |
 | `alive` | Whether its control is alive. |
 
-The `key` option (`{ key?, mode? }`) only seeds a setting that doesn't exist yet. A key the user
-bound, or cleared, is never overwritten.
+The `key` option (`{ key?, mode? }`) is only a default: once the user binds or clears the key, theirs wins.
 
 ```ts
 const aimbot = main.switch("Aimbot", { key: { key: 0x06, mode: "hold" } });
@@ -4010,14 +3633,11 @@ aimbot.key?.on("release", () => console.log("released"));
 
 ## Paths and persistence
 
-Every node has a path: its parent's path plus its own segment, the `id` option or the slugified
-label. `ui.page("Aim").group("Main").slider("FOV")` is `aim/main/fov`, saved in the user's config
-under `script.<script name>.aim/main/fov`.
+Saved values are keyed by path: the parent's path plus the `id` option or the slugified label.
+`ui.page("Aim").group("Main").slider("FOV")` is `aim/main/fov`. Rows add nothing.
 
-- Rows add no segment.
-- A second control on a taken path throws an `Error` with code `EEXIST`. Give it an `id`, or
-  dispose the old one first. Buttons and texts save nothing and move to `~2`, `~3` instead.
-- Renaming a label moves the path, so the saved value no longer applies. Set `id` when the label may change.
+- Two controls on the same path throw `EEXIST`. Give one an `id` (buttons and texts don't clash).
+- Renaming a label moves the path and loses the saved value. Set `id` when the label may change.
 - `persist: false` keeps a value for the session only.
 
 ```ts
@@ -4035,8 +3655,7 @@ node.dispose(): void
 ```
 
 Removes a node and everything in it. After that `alive` is `false`, reads return `null` and
-writes throw an `Error` with code `ESTALE`. Declaring the same path again creates a new node with
-a new handle. Signals and computeds are disposed the same way.
+writes throw. Declaring the same path again creates a fresh node. Signals and computeds have `dispose()` too.
 
 ```ts
 const debug = main.group("Debug");
@@ -4049,10 +3668,10 @@ debug.dispose();
 
 | Call | |
 |:-----|:--|
-| `ui.open()` | Opens the window centred on screen. Does nothing until there's a page. |
+| `ui.open()` | Opens the window. Does nothing until there's a page. |
 | `ui.close()` | Closes it. |
 | `ui.on("open", fn)`, `ui.on("close", fn)` | Follows the window. |
-| `ui.on("config", fn)` | Once after a config was applied, after every moved control fired `change`. |
+| `ui.on("config", fn)` | After a config is loaded and its `change` events have fired. |
 
 ---
 
@@ -4121,19 +3740,18 @@ import { WASI } from "@native/wasi";
 new WASI(options?: WASIOptions)
 ```
 
-Creates one WASI environment. Throws `TypeError` for malformed options, `RangeError` for more than 4096
-args/env entries or more than 1 MiB of them, and `EPERM` / `ENOENT` for a bad preopen.
+Creates one WASI environment.
 
 | Option | Default | |
 |:-------|:--------|:--|
 | `args` | `[]` | argv, including `argv[0]` |
 | `env` | `{}` | environment variables |
 | `preopens` | `{ "/": data/ }` | guest directory → host directory; relative host paths start at `data/` |
-| `returnOnExit` | `true` | `proc_exit(code)` ends `start()`, which returns `code`; `false` makes `start()` throw instead |
+| `returnOnExit` | `true` | `proc_exit(code)` ends `start()`, which returns `code`; `false` makes it throw instead |
 | `version` | `"preview1"` | the only one |
 
-A host directory outside `data/` needs the `filesystem` [permission](/api/manifest#permissions)
-(`EPERM` otherwise) and must exist (`ENOENT`).
+A host directory outside `data/` needs the `filesystem` [permission](/api/manifest#permissions) and
+must exist.
 
 ```ts
 const wasi = new WASI({
@@ -4172,15 +3790,14 @@ const imports = { wasi_snapshot_preview1: wasi.wasiImport, env: { log: (n: numbe
 wasi.start(instance: WebAssembly.Instance): number
 ```
 
-Runs a command: calls `_start()` and returns the exit code (0 when `_start` returns). The module must
-export `memory` and `_start` and must not export `_initialize` (`TypeError`). Only one `start()` or
-`initialize()` per `WASI` (`ESTATE`).
+Runs a command: calls `_start()` and returns the exit code (0 when `_start` returns). Call `start()` or
+`initialize()` once per `WASI`.
 
 ```ts
 const code = wasi.start(instance);
 ```
 
-With `returnOnExit: false`, `proc_exit` throws an `Error` with `code: "EEXIT"` and `exitCode`.
+With `returnOnExit: false`, `proc_exit` throws an `Error` with `exitCode`.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -4192,8 +3809,8 @@ With `returnOnExit: false`, `proc_exit` throws an `Error` with `code: "EEXIT"` a
 wasi.initialize(instance: WebAssembly.Instance): void
 ```
 
-Sets up a reactor: calls `_initialize()` if it's exported. The module must export `memory` and must not
-export `_start`. Then call its exports yourself.
+Sets up a reactor (a module without `_start`): calls `_initialize()` if it's exported. Then call its
+exports yourself.
 
 ```ts
 wasi.initialize(instance);
@@ -4211,9 +3828,8 @@ add(2, 3);
 wasi.dispose(): void
 ```
 
-Closes every file the guest opened and releases its memory. Idempotent; runs on unload at the latest.
-After it the syscalls throw `ESTALE`. `alive` is `false` from then on, and `using` disposes at the end
-of the block.
+Closes every file the guest opened. Happens on unload anyway. `alive` is `false` afterwards, and `using`
+disposes at the end of the block.
 
 ---
 
@@ -4222,15 +3838,11 @@ of the block.
 | | |
 |:--|:--|
 | argv / environ | exactly `args` / `env` |
-| Filesystem | only the preopens; `..`, symlinks and drive/device names are refused with `ENOTCAPABLE` |
+| Filesystem | only the preopens, no `..` out of them |
 | stdin | empty |
-| stdout / stderr | lines go to the script log, stderr at error level |
-| Clocks | realtime, monotonic, process and thread CPU time |
-| `poll_oneoff` | never blocks: files are always ready, and a pending clock fires at once, so `sleep()` returns immediately |
-| Sockets | none; `sock_*` report `ENOTSOCK` / `EBADF` |
-| Unsupported | `path_symlink` (`ENOTSUP`), `proc_raise` (`ENOSYS`) |
-
-Every guest pointer is bounds-checked against the current memory size; a bad one is `EFAULT` for the guest.
+| stdout / stderr | the script log, stderr as errors |
+| `sleep()` | returns immediately |
+| Sockets | none |
 
 ---
 
@@ -4260,13 +3872,11 @@ icon: "globe-pointer"
 ---
 
 Scripts run in a context shaped like a Web Worker. The APIs below are globals and follow the specs, so
-[MDN](https://developer.mozilla.org/en-US/docs/Web/API) is the reference. This page only lists what's
-there and where it differs.
+[MDN](https://developer.mozilla.org/en-US/docs/Web/API) is the reference.
 
 <Note>
   There's no `window`, `document`, `sessionStorage`, `indexedDB`, `Worker`, `alert`/`prompt` or
-  `onmessage`. TypeScript's DOM types still declare them, but at runtime they don't exist. `self` and
-  `globalThis` do. `Symbol.dispose` exists (`using` works); `DisposableStack` and `SuppressedError` don't.
+  `onmessage`, even though TypeScript's DOM types declare them. `using` works; `DisposableStack` doesn't exist.
 </Note>
 
 ## What's there
@@ -4282,7 +3892,7 @@ there and where it differs.
 | Scheduling | `queueMicrotask`, `requestAnimationFrame`, `requestIdleCallback`, `MessageChannel`, `performance`, `reportError` |
 | Other | `navigator`, `origin`, `WebAssembly` (with [WASI](/api/wasi)) |
 
-Timers, `console` and the host events are on [Globals](/api/globals), storage on
+Timers, `console` and the game events are on [Globals](/api/globals), storage on
 [localStorage](/api/localStorage).
 
 ---
@@ -4291,15 +3901,11 @@ Timers, `console` and the host events are on [Globals](/api/globals), storage on
 
 | API | Here |
 |:----|:-----|
-| `URL` | no IDNA/punycode, non-ASCII host names aren't converted |
-| `TextDecoder` | only `utf-8`, `utf-16le`, `utf-16be`, `windows-1251`, `windows-1252` (also `latin1`, `ascii`) and `koi8-r`; other labels throw `RangeError` |
+| `TextDecoder` | only `utf-8`, `utf-16le`, `utf-16be`, `windows-1251`, `windows-1252` and `koi8-r`; other labels throw `RangeError` |
 | `CompressionStream` | `gzip`, `deflate`, `deflate-raw` |
 | `DecompressionStream` | the same plus `br` |
-| `ReadableStream` | no transferable streams; a BYOB read copies into your buffer instead of filling it in place |
-| `structuredClone` | the `transfer` option is ignored |
-| `requestAnimationFrame`, `requestIdleCallback` | run from the `render` event, once per overlay frame |
-| `performance` | `now`, `timeOrigin`, `mark`, `measure`; no entry buffer |
-| `navigator` | fixed values (`platform: "Win32"`, `language: "en-US"`, …), nothing is detected |
+| `requestAnimationFrame`, `requestIdleCallback` | run once per overlay frame, like `render` |
+| `performance` | only `now`, `timeOrigin`, `mark`, `measure` |
 
 ---
 
@@ -4315,13 +3921,11 @@ Timers, `console` and the host events are on [Globals](/api/globals), storage on
 | Curves | P-256, P-384, P-521 |
 | Key formats | `raw`, `jwk`, `spki`, `pkcs8` |
 
-Other algorithms (Ed25519, X25519, SHA-3, …) reject with `NotSupportedError`. `wrapKey` / `unwrapKey` go
-through the ciphers above; AES-KW keys can be created but not used to wrap. AES-GCM `tagLength` must be 96,
-104, 112, 120 or 128 and the `iv` 1–64 bytes. RSA `modulusLength` is 1024–8192, a multiple of 8.
+Other algorithms (Ed25519, X25519, SHA-3, …) reject with `NotSupportedError`.
 
 <Warning>
-  `crypto.subtle` runs on the script thread. Hashes, HMAC and AES are instant, but RSA `generateKey` takes
-  tens of milliseconds (4096-bit far more). Generate keys once and keep them.
+  RSA `generateKey` blocks the script for tens of milliseconds (4096-bit far more). Generate keys once
+  and keep them.
 </Warning>
 
 ```ts
@@ -4350,11 +3954,11 @@ const glass = Color.from([255, 255, 255, 64]);
 ```
 
 <Note>
-  A plain number is always packed `0xAABBGGRR`, red in the low byte (the ImGui `ImU32` layout).
-  Fields `r`, `g`, `b`, `a` take integers `0`–`255`: a non-number throws `TypeError`, a fraction or anything out of range throws `RangeError`.
+  A plain number is always packed `0xAABBGGRR`, red in the low byte.
+  Fields `r`, `g`, `b`, `a` take integers `0`–`255`, anything else throws.
 </Note>
 
-`ColorLike` is a `Color`, a packed number, `"#rgb"`, `"#rgba"`, `"#rrggbb"`, `"#rrggbbaa"`, `[r, g, b, a?]` or `{ r, g, b, a? }`. Array and object channels are clamped to `0`–`255` and rounded.
+`ColorLike` is a `Color`, a packed number, `"#rgb"`, `"#rgba"`, `"#rrggbb"`, `"#rrggbbaa"`, `[r, g, b, a?]` or `{ r, g, b, a? }`.
 
 ## Overview
 
@@ -4529,8 +4133,7 @@ icon: "arrow-pointer"
 An address in the game process. Immutable: arithmetic returns a new `Pointer`. Global class, no import.
 
 <Note>
-  `Pointer` is always game memory. Host-process addresses in [ffi](/api/ffi) are plain `bigint`s, and
-  the two never mix. Game memory is read-only.
+  `Pointer` is always game memory, read-only. Addresses in [ffi](/api/ffi) are plain `bigint`s.
 </Note>
 
 ## Overview
@@ -4569,7 +4172,7 @@ Pointer.from(address: PointerLike): Pointer
 Pointer.null: Pointer
 ```
 
-`PointerLike` is a `Pointer`, a `bigint`, a non-negative safe integer or a `"0x…"` string. Anything else is a `TypeError`, a negative or unsafe number a `RangeError`. `Pointer.null` is a shared, frozen null pointer.
+`PointerLike` is a `Pointer`, a `bigint`, a non-negative integer or a `"0x…"` string. `Pointer.null` is the null pointer.
 
 ```ts
 const a = new Pointer(0x7FF6_1234_0000n);
@@ -4592,8 +4195,6 @@ Most pointers come from [memory.module](/api/memory#module), [memory.scan](/api/
 | `equals(other: PointerLike): boolean` | same address |
 | `toString(): string` | `"Pointer(0x7FF612340000)"` |
 | `toJSON(): string` | `"0x7FF612340000"`, accepted back by `new Pointer()` |
-
-`add` and `sub` throw `RangeError` if the result leaves the 64-bit range.
 
 ---
 
@@ -4654,11 +4255,11 @@ Reads by [scalar type](#scalar-types), by struct, or copies raw bytes into a [Sn
 | Call | Returns |
 |:-----|:--------|
 | `read("float")` | one value |
-| `read("float", 16)` | `count` values (0 to 1,000,000): a typed array for numbers (`Float32Array` here), a plain array otherwise |
-| `read("string")` | inline text up to its NUL; `maxLength` is bytes for `"string"` (default 4096), UTF-16 units for `"wstring"` (default 2048) |
+| `read("float", 16)` | `count` values: a typed array for numbers (`Float32Array` here), a plain array otherwise |
+| `read("string")` | inline text up to its NUL; `maxLength` is bytes for `"string"`, UTF-16 units for `"wstring"` |
 | `read(Struct)` | one struct copied out, as a view |
 | `read(Struct, 64)` | `count` structs sharing one copied buffer |
-| `read(0x400)` | a `Snapshot` of 0 to 256 MiB |
+| `read(0x400)` | a `Snapshot` of that many bytes |
 
 ```ts
 const health = pawn.add(0x34C).read("int32");
@@ -4666,7 +4267,7 @@ const matrix = viewMatrix.read("float", 16);
 const name = pawn.resolve(0x6E8, 0x10).read("string");
 ```
 
-Struct types come from [memory.struct](/api/memory#struct). In a struct read from the game, `ptr` fields are `Pointer`s and nested structs are views too. Writing a field changes only the local copy.
+Struct types come from [memory.struct](/api/memory#struct). `ptr` fields read as `Pointer`s. Writing a field changes only the local copy.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -4680,7 +4281,7 @@ ptr.resolveRaw(...offsets: (number | bigint)[]): Pointer
 ptr.readRaw(...): same as read
 ```
 
-`read`, `deref` and `resolve` go through the per-frame read cache: cheap, but up to one cache frame old. Reads above 64 KiB always go direct. The `…Raw` variants take the same arguments and always read fresh.
+`read`, `deref` and `resolve` can return a value up to one frame old. The `…Raw` variants take the same arguments and always read fresh.
 
 ```ts
 const cached = ptr.read("int32");
@@ -4691,7 +4292,7 @@ const fresh = ptr.readRaw("int32");
 
 ## Scalar types
 
-The one set of type names every memory read uses: `Pointer.read`, `Snapshot.read`, `entity.read` and struct fields. Any other name is a `TypeError`.
+The type names every memory read uses: `Pointer.read`, `Snapshot.read`, `entity.read` and struct fields.
 
 | Type | Size | Value |
 |:-----|:-----|:------|
@@ -4710,16 +4311,16 @@ The one set of type names every memory read uses: `Pointer.read`, `Snapshot.read
 
 ## Snapshot
 
-What `read(byteCount)` returns: bytes copied out of the game once. Reading from it never touches game memory again; anything outside it is a `RangeError`.
+What `read(byteCount)` returns: bytes copied out of the game once. Reading past its end throws `RangeError`.
 
 | Member | |
 |:-------|:--|
 | `base: Pointer` | where the bytes came from |
 | `size: number` | byte count |
-| `bytes: Uint8Array` | the snapshot's own bytes; a view, so writing to it changes later reads |
-| `read(type, offset?)` | one value at `offset` (default 0); inline strings end at their NUL or the snapshot's end |
-| `as(struct, offset?)` | a struct view over the bytes; `offset` must be a multiple of the struct's alignment |
-| `as(struct, offset, count)` | `count` consecutive views (0 to 1,000,000) |
+| `bytes: Uint8Array` | the copied bytes |
+| `read(type, offset?)` | one value at `offset` (default 0) |
+| `as(struct, offset?)` | a struct view over the bytes |
+| `as(struct, offset, count)` | `count` consecutive views |
 | `toString()` | `"Snapshot(0x…, N bytes)"` |
 
 ```ts
@@ -4781,7 +4382,7 @@ const aim = view.add([0, 45]);             // [pitch, yaw, roll?] and { pitch, y
 
 <Note>
   Pitch positive looks down, yaw turns counter-clockwise from +X, roll spins around the view direction.
-  Fields `pitch`, `yaw`, `roll` are 32-bit floats. Assigning a non-number throws `TypeError`, NaN, Infinity or a value beyond float range throws `RangeError`.
+  Fields are 32-bit floats; assigning a non-number or NaN throws.
 </Note>
 
 ## Overview
@@ -4976,9 +4577,7 @@ const quarterTurn = Quaternion.fromAxisAngle([0, 0, 1], 90);
 const q = new Quaternion([0, 0, 0]);   // w defaults to 1: the identity
 ```
 
-<Note>
-  Fields `x`, `y`, `z`, `w` are 32-bit floats. Assigning a non-number throws `TypeError`, NaN, Infinity or a value beyond float range throws `RangeError`.
-</Note>
+Fields are 32-bit floats; assigning a non-number or NaN throws.
 
 ## Overview
 
@@ -5000,14 +4599,14 @@ const q = new Quaternion([0, 0, 0]);   // w defaults to 1: the identity
 
 <ValueClassCommon name="Quaternion" like="QuatLike" />
 
-Unlike the other classes, `mul` and `div` with a quaternion compose rotations (below). `lerp` takes the shorter arc and returns a unit quaternion. `normalize()` turns the zero quaternion into the identity. `q` and `-q` are the same rotation, but not `equals`.
+Unlike the other classes, `mul` and `div` with a quaternion compose rotations (below). `lerp` takes the shorter arc and returns a unit quaternion.
 
 | Also | Returns |
 |:-----|:--------|
 | `dot(other)` | Dot product |
 | `length()`, `lengthSqr()` | Length, squared length |
 | `conjugate()` | New `Quaternion` |
-| `inverse()` | New `Quaternion`. Throws `RangeError` for the zero quaternion |
+| `inverse()` | New `Quaternion` |
 
 {/* ------------------------------------------------------------------ */}
 
@@ -5020,7 +4619,7 @@ mul(factor: number | QuatLike): Quaternion
 div(divisor: number | QuatLike): Quaternion
 ```
 
-With a number, every component. With a quaternion, `a.mul(b)` applies `b` first, then `a`, and `a.div(b)` is `a * b⁻¹`. Dividing by zero or by a zero quaternion throws `RangeError`.
+With a number, every component. With a quaternion, `a.mul(b)` applies `b` first, then `a`, and `a.div(b)` is `a * b⁻¹`.
 
 ```ts
 const both = spin.mul(tilt);   // tilt first, then spin
@@ -5046,7 +4645,7 @@ const delta = to.div(from);    // delta.mul(from) equals to
 Quaternion.fromAxisAngle(axis: Vec3Like, degrees: number): Quaternion
 ```
 
-A turn of `degrees` around `axis`. The axis can be any length, but a zero axis throws `RangeError`.
+A turn of `degrees` around `axis`. The axis doesn't need to be unit length.
 
 ```ts
 const spin = Quaternion.fromAxisAngle([0, 0, 1], 45);   // 45° around world up
@@ -5100,7 +4699,7 @@ toAngles(): QAngle
 toAxisAngle(): { axis: Vector; degrees: number }
 ```
 
-Back to view angles, or to a unit axis and `0`–`360` degrees. At pitch ±90 `toAngles` gives roll `0` and puts the whole turn into yaw. The identity gives axis `(1, 0, 0)` and `0` degrees.
+Back to view angles, or to a unit axis and `0`–`360` degrees.
 
 ```ts
 Quaternion.fromAxisAngle([0, 0, 1], 90).toAngles();   // QAngle(0, 90, 0)
@@ -5150,7 +4749,7 @@ const logo = new Texture("assets/logo.png");
 ```
 
 <Note>
-  Loading and the GPU upload happen in the background. `width` and `height` are `0` until `ready` is `true`, and `render.image` draws nothing before that.
+  Loading is asynchronous. `width` and `height` are `0` until `ready` is `true`, and `render.image` draws nothing before that.
 </Note>
 
 ---
@@ -5167,17 +4766,17 @@ const logo = new Texture("assets/logo.png");
 new Texture(path: string, options?: { width?: number; height?: number })
 ```
 
-Loads a PNG, JPG, BMP, TGA, GIF (first frame) or SVG. `path` is relative to the script folder. A missing file throws `Error` with code `ENOENT`. Textures are cached by resolved path, so loading the same file twice is cheap.
+Loads a PNG, JPG, BMP, TGA, GIF (first frame) or SVG. `path` is relative to the script folder. A missing file throws `Error` with code `ENOENT`.
 
 ```ts
 const icon = new Texture("icons/bomb.png");
 const logo = new Texture("assets/logo.svg", { width: 64 });   // height keeps the aspect ratio
 ```
 
-`width` and `height` (`1`–`8192`) only apply to SVG and set its raster size. By default it's 4× the SVG's own size.
+`width` and `height` only apply to SVG and set its raster size.
 
 <Warning>
-  Without the `filesystem` [permission](/api/manifest#permissions) the file must be inside the script folder. Absolute paths, `..` and symlinks that lead out of it throw `Error` with code `ESANDBOX`.
+  Without the `filesystem` [permission](/api/manifest#permissions) the file must be inside the script folder.
 </Warning>
 
 {/* ------------------------------------------------------------------ */}
@@ -5190,12 +4789,7 @@ const logo = new Texture("assets/logo.svg", { width: 64 });   // height keeps th
 Texture.fromMemory(data: BufferSource, width: number, height: number): Texture
 ```
 
-A texture from raw RGBA8 pixels: row-major, 4 bytes per pixel, no row padding. The pixels are copied, so you can reuse `data`.
-
-| Throws | When |
-|:-------|:-----|
-| `RangeError` | `width` or `height` outside `1`–`8192`, or `data` shorter than `width * height * 4` bytes |
-| `TypeError` | `data` is a detached buffer |
+A texture from raw RGBA8 pixels: row-major, 4 bytes per pixel, no row padding. `data` is copied, so you can reuse it.
 
 ```ts
 const size = 32;
@@ -5213,7 +4807,7 @@ const gradient = Texture.fromMemory(pixels, size, size);
 
 | Property | Type | |
 |:---------|:-----|:--|
-| `ready` | `boolean` | `true` once uploaded. Stays `false` if the file couldn't be decoded. |
+| `ready` | `boolean` | `true` once loaded. Stays `false` if the file couldn't be decoded. |
 | `width`, `height` | `number` | Size in pixels, `0` until `ready` |
 | `path` | `string` or `null` | The resolved file path, `null` for `fromMemory` textures |
 
@@ -5254,9 +4848,7 @@ const eye = new Vector(0, 0, 64);
 const above = eye.add([0, 0, 16]);   // [x, y, z] and { x, y, z } work anywhere a Vector does
 ```
 
-<Note>
-  Fields `x`, `y`, `z` are 32-bit floats. Assigning a non-number throws `TypeError`, NaN, Infinity or a value beyond float range throws `RangeError`.
-</Note>
+Fields are 32-bit floats; assigning a non-number or NaN throws.
 
 ## Overview
 
@@ -5277,8 +4869,6 @@ const above = eye.add([0, 0, 16]);   // [x, y, z] and { x, y, z } work anywhere 
 ## Common
 
 <ValueClassCommon name="Vector" like="Vec3Like" />
-
-`normalize()` turns a vector shorter than `1e-6` into `(0, 0, 0)`.
 
 | Also | Returns |
 |:-----|:--------|
@@ -5324,7 +4914,7 @@ Engine convention, in degrees: pitch positive looks down. See [QAngle](/api/type
 toAngles(): QAngle
 ```
 
-The view angles that look along this direction, roll `0`. Straight up is pitch `-90`, straight down `90`, the zero vector gives `(0, 0, 0)`.
+The view angles that look along this direction, roll `0`.
 
 ```ts
 new Vector(0, 1, 0).toAngles();   // QAngle(0, 90, 0)
@@ -5400,9 +4990,7 @@ const center = new Vector2(960, 540);
 const corner = center.add([100, -50]);   // [x, y] and { x, y } work anywhere a Vector2 does
 ```
 
-<Note>
-  Fields `x`, `y` are 32-bit floats. Assigning a non-number throws `TypeError`, NaN, Infinity or a value beyond float range throws `RangeError`.
-</Note>
+Fields are 32-bit floats; assigning a non-number or NaN throws.
 
 A [Vector](/api/types/vector) is accepted too and gives its `x` and `y`. To get a screen position from a world one, use [render.worldToScreen](/api/render#worldtoscreen).
 
@@ -5425,8 +5013,6 @@ A [Vector](/api/types/vector) is accepted too and gives its `x` and `y`. To get 
 ## Common
 
 <ValueClassCommon name="Vector2" like="Vec2Like" />
-
-`normalize()` leaves the zero vector at `(0, 0)`.
 
 | Also | Returns |
 |:-----|:--------|

@@ -5,17 +5,16 @@ description: "Node-style file I/O rooted at the script's data/ folder."
 icon: "folder-open"
 ---
 
-File I/O shaped like Node's `fs`. Every async function has a `*Sync` twin with the same behaviour; the
-async ones run on a thread pool and never block the script.
+File I/O shaped like Node's `fs`. Every async function has a `*Sync` twin that blocks until it's done.
 
 ```ts
 import fs from "@native/fs";
 ```
 
 <Note>
-  Relative paths start at the script's `data/` folder (created on first import). Without the `filesystem`
-  [permission](/api/manifest#permissions) everything stays inside it: an absolute path, a `..` escape or a
-  link pointing out throws `ESANDBOX`. With it, absolute paths are used as given.
+  Relative paths start at the script's `data/` folder. Without the `filesystem`
+  [permission](/api/manifest#permissions) everything stays inside it, and paths leading out throw.
+  With it, absolute paths work as usual.
 </Note>
 
 ## Overview
@@ -35,8 +34,7 @@ import fs from "@native/fs";
   </Card>
 </CardGroup>
 
-Failures are thrown by the `*Sync` functions and reject the others, as an `Error` with `code`, `syscall`
-and `path`. A wrong argument type is a `TypeError` thrown synchronously by both. See [Errors](#errors).
+Failures throw (or reject) an `Error` with a Node-style `code` such as `ENOENT`. See [Errors](#errors).
 
 ---
 
@@ -53,16 +51,14 @@ fs.readFile(path: string, options?: BufferEncoding | { encoding?: BufferEncoding
 fs.readFileSync(path: string, options?: ...): string | Uint8Array
 ```
 
-Reads a whole file: a `Uint8Array` without an encoding, a string with one. Files over 1 GiB throw a
-`RangeError` with code `ERR_FS_FILE_TOO_LARGE`.
+Reads a whole file: a `Uint8Array` without an encoding, a string with one.
 
 ```ts
 const raw = await fs.readFile("icon.png");                 // Uint8Array
 const config = JSON.parse(fs.readFileSync("config.json", "utf8"));
 ```
 
-Encodings (case-insensitive): `utf8`, `latin1` (`binary`), `ascii`, `hex`, `base64`, `base64url`,
-`utf16le` (`ucs2`).
+Encodings: `utf8`, `latin1`, `ascii`, `hex`, `base64`, `base64url`, `utf16le`.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -75,8 +71,7 @@ fs.writeFile(path: string, data: string | BufferSource, options?: BufferEncoding
 fs.writeFileSync(path, data, options?): void
 ```
 
-Creates or replaces a file. Strings are encoded as UTF-8 unless you pass an encoding; the encoding is
-ignored for binary data.
+Creates or replaces a file. Strings are written as UTF-8 unless you pass an encoding.
 
 ```ts
 await fs.writeFile("output.txt", "Hello, world!");
@@ -116,7 +111,7 @@ fs.exists(path: string): Promise<boolean>
 fs.existsSync(path: string): boolean
 ```
 
-`true` when something exists at `path`. A path outside the sandbox still throws `ESANDBOX`.
+`true` when something exists at `path`.
 
 ```ts
 if (!fs.existsSync("config.json")) fs.writeFileSync("config.json", "{}");
@@ -133,7 +128,7 @@ fs.stat(path: string): Promise<Stats>
 fs.statSync(path: string): Stats
 ```
 
-Follows symbolic links. Throws `ENOENT` when nothing is there.
+Throws `ENOENT` when nothing is there.
 
 ```ts
 const st = fs.statSync("config.json");
@@ -145,7 +140,7 @@ console.log(st.size, new Date(st.mtimeMs), st.isFile());
 | `size` | bytes, `0` for directories |
 | `atimeMs`, `mtimeMs`, `birthtimeMs` | ms since the Unix epoch |
 | `isFile()`, `isDirectory()` | |
-| `isSymbolicLink()` | always `false`, links are followed |
+| `isSymbolicLink()` | always `false` |
 
 {/* ------------------------------------------------------------------ */}
 
@@ -158,8 +153,8 @@ fs.mkdir(path: string, options?: { recursive?: boolean }): Promise<void>
 fs.mkdirSync(path, options?): void
 ```
 
-Throws `EEXIST` when the directory exists and `ENOENT` when the parent is missing. With `recursive`
-it creates the parents and succeeds when the directory is already there.
+Creates a directory. With `recursive` it also creates missing parents and doesn't fail when the
+directory already exists.
 
 ```ts
 await fs.mkdir("saves/p1", { recursive: true });
@@ -176,8 +171,7 @@ fs.rmdir(path: string, options?: { recursive?: boolean }): Promise<void>
 fs.rmdirSync(path, options?): void
 ```
 
-Removes a directory: `ENOENT` when missing, `ENOTDIR` for a file, `ENOTEMPTY` when it has entries
-and `recursive` isn't set. Without `filesystem`, `data/` itself can't be removed (`ESANDBOX`).
+Removes a directory. Without `recursive` it must be empty (`ENOTEMPTY`).
 
 ```ts
 fs.rmdirSync("cache", { recursive: true });
@@ -190,7 +184,7 @@ fs.rmdirSync("cache", { recursive: true });
 | Function | |
 |:---------|:--|
 | `readdir(path): Promise<string[]>` | entry names (not paths), without `.` and `..` |
-| `unlink(path): Promise<void>` | deletes a file; `ENOENT` when missing, `EISDIR` for a directory |
+| `unlink(path): Promise<void>` | deletes a file |
 | `rename(oldPath, newPath): Promise<void>` | moves or renames, replacing an existing file |
 | `copyFile(src, dest): Promise<void>` | copies a file, replacing an existing one |
 | `truncate(path, length = 0): Promise<void>` | shrinks or zero-extends to `length` bytes |
@@ -218,24 +212,21 @@ fs.watch(path: string, listener: (eventType: "rename" | "change", filename: stri
 ```
 
 Calls `listener` for every change: `"rename"` for created, deleted or renamed entries, `"change"` for
-modified ones. `filename` is relative to the watched path, or `null` when the OS didn't report one.
-Throws (`ENOENT`, …) when the path can't be watched.
+modified ones. `filename` is relative to the watched path, and can be `null`.
 
 ```ts
 const watcher = fs.watch("configs", (event, name) => console.log(event, name), { recursive: true });
 watcher.close();
 ```
 
-A listener that throws is reported like any uncaught error and the watcher keeps running. An error in
-the watcher itself closes it and is reported the same way. Watchers close when the script unloads;
-`close()`, `using` or an aborted `signal` close them earlier.
+A listener that throws doesn't stop the watcher. Watchers close on unload, or earlier with `close()`,
+`using` or an aborted `signal`.
 
 ---
 
 ## Paths
 
-`fs.path` is Node's `path` (Windows flavour) for the common helpers. Pure string work: no I/O, no
-sandbox check.
+`fs.path` has the common helpers of Node's `path` (Windows flavour). String work only, no I/O.
 
 | Function | Example |
 |:---------|:--------|
@@ -249,12 +240,7 @@ sandbox check.
 
 ## Errors
 
-| Property | |
-|:---------|:--|
-| `code` | `ENOENT`, `EEXIST`, `EISDIR`, `ENOTDIR`, `ENOTEMPTY`, `EACCES`, `EBUSY`, `ESANDBOX`, … |
-| `syscall` | the failed operation (`"open"`, `"mkdir"`, …); absent for `ESANDBOX` |
-| `path` | the path as you passed it |
-| `dest` | the second path of `rename` / `copyFile` |
+Errors carry Node's `code` (`ENOENT`, `EEXIST`, `ENOTEMPTY`, …) and the `path` you passed.
 
 ```ts
 try {

@@ -16,11 +16,11 @@ const glass = Color.from([255, 255, 255, 64]);
 ```
 
 <Note>
-  A plain number is always packed `0xAABBGGRR`, red in the low byte (the ImGui `ImU32` layout).
-  Fields `r`, `g`, `b`, `a` take integers `0`–`255`: a non-number throws `TypeError`, a fraction or anything out of range throws `RangeError`.
+  A plain number is always packed `0xAABBGGRR`, red in the low byte.
+  Fields `r`, `g`, `b`, `a` take integers `0`–`255`, anything else throws.
 </Note>
 
-`ColorLike` is a `Color`, a packed number, `"#rgb"`, `"#rgba"`, `"#rrggbb"`, `"#rrggbbaa"`, `[r, g, b, a?]` or `{ r, g, b, a? }`. Array and object channels are clamped to `0`–`255` and rounded.
+`ColorLike` is a `Color`, a packed number, `"#rgb"`, `"#rgba"`, `"#rrggbb"`, `"#rrggbbaa"`, `[r, g, b, a?]` or `{ r, g, b, a? }`.
 
 ## Overview
 

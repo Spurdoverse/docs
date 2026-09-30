@@ -47,8 +47,6 @@ Every query takes a filter last: a preset name, a `trace.filter()` object, or in
 | `"player_movement"` | what player movement hits |
 | `"occlusion"` | bullet collision without normal, material or entity info (cheapest) |
 
-An unknown preset name is a `TypeError`.
-
 {/* ------------------------------------------------------------------ */}
 
 ### filter
@@ -80,7 +78,7 @@ Options you leave out keep the preset's value.
 | `excludeTags` | | never shapes with one of these tags |
 | `ignore` | | `EntityRef` or `EntityRef[]`, at most 8 |
 
-Tags: `pass_bullets`, `player_clip`, `npc_clip`, `grenade_clip`, `ladder`, `window`, `sky`, `player`, `thrown_grenade`, `solid`, `block_los`, `block_light`, `block_sound`. An unknown tag is a `TypeError`.
+Tags: `pass_bullets`, `player_clip`, `npc_clip`, `grenade_clip`, `ladder`, `window`, `sky`, `player`, `thrown_grenade`, `solid`, `block_los`, `block_light`, `block_sound`.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -93,7 +91,7 @@ filter.ignore(entities: EntityRef | EntityRef[]): TraceFilter
 filter.clearIgnore(): TraceFilter
 ```
 
-Passes through these entities, matched by slot. At most 8 per filter; past that it's a `RangeError` and the filter is left unchanged. Both return the filter, so they chain.
+Queries pass through these entities, at most 8 per filter. Both return the filter, so they chain.
 
 ```ts
 const shots = trace.filter({ type: "bullet", players: true });
@@ -135,7 +133,7 @@ if (result?.hit) console.log("hit", result.surface?.name, "at", result.position)
 trace.rayAll(start: Vec3Like, end: Vec3Like, filter?: TraceFilterArg, maxHits?: number): TraceResult[] | null
 ```
 
-Every hit along the ray, up to `maxHits` (1–128, default 32, `RangeError` otherwise). `null` without a map.
+Every hit along the ray, up to `maxHits` (default 32, max 128). `null` without a map.
 
 ```ts
 const hits = trace.rayAll(eye, end, { type: "bullet", players: true }) ?? [];
@@ -154,7 +152,7 @@ trace.sphere(start: Vec3Like, end: Vec3Like, radius: number, filter?: TraceFilte
 trace.capsule(start: Vec3Like, end: Vec3Like, radius: number, halfHeight: number, filter?: TraceFilterArg): TraceResult | null
 ```
 
-Moves a shape from `start` to `end` and stops at the first hit. Box `mins`/`maxs` are relative to the moving position. A negative sphere `radius` is a `RangeError`.
+Moves a shape from `start` to `end` and stops at the first hit. Box `mins`/`maxs` are relative to the moving position.
 
 ```ts
 // would a standing player fit 64 units ahead?
@@ -176,7 +174,7 @@ const blocked = box?.hit ?? true;
 trace.isVisible(from: Vec3Like, to: Vec3Like): boolean | null
 ```
 
-Line of sight through world geometry. It's the cheap occlusion trace, and players never block it. `null` without a map.
+Line of sight through world geometry. Players don't block it. `null` without a map.
 
 ```ts
 if (trace.isVisible(myEye, enemyEye)) console.log("in sight");
@@ -250,7 +248,7 @@ if (wall) console.log(wall.distance, wall.normal);
 | `startSolid`, `allSolid` | started inside / stayed inside solid |
 | `hitSky`, `hitWindow`, `hitLadder`, `hitPassBullets` | surface flags |
 | `entity` | the hit entity while it exists; `null` for world, with `resolveEntity` off, or once it's gone |
-| `entityIndex` | its slot, still set after `entity` is gone; `null` for world |
+| `entityIndex` | its index, still set after `entity` is gone; `null` for world |
 | `hitGroup` | player hitbox group with `players: true`, else `null` |
 | `surface` | `{ name, penetration, damage }`, `null` on no hit or with `resolveMaterials` off |
 

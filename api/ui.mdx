@@ -33,7 +33,7 @@ import ui from "@native/ui";
     `key`, `mode`, `active`, `press` / `release`.
   </Card>
   <Card title="Paths and persistence" icon="floppy-disk" href="#paths-and-persistence">
-    `id`, `persist`, `EEXIST`.
+    `id`, `persist`, `dispose`.
   </Card>
   <Card title="Window" icon="window-maximize" href="#window">
     `open`, `close`, `on`.
@@ -88,7 +88,7 @@ middle in declaration order.
 |:-------|:--|
 | `column` | `"left"` or `"right"`. |
 | `toggle` | Puts a switch in the header: `group.value`, `group.on("change")`, `group.reset()`. |
-| `default`, `persist`, `key`, `onChange` | Like on a [switch](#switch). Only with `toggle`, a `TypeError` otherwise. |
+| `default`, `persist`, `key`, `onChange` | Like on a [switch](#switch). Only with `toggle`. |
 
 ```ts
 const trigger = main.group("Triggerbot", { column: "right", toggle: true, key: { mode: "hold" } });
@@ -105,8 +105,7 @@ container.row(build?: (row: Row) => void): Row
 container.row(options: { visible?: Reactive<boolean>; disabled?: Reactive<boolean> }, build?: (row: Row) => void): Row
 ```
 
-Lays its children out side by side. `build` runs right away with the row. Rows don't add a path
-segment, so wrapping controls in a row never moves their saved values.
+Lays its children out side by side. `build` runs right away with the row.
 
 ```ts
 trigger.row((row) => {
@@ -132,7 +131,7 @@ A control has these members:
 
 | Member | |
 |:-------|:--|
-| `value` | Read or write. Writing updates the menu and fires `change` right away. A bad value throws `TypeError` or `RangeError`. |
+| `value` | Read or write. Writing updates the menu and fires `change`. |
 | `label`, `visible`, `disabled` | Read or write. Writing a function makes it [reactive](#reactive-values). |
 | `on("change", fn)` | Fires after the user, the script, `reset()` or a config changed the value. Returns a `Subscription`. |
 | `reset()` | Back to the declared default. |
@@ -170,7 +169,7 @@ container.slider(label: string, options?: SliderOptions): Control<number>
 | `min`, `max` | `0`, `100` | `min` must not exceed `max`. |
 | `default` | `min` | Must lie in `min..max`. |
 | `step` | `0` | Snap step, `0` for none. |
-| `precision` | `0` | Decimals shown, `0..6`. `0` makes it an integer slider: bounds, step and values must be integers. |
+| `precision` | `0` | Decimals shown. `0` makes it an integer slider. |
 | `unit` | | Appended to the printed value, e.g. `"°"` or `" ms"`. |
 
 ```ts
@@ -196,8 +195,7 @@ mode.value = 1;           // "Rage"
 mode.items = ["Legit"];   // selection falls back to the default, change fires
 ```
 
-Items must be unique strings (`TypeError`) and not empty (`RangeError`). An unknown item or an
-index out of range throws the same way.
+Items must be unique and non-empty. Writing an unknown item or index throws.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -308,8 +306,8 @@ event.
 ui.signal<T>(initial?: T): Signal<T>
 ```
 
-A value holder. Setting `value` to something new (`Object.is`) fires `change` and re-runs whatever
-read it. Mutating an object in place doesn't count.
+A value holder. Setting `value` to something new fires `change` and re-runs whatever read it.
+Mutating an object in place doesn't count.
 
 ```ts
 const kills = ui.signal(0);
@@ -328,7 +326,7 @@ ui.computed<T>(compute: () => T): Computed<T>
 ```
 
 A read-only value derived from others. `compute` re-runs when something it read changes; `change`
-fires when the result differs. If it throws, the error is reported and the last value kept.
+fires when the result differs.
 
 ```ts
 const radius = ui.computed(() => Math.tan(Math.toRadians(fov.value ?? 0)) * 400);
@@ -345,7 +343,6 @@ ui.effect(fn: () => void, options?: { signal?: AbortSignal }): Subscription
 ```
 
 Runs `fn` now and again whenever anything it read changes, until the Subscription is disposed.
-Errors are reported and the effect keeps running.
 
 ```ts
 const stop = ui.effect(() => console.log("mode is", mode.value));
@@ -362,9 +359,7 @@ stop();
 ui.batch<T>(fn: () => T): T
 ```
 
-Defers reactive re-runs until `fn` returns, then runs each affected function once. `change`
-listeners still fire immediately. Returns what `fn` returns; a throw is re-thrown after the
-re-runs.
+Defers reactive re-runs until `fn` returns, then runs each affected function once. Returns what `fn` returns.
 
 ```ts
 ui.batch(() => {
@@ -382,14 +377,13 @@ rebind the key and change the mode in the menu; a persisted control saves both.
 
 | Member | |
 |:-------|:--|
-| `key` | Win32 virtual-key code, `0` when unbound. Writing takes an integer `0..255`. |
+| `key` | Win32 virtual-key code, `0` when unbound. |
 | `mode` | `"hold"` (active while down), `"toggle"` (flips on each press) or `"always"`. |
 | `active` | Whether it's active right now. Reactive. |
 | `on("press", fn)`, `on("release", fn)` | When it becomes active and when it stops. Returns a `Subscription`. |
 | `alive` | Whether its control is alive. |
 
-The `key` option (`{ key?, mode? }`) only seeds a setting that doesn't exist yet. A key the user
-bound, or cleared, is never overwritten.
+The `key` option (`{ key?, mode? }`) is only a default: once the user binds or clears the key, theirs wins.
 
 ```ts
 const aimbot = main.switch("Aimbot", { key: { key: 0x06, mode: "hold" } });
@@ -406,14 +400,11 @@ aimbot.key?.on("release", () => console.log("released"));
 
 ## Paths and persistence
 
-Every node has a path: its parent's path plus its own segment, the `id` option or the slugified
-label. `ui.page("Aim").group("Main").slider("FOV")` is `aim/main/fov`, saved in the user's config
-under `script.<script name>.aim/main/fov`.
+Saved values are keyed by path: the parent's path plus the `id` option or the slugified label.
+`ui.page("Aim").group("Main").slider("FOV")` is `aim/main/fov`. Rows add nothing.
 
-- Rows add no segment.
-- A second control on a taken path throws an `Error` with code `EEXIST`. Give it an `id`, or
-  dispose the old one first. Buttons and texts save nothing and move to `~2`, `~3` instead.
-- Renaming a label moves the path, so the saved value no longer applies. Set `id` when the label may change.
+- Two controls on the same path throw `EEXIST`. Give one an `id` (buttons and texts don't clash).
+- Renaming a label moves the path and loses the saved value. Set `id` when the label may change.
 - `persist: false` keeps a value for the session only.
 
 ```ts
@@ -431,8 +422,7 @@ node.dispose(): void
 ```
 
 Removes a node and everything in it. After that `alive` is `false`, reads return `null` and
-writes throw an `Error` with code `ESTALE`. Declaring the same path again creates a new node with
-a new handle. Signals and computeds are disposed the same way.
+writes throw. Declaring the same path again creates a fresh node. Signals and computeds have `dispose()` too.
 
 ```ts
 const debug = main.group("Debug");
@@ -445,10 +435,10 @@ debug.dispose();
 
 | Call | |
 |:-----|:--|
-| `ui.open()` | Opens the window centred on screen. Does nothing until there's a page. |
+| `ui.open()` | Opens the window. Does nothing until there's a page. |
 | `ui.close()` | Closes it. |
 | `ui.on("open", fn)`, `ui.on("close", fn)` | Follows the window. |
-| `ui.on("config", fn)` | Once after a config was applied, after every moved control fired `change`. |
+| `ui.on("config", fn)` | After a config is loaded and its `change` events have fired. |
 
 ---
 

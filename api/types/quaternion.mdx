@@ -14,9 +14,7 @@ const quarterTurn = Quaternion.fromAxisAngle([0, 0, 1], 90);
 const q = new Quaternion([0, 0, 0]);   // w defaults to 1: the identity
 ```
 
-<Note>
-  Fields `x`, `y`, `z`, `w` are 32-bit floats. Assigning a non-number throws `TypeError`, NaN, Infinity or a value beyond float range throws `RangeError`.
-</Note>
+Fields are 32-bit floats; assigning a non-number or NaN throws.
 
 ## Overview
 
@@ -38,14 +36,14 @@ const q = new Quaternion([0, 0, 0]);   // w defaults to 1: the identity
 
 <ValueClassCommon name="Quaternion" like="QuatLike" />
 
-Unlike the other classes, `mul` and `div` with a quaternion compose rotations (below). `lerp` takes the shorter arc and returns a unit quaternion. `normalize()` turns the zero quaternion into the identity. `q` and `-q` are the same rotation, but not `equals`.
+Unlike the other classes, `mul` and `div` with a quaternion compose rotations (below). `lerp` takes the shorter arc and returns a unit quaternion.
 
 | Also | Returns |
 |:-----|:--------|
 | `dot(other)` | Dot product |
 | `length()`, `lengthSqr()` | Length, squared length |
 | `conjugate()` | New `Quaternion` |
-| `inverse()` | New `Quaternion`. Throws `RangeError` for the zero quaternion |
+| `inverse()` | New `Quaternion` |
 
 {/* ------------------------------------------------------------------ */}
 
@@ -58,7 +56,7 @@ mul(factor: number | QuatLike): Quaternion
 div(divisor: number | QuatLike): Quaternion
 ```
 
-With a number, every component. With a quaternion, `a.mul(b)` applies `b` first, then `a`, and `a.div(b)` is `a * b⁻¹`. Dividing by zero or by a zero quaternion throws `RangeError`.
+With a number, every component. With a quaternion, `a.mul(b)` applies `b` first, then `a`, and `a.div(b)` is `a * b⁻¹`.
 
 ```ts
 const both = spin.mul(tilt);   // tilt first, then spin
@@ -84,7 +82,7 @@ const delta = to.div(from);    // delta.mul(from) equals to
 Quaternion.fromAxisAngle(axis: Vec3Like, degrees: number): Quaternion
 ```
 
-A turn of `degrees` around `axis`. The axis can be any length, but a zero axis throws `RangeError`.
+A turn of `degrees` around `axis`. The axis doesn't need to be unit length.
 
 ```ts
 const spin = Quaternion.fromAxisAngle([0, 0, 1], 45);   // 45° around world up
@@ -138,7 +136,7 @@ toAngles(): QAngle
 toAxisAngle(): { axis: Vector; degrees: number }
 ```
 
-Back to view angles, or to a unit axis and `0`–`360` degrees. At pitch ±90 `toAngles` gives roll `0` and puts the whole turn into yaw. The identity gives axis `(1, 0, 0)` and `0` degrees.
+Back to view angles, or to a unit axis and `0`–`360` degrees.
 
 ```ts
 Quaternion.fromAxisAngle([0, 0, 1], 90).toAngles();   // QAngle(0, 90, 0)

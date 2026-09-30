@@ -39,27 +39,16 @@ All fields are optional. The values end up on the [`script`](/api/globals#script
 
 ## Permissions
 
-Two capabilities: `"filesystem"` and `"ffi"`.
+By default a script can do everything. To restrict it, list only what it needs:
 
-| Manifest | Granted |
-|:---------|:--------|
-| no `permissions` key | both |
-| `["filesystem", "ffi"]` | both |
-| `["filesystem"]` | only `filesystem` |
-| `[]` | nothing |
-| an unknown name, or not an array of strings | the script doesn't load, the log lists the valid names |
-
-| Permission | Without it | With it |
-|:-----------|:-----------|:--------|
-| `filesystem` | [fs](/api/fs) and [WASI](/api/wasi) are confined to the script's `data/` folder, [Texture](/api/types/texture) to the script folder. Absolute paths and `..` escapes throw `ESANDBOX`. | Any path works. |
-| `ffi` | Importing [@native/ffi](/api/ffi) throws `EPERM`. | Load DLLs and call native code in the host process. |
-
-Everything else (entities, render, esp, ui, input, memory, trace, networking, `localStorage`) needs
-no permission. At runtime, `script.permissions` lists what was granted.
-
-```ts
-if (script.permissions.includes("filesystem")) console.log("full disk access");
+```json
+"permissions": ["filesystem"]
 ```
+
+| Permission | Gives |
+|:-----------|:------|
+| `filesystem` | Files outside the script's own folder. Without it [fs](/api/fs) stays in `data/`. |
+| `ffi` | [@native/ffi](/api/ffi): loading DLLs and calling native code. |
 
 ---
 

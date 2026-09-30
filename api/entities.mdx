@@ -12,7 +12,7 @@ import entities from "@native/entities";
 ```
 
 <Note>
-  Everything reads the tick snapshot, refreshed right before `tick`. Values don't change within a tick.
+  Values update once per tick, so they don't change between `tick` and the `render` frames after it.
 </Note>
 
 ## Overview
@@ -51,7 +51,7 @@ Anywhere an entity is expected you can also pass its index (`EntityRef`).
 entities.getByIndex(index: number): IEntityBase | null
 ```
 
-The entity in slot `index`, or `null` for an empty slot. `RangeError` outside 0–32767.
+The entity at `index`, or `null` when there's none.
 
 ```ts
 const ent = entities.getByIndex(64);
@@ -68,7 +68,7 @@ console.log(ent?.className ?? "empty slot");
 entities.getByHandle(handle: number): IEntityBase | null
 ```
 
-Exactly the entity with this handle (slot + serial), or `null` once it's gone. Handles are what `entity.handle` returns and what `CHandle` fields store in memory.
+The entity with this [`handle`](#entity-objects), or `null` once it's gone.
 
 ```ts
 const saved = pawn.handle;
@@ -86,7 +86,7 @@ const same = entities.getByHandle(saved);   // null if that pawn was destroyed
 entities.getEntities(): IEntityBase[]
 ```
 
-Every entity in the current snapshot.
+Every entity.
 
 ```ts
 const counts = new Map<string, number>();
@@ -105,7 +105,7 @@ entities.find(className: string): EntityQuery
 entities.find(options: { className?: string; parent?: string }): EntityQuery
 ```
 
-`className` matches exactly that class, `parent` matches it and every class deriving from it. Both together is an AND. An unknown name matches nothing, it's not an error. Returns a lazy [EntityQuery](#entityquery), typed by the class you asked for.
+`className` matches exactly that class, `parent` matches it and every class deriving from it. Both together is an AND; an unknown name matches nothing. Returns an [EntityQuery](#entityquery) typed by the class you asked for.
 
 ```ts
 const bomb = entities.find("C_PlantedC4").first();
@@ -178,15 +178,14 @@ console.log(ctrl?.m_iszPlayerName, ctrl?.m_iPing);
 | Member | |
 |:-------|:--|
 | `alive: boolean` | the entity still exists |
-| `index: number` | entity list slot, 0–32767 |
-| `handle: number` | slot + serial, for [getByHandle](#getbyhandle) |
+| `index: number` | entity index |
+| `handle: number` | id for [getByHandle](#getbyhandle); `m_h*` fields hold these |
 | `className: string` | schema class, e.g. `"C_CSPlayerPawn"` |
-| `address: Pointer \| null` | where it lives in game memory, see [Pointer](/api/types/pointer) |
+| `address: Pointer \| null` | address in game memory, see [Pointer](/api/types/pointer) |
 | `toString(): string` | `"Entity(12, C_CSPlayerPawn)"`, with `", stale"` once it's gone |
 
-An entity object is bound to one entity (slot + serial). Looking it up twice gives the same object, so `===` and `Map` keys work.
-
-When the entity is destroyed `alive` turns `false` for good. The object never re-binds to whatever takes the slot next. From then on schema fields, `address`, `read`, `bytes` and every helper return `null`. `index`, `handle`, `className` and `toString()` keep working.
+The same entity is always the same object, so `===` and `Map` keys work. Once it's destroyed, `alive` is `false`
+for good and fields, `address`, `read`, `bytes` and helpers return `null`; `index`, `handle` and `className` still work.
 
 ```ts
 let target: IPlayerPawn | null = null;
@@ -206,7 +205,7 @@ on("tick", () => {
 
 ## Schema fields
 
-Every field of the game schema is a read-only property with its schema name: `pawn.m_iHealth`, `pawn.m_ArmorValue`. Autocompletion shows what each class has; the types come from `entities.d.ts`, where class `C_CSPlayerPawn` is `IC_CSPlayerPawn`. Assigning a field throws `TypeError`.
+Every schema field is a read-only property under its schema name: `pawn.m_iHealth`, `pawn.m_ArmorValue`. Autocompletion shows what each class has; the type for class `C_CSPlayerPawn` is `IC_CSPlayerPawn`.
 
 | Schema type | Reads as |
 |:------------|:---------|
@@ -240,7 +239,7 @@ Nested structs (`m_pWeaponServices` above, `getWeaponData()`) have `address`, `r
 entity.read<T extends ScalarType>(type: T, offset: number): ScalarValue<T> | null
 ```
 
-Decodes one value `offset` bytes into the tick-cached copy of the object, for data the schema doesn't name. Types are the [Pointer](/api/types/pointer#scalar-types) ones; strings end at the first NUL. `RangeError` past the end of the object, `null` once it's gone.
+Reads one value `offset` bytes into the object, for data the schema doesn't name. Types are the [Pointer](/api/types/pointer#scalar-types) ones. `RangeError` past the end of the object.
 
 ```ts
 const health = pawn.read("int32", 0x34C);
@@ -257,7 +256,7 @@ const origin = pawn.read("vector", 0x1224);
 entity.bytes(offset?: number, size?: number): Uint8Array | null
 ```
 
-A copy of `size` bytes from `offset`, defaulting to the whole object. `RangeError` past the end, `null` once it's gone.
+A copy of `size` bytes from `offset`, defaulting to the whole object. `RangeError` past the end.
 
 ```ts
 const raw = pawn.bytes(0x300, 0x40);
@@ -267,14 +266,14 @@ const raw = pawn.bytes(0x300, 0x40);
 
 ## Helpers
 
-Every helper returns `null` once the entity is gone or when the data isn't there (no model, no scene node).
+Helpers return `null` when the data isn't there (entity gone, no model).
 
 | Every entity | |
 |:-------------|:--|
-| `getOrigin(): Vector \| null` | scene-node absolute origin |
+| `getOrigin(): Vector \| null` | world position |
 | `getVelocity(): Vector \| null` | |
 | `getBounds(): Bounds \| null` | world-space collision box `{ mins, maxs }` at the current origin |
-| `isEnemy(other: EntityRef): boolean \| null` | on a different team, honours `mp_teammates_are_enemies`; `null` when either is gone |
+| `isEnemy(other: EntityRef): boolean \| null` | on a different team, honours `mp_teammates_are_enemies` |
 
 | Model entities (pawns, weapons, props) | |
 |:---------------------------------------|:--|
@@ -288,7 +287,7 @@ Every helper returns `null` once the entity is gone or when the data isn't there
 |:--------------------|:--|
 | `controller: ICCSPlayerController \| null` | the controller owning a pawn |
 | `getViewAngles(): QAngle \| null` | `m_angEyeAngles`, `C_CSPlayerPawn` only |
-| `getWeaponData(): ICCSWeaponBaseVData \| null` | the weapon's VData (a schema struct, not an entity) |
+| `getWeaponData(): ICCSWeaponBaseVData \| null` | the weapon's static data: name, damage, clip size… |
 
 ```ts
 const weapon = me.m_pWeaponServices?.m_hActiveWeapon;
@@ -306,7 +305,7 @@ console.log(data?.m_szName, data?.m_nDamage, me.getBounds()?.maxs);
 entity.isVisible(target: EntityRef, point?: Vec3Like): boolean | null
 ```
 
-Line of sight through world geometry from this entity's eyes (box centre if it isn't a pawn) to `target`'s eyes or box centre. Pass `point` to test that spot instead. `null` without a map or when either end is unknown.
+Line of sight through world geometry from this entity's eyes (box centre if it isn't a pawn) to `target`'s eyes or box centre. Pass `point` to test that spot instead. `null` when no map is loaded.
 
 ```ts
 if (me.isVisible(enemy)) console.log("eyes visible");
@@ -338,7 +337,7 @@ Hitboxes and bones of the current pose, in model order. Look one up by name, or 
 | `bone`, `boneName` | the bone it's attached to |
 | `group` | 1 head, 2 chest, 3 stomach, 4/5 arms, 6/7 legs, 8 neck |
 | `radius` | capsule radius, 0 for boxes |
-| `start`, `end` | world-space ends (`mins`/`maxs` through the bone) |
+| `start`, `end` | world-space ends |
 | `mins`, `maxs` | bone-space bounds |
 | `shapeType`, `surfaceProperty` | |
 
@@ -356,7 +355,7 @@ for (const bone of enemy.getBones() ?? [])
 
 ## EntityQuery
 
-What [find](#find) returns. It's lazy and immutable: `filter` returns a new query, and every other call walks the snapshot again. A callback that throws stops the walk.
+What [find](#find) returns. `filter` returns a new query and leaves the original unchanged.
 
 | Method | Returns |
 |:-------|:--------|

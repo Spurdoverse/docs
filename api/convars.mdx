@@ -11,11 +11,6 @@ Reads engine console variables by exact name.
 import convars from "@native/convars";
 ```
 
-<Note>
-  Values are read at most once per tick. A convar that doesn't exist is `null` and is looked up again
-  later, so one registered after your first try is still found.
-</Note>
-
 ---
 
 ## Reading
@@ -75,14 +70,8 @@ convars.getFloat(name: string): number | null
 convars.getString(name: string): string | null
 ```
 
-Convert by the convar's real type. `null` when it doesn't exist, `TypeError` when its type can't convert (`getFloat` on a string convar).
-
-| Getter | Accepts |
-|:-------|:--------|
-| `getBool` | bool, integers, floats (`!= 0`) |
-| `getInt` | bool (0/1), integers, floats (toward zero); `RangeError` beyond ±2^53 |
-| `getFloat` | bool (0/1), integers, floats |
-| `getString` | string |
+`null` when the convar doesn't exist. Numeric and bool convars convert between each other (`getInt` truncates);
+asking a string convar for a number, or a number convar for a string, throws `TypeError`.
 
 ```ts
 const sens = convars.getFloat("sensitivity") ?? 1;

@@ -8,8 +8,7 @@ icon: "arrow-pointer"
 An address in the game process. Immutable: arithmetic returns a new `Pointer`. Global class, no import.
 
 <Note>
-  `Pointer` is always game memory. Host-process addresses in [ffi](/api/ffi) are plain `bigint`s, and
-  the two never mix. Game memory is read-only.
+  `Pointer` is always game memory, read-only. Addresses in [ffi](/api/ffi) are plain `bigint`s.
 </Note>
 
 ## Overview
@@ -48,7 +47,7 @@ Pointer.from(address: PointerLike): Pointer
 Pointer.null: Pointer
 ```
 
-`PointerLike` is a `Pointer`, a `bigint`, a non-negative safe integer or a `"0x…"` string. Anything else is a `TypeError`, a negative or unsafe number a `RangeError`. `Pointer.null` is a shared, frozen null pointer.
+`PointerLike` is a `Pointer`, a `bigint`, a non-negative integer or a `"0x…"` string. `Pointer.null` is the null pointer.
 
 ```ts
 const a = new Pointer(0x7FF6_1234_0000n);
@@ -71,8 +70,6 @@ Most pointers come from [memory.module](/api/memory#module), [memory.scan](/api/
 | `equals(other: PointerLike): boolean` | same address |
 | `toString(): string` | `"Pointer(0x7FF612340000)"` |
 | `toJSON(): string` | `"0x7FF612340000"`, accepted back by `new Pointer()` |
-
-`add` and `sub` throw `RangeError` if the result leaves the 64-bit range.
 
 ---
 
@@ -133,11 +130,11 @@ Reads by [scalar type](#scalar-types), by struct, or copies raw bytes into a [Sn
 | Call | Returns |
 |:-----|:--------|
 | `read("float")` | one value |
-| `read("float", 16)` | `count` values (0 to 1,000,000): a typed array for numbers (`Float32Array` here), a plain array otherwise |
-| `read("string")` | inline text up to its NUL; `maxLength` is bytes for `"string"` (default 4096), UTF-16 units for `"wstring"` (default 2048) |
+| `read("float", 16)` | `count` values: a typed array for numbers (`Float32Array` here), a plain array otherwise |
+| `read("string")` | inline text up to its NUL; `maxLength` is bytes for `"string"`, UTF-16 units for `"wstring"` |
 | `read(Struct)` | one struct copied out, as a view |
 | `read(Struct, 64)` | `count` structs sharing one copied buffer |
-| `read(0x400)` | a `Snapshot` of 0 to 256 MiB |
+| `read(0x400)` | a `Snapshot` of that many bytes |
 
 ```ts
 const health = pawn.add(0x34C).read("int32");
@@ -145,7 +142,7 @@ const matrix = viewMatrix.read("float", 16);
 const name = pawn.resolve(0x6E8, 0x10).read("string");
 ```
 
-Struct types come from [memory.struct](/api/memory#struct). In a struct read from the game, `ptr` fields are `Pointer`s and nested structs are views too. Writing a field changes only the local copy.
+Struct types come from [memory.struct](/api/memory#struct). `ptr` fields read as `Pointer`s. Writing a field changes only the local copy.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -159,7 +156,7 @@ ptr.resolveRaw(...offsets: (number | bigint)[]): Pointer
 ptr.readRaw(...): same as read
 ```
 
-`read`, `deref` and `resolve` go through the per-frame read cache: cheap, but up to one cache frame old. Reads above 64 KiB always go direct. The `…Raw` variants take the same arguments and always read fresh.
+`read`, `deref` and `resolve` can return a value up to one frame old. The `…Raw` variants take the same arguments and always read fresh.
 
 ```ts
 const cached = ptr.read("int32");
@@ -170,7 +167,7 @@ const fresh = ptr.readRaw("int32");
 
 ## Scalar types
 
-The one set of type names every memory read uses: `Pointer.read`, `Snapshot.read`, `entity.read` and struct fields. Any other name is a `TypeError`.
+The type names every memory read uses: `Pointer.read`, `Snapshot.read`, `entity.read` and struct fields.
 
 | Type | Size | Value |
 |:-----|:-----|:------|
@@ -189,16 +186,16 @@ The one set of type names every memory read uses: `Pointer.read`, `Snapshot.read
 
 ## Snapshot
 
-What `read(byteCount)` returns: bytes copied out of the game once. Reading from it never touches game memory again; anything outside it is a `RangeError`.
+What `read(byteCount)` returns: bytes copied out of the game once. Reading past its end throws `RangeError`.
 
 | Member | |
 |:-------|:--|
 | `base: Pointer` | where the bytes came from |
 | `size: number` | byte count |
-| `bytes: Uint8Array` | the snapshot's own bytes; a view, so writing to it changes later reads |
-| `read(type, offset?)` | one value at `offset` (default 0); inline strings end at their NUL or the snapshot's end |
-| `as(struct, offset?)` | a struct view over the bytes; `offset` must be a multiple of the struct's alignment |
-| `as(struct, offset, count)` | `count` consecutive views (0 to 1,000,000) |
+| `bytes: Uint8Array` | the copied bytes |
+| `read(type, offset?)` | one value at `offset` (default 0) |
+| `as(struct, offset?)` | a struct view over the bytes |
+| `as(struct, offset, count)` | `count` consecutive views |
 | `toString()` | `"Snapshot(0x…, N bytes)"` |
 
 ```ts

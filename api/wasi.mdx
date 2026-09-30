@@ -31,19 +31,18 @@ import { WASI } from "@native/wasi";
 new WASI(options?: WASIOptions)
 ```
 
-Creates one WASI environment. Throws `TypeError` for malformed options, `RangeError` for more than 4096
-args/env entries or more than 1 MiB of them, and `EPERM` / `ENOENT` for a bad preopen.
+Creates one WASI environment.
 
 | Option | Default | |
 |:-------|:--------|:--|
 | `args` | `[]` | argv, including `argv[0]` |
 | `env` | `{}` | environment variables |
 | `preopens` | `{ "/": data/ }` | guest directory → host directory; relative host paths start at `data/` |
-| `returnOnExit` | `true` | `proc_exit(code)` ends `start()`, which returns `code`; `false` makes `start()` throw instead |
+| `returnOnExit` | `true` | `proc_exit(code)` ends `start()`, which returns `code`; `false` makes it throw instead |
 | `version` | `"preview1"` | the only one |
 
-A host directory outside `data/` needs the `filesystem` [permission](/api/manifest#permissions)
-(`EPERM` otherwise) and must exist (`ENOENT`).
+A host directory outside `data/` needs the `filesystem` [permission](/api/manifest#permissions) and
+must exist.
 
 ```ts
 const wasi = new WASI({
@@ -82,15 +81,14 @@ const imports = { wasi_snapshot_preview1: wasi.wasiImport, env: { log: (n: numbe
 wasi.start(instance: WebAssembly.Instance): number
 ```
 
-Runs a command: calls `_start()` and returns the exit code (0 when `_start` returns). The module must
-export `memory` and `_start` and must not export `_initialize` (`TypeError`). Only one `start()` or
-`initialize()` per `WASI` (`ESTATE`).
+Runs a command: calls `_start()` and returns the exit code (0 when `_start` returns). Call `start()` or
+`initialize()` once per `WASI`.
 
 ```ts
 const code = wasi.start(instance);
 ```
 
-With `returnOnExit: false`, `proc_exit` throws an `Error` with `code: "EEXIT"` and `exitCode`.
+With `returnOnExit: false`, `proc_exit` throws an `Error` with `exitCode`.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -102,8 +100,8 @@ With `returnOnExit: false`, `proc_exit` throws an `Error` with `code: "EEXIT"` a
 wasi.initialize(instance: WebAssembly.Instance): void
 ```
 
-Sets up a reactor: calls `_initialize()` if it's exported. The module must export `memory` and must not
-export `_start`. Then call its exports yourself.
+Sets up a reactor (a module without `_start`): calls `_initialize()` if it's exported. Then call its
+exports yourself.
 
 ```ts
 wasi.initialize(instance);
@@ -121,9 +119,8 @@ add(2, 3);
 wasi.dispose(): void
 ```
 
-Closes every file the guest opened and releases its memory. Idempotent; runs on unload at the latest.
-After it the syscalls throw `ESTALE`. `alive` is `false` from then on, and `using` disposes at the end
-of the block.
+Closes every file the guest opened. Happens on unload anyway. `alive` is `false` afterwards, and `using`
+disposes at the end of the block.
 
 ---
 
@@ -132,15 +129,11 @@ of the block.
 | | |
 |:--|:--|
 | argv / environ | exactly `args` / `env` |
-| Filesystem | only the preopens; `..`, symlinks and drive/device names are refused with `ENOTCAPABLE` |
+| Filesystem | only the preopens, no `..` out of them |
 | stdin | empty |
-| stdout / stderr | lines go to the script log, stderr at error level |
-| Clocks | realtime, monotonic, process and thread CPU time |
-| `poll_oneoff` | never blocks: files are always ready, and a pending clock fires at once, so `sleep()` returns immediately |
-| Sockets | none; `sock_*` report `ENOTSOCK` / `EBADF` |
-| Unsupported | `path_symlink` (`ENOTSUP`), `proc_raise` (`ENOSYS`) |
-
-Every guest pointer is bounds-checked against the current memory size; a bad one is `EFAULT` for the guest.
+| stdout / stderr | the script log, stderr as errors |
+| `sleep()` | returns immediately |
+| Sockets | none |
 
 ---
 

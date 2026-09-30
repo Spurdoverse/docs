@@ -5,16 +5,15 @@ description: "Load DLLs, call their exports, lay out C structs and pass JS callb
 icon: "plug"
 ---
 
-Calls into native libraries loaded in the host process.
+Load DLLs and call their exports.
 
 ```ts
 import ffi from "@native/ffi";
 ```
 
 <Note>
-  Needs the `ffi` [permission](/api/manifest#permissions); without it the import throws `EPERM`.
-  Addresses here are host-process addresses: `bigint`, with `null` for NULL. Game memory is
-  [Pointer](/api/types/pointer), and a `Pointer` passed to a pointer parameter passes its integer value.
+  Needs the `ffi` [permission](/api/manifest#permissions). Addresses here are addresses in the cheat's
+  own process: `bigint`, with `null` for NULL. Game memory is [Pointer](/api/types/pointer).
 </Note>
 
 ## Overview
@@ -30,13 +29,10 @@ import ffi from "@native/ffi";
     `struct`, `union`, `typedef`, `sizeOf`, views.
   </Card>
   <Card title="Callbacks" icon="reply" href="#callbacks">
-    `callback`, the thread rule.
+    `callback`.
   </Card>
   <Card title="Memory helpers" icon="memory" href="#memory-helpers">
     `alloc`, `free`, `readString`, `lastError`, …
-  </Card>
-  <Card title="Errors" icon="triangle-exclamation" href="#errors">
-    Which code means what.
   </Card>
 </CardGroup>
 
@@ -54,8 +50,7 @@ import ffi from "@native/ffi";
 ffi.open(path: string): Library
 ```
 
-Loads a DLL with `LoadLibrary`, so bare names use the DLL search order. Throws `ENOENT` when it can't
-be found, `EACCES` or `ELIBBAD` for other load failures.
+Loads a DLL. Bare names use the normal DLL search order. Throws `ENOENT` when it isn't found.
 
 ```ts
 const k32 = ffi.open("kernel32.dll");   // loaded until k32.dispose() or unload
@@ -72,8 +67,8 @@ lib.func<F>(signature: string): F
 lib.func<F>(name: string, returns: CType, params?: CType[]): F
 ```
 
-Binds an export as a JS function. Throws `ENOENT` for a missing export, `TypeError` for a bad
-signature. The type parameter only types the result; the signature decides the conversion.
+Binds an export as a JS function. Throws `ENOENT` for a missing export. The type parameter only types
+the result; the signature decides the conversion. A crash inside the native call throws `EFAULT`.
 
 ```ts
 const beep = k32.func<(freq: number, ms: number) => boolean>("BOOL Beep(DWORD dwFreq, DWORD dwDuration)");
@@ -93,9 +88,8 @@ lib.funcAsync<F>(signature: string): (...args) => Promise<ReturnType<F>>
 lib.funcAsync<F>(name: string, returns: CType, params?: CType[]): (...args) => Promise<ReturnType<F>>
 ```
 
-Like `func`, but each call runs on the thread pool. Arguments are converted and buffers kept alive when
-you call; `_Out_` holders are filled before the Promise resolves. A native fault rejects with `EFAULT`.
-`ffi.lastError()` doesn't see async calls.
+Like `func`, but each call runs in the background and returns a Promise. `_Out_` holders are filled
+before it resolves. `ffi.lastError()` doesn't see async calls.
 
 ```ts
 const sleepAsync = k32.funcAsync<(ms: number) => void>("void Sleep(DWORD)");
@@ -149,8 +143,8 @@ const addr = k32.symbol("GetProcAddress");
 lib.dispose(): void
 ```
 
-Unloads the library once no async call is still running in it. Idempotent. After that, every function
-bound from it throws `ESTALE`. `using` does it at the end of the block.
+Unloads the library. Functions bound from it throw `ESTALE` afterwards. `using` does it at the end of
+the block.
 
 ```ts
 function tickCount(): number {
@@ -173,7 +167,7 @@ function tickCount(): number {
 param:  [_In_ | _Out_ | _Inout_] <type> [name]
 ```
 
-Parameter names only show up in error messages. Calling conventions are accepted and ignored (x64 has one).
+Parameter names are optional. Calling conventions are accepted and ignored.
 
 | Type names | JS value |
 |:-----------|:---------|
@@ -188,13 +182,10 @@ Parameter names only show up in error messages. Calling conventions are accepted
 `long` is 32-bit (Windows). `const`, `struct X`, `enum X` (an `int`), the Win32 pointer aliases
 (`LPDWORD`, `PHANDLE`, …) and your own `typedef`/struct names work too. Unknown names throw `TypeError`.
 
-**Strings.** A JS string passed to a string parameter becomes a temporary NUL-terminated copy that lives
-for the call. String parameters also take any pointer value, e.g. a buffer the function writes into.
-Everything else that's a pointer is a raw address. Numbers, bigints and booleans are strict: no coercion,
-`RangeError` when out of range.
+**Strings.** A JS string passed to a string parameter is only valid during the call. String parameters
+also take a buffer the function writes into. Numbers, bigints and booleans aren't coerced.
 
-**Pointer arguments** take a `bigint`, `null`, any `BufferSource` or struct view (its first byte), a
-`Pointer` (its integer value) or a `Callback` (its address). Anything else is a `TypeError`.
+**Pointer arguments** take a `bigint`, `null`, a `BufferSource` or struct view, a `Pointer` or a `Callback`.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -265,9 +256,8 @@ ffi.struct(name: string, fields: FieldDefs): StructType
 ffi.struct(fields: FieldDefs): StructType
 ```
 
-Defines a C struct. Fields are laid out in definition order with natural C alignment. A named struct
-can then be used by name in this script's signatures, fields and typedefs; redefining a name only affects
-later uses. Field names can't start with `$`.
+Defines a C struct, laid out in field order with C alignment. A named struct can then be used by name
+in this script's signatures, fields and typedefs.
 
 ```ts
 const Vec3 = ffi.struct("Vec3", { x: "float", y: "float", z: "float" });
@@ -293,7 +283,7 @@ for reading game memory.
 | Function | |
 |:---------|:--|
 | `ffi.union(name?, fields): StructType` | all fields at offset 0, `kind: "union"` |
-| `ffi.typedef(alias, type): void` | names a type for this script; built-in names can't be redefined |
+| `ffi.typedef(alias, type): void` | names a type for this script |
 | `ffi.sizeOf(type): number` | size in bytes, `"T[N]"` included |
 
 ```ts
@@ -301,8 +291,6 @@ const IntOrFloat = ffi.union("IntOrFloat", { i: "int32", f: "float" });
 ffi.typedef("PPOINT", "POINT*");
 ffi.sizeOf("wchar_t[260]");   // 520
 ```
-
-Typedefs and struct names are per script. Two scripts never see each other's.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -317,12 +305,11 @@ Typedefs and struct names are per script. Two scripts never see each other's.
 | `from(init?)` | a new struct from any subset of fields (the rest are zero), or a copy of a view |
 | `view(source, offset?)` | a live view over existing memory, not a copy |
 | `decode(source, offset?)` | a plain-object copy |
-| `array(count)` | `count` zeroed structs in one buffer (up to 256 MB) |
+| `array(count)` | `count` zeroed structs in one buffer |
 | `offsetOf(field)` | byte offset, or `null` for an unknown field |
 
-`view` and `decode` take a `bigint` address, a `BufferSource` or another view. Buffers are bounds-checked,
-and `offset` must be a multiple of `alignment` (`RangeError` otherwise). An address source needs the
-`ffi` permission even for a `memory.struct` type, and `decode` throws `EFAULT` when it's unreadable.
+`view` and `decode` take a `bigint` address, a `BufferSource` or another view. `offset` must be a
+multiple of `alignment`.
 
 ```ts
 const Point = ffi.struct("Point", { x: "int32", y: "int32" });
@@ -350,9 +337,7 @@ Fields of a view read and write the memory directly. Besides its fields a view h
 | `$buffer` | the `ArrayBuffer` behind it (shared by all views of one `array()`) |
 | `$offset` | byte offset inside `$buffer` |
 | `$size` | size of the struct |
-| `$address` | host address of the first byte, `null` once the buffer is detached |
-
-If the buffer is detached or shrunk below the view, field reads return `null` and writes throw `ESTALE`.
+| `$address` | address of the first byte |
 
 ---
 
@@ -370,8 +355,8 @@ ffi.callback(returns: CType, params: CType[], fn: (...args) => unknown): Callbac
 ```
 
 Exposes `fn` as a native function pointer. Pass the `Callback` (or its `address`) wherever a function
-pointer goes. String arguments arrive as `string | null`, structs as views over a copy. A callback can't
-return a string type (return `ptr`) and can't be variadic.
+pointer goes. String arguments arrive as `string | null`. A callback can't return a string (return
+`ptr`) and can't be variadic.
 
 ```ts
 const enumWindows = user32.func("BOOL EnumWindows(void*, LPARAM)");
@@ -391,14 +376,14 @@ function listWindows(): (bigint | null)[] {
 |:---------|:--|
 | `address` | `bigint`, `null` once disposed |
 | `alive` | `false` once disposed |
-| `dispose()` | releases the JS function; the pointer keeps returning 0 for a while before it's reused |
+| `dispose()` | releases `fn`; native code must not call the pointer afterwards |
 
-An exception thrown by `fn` goes to the global `error` event, and native code gets 0.
+If `fn` throws, native code gets 0 and the error goes to the global `error` event.
 
 <Warning>
-  `fn` runs right away only when native code calls it on the script thread during one of your synchronous
-  FFI calls. Called from any other thread, or outside an FFI call (a hook), a `void` callback is queued to
-  the next tick with its arguments copied; any other callback returns 0 at once and reports `ETHREAD` once.
+  `fn` only runs synchronously when native code calls it during one of your own synchronous FFI calls
+  (like `EnumWindows`). Called any other time, such as from another thread, a `void` callback runs on the
+  next tick and any other callback returns 0.
 </Warning>
 
 ---
@@ -407,16 +392,13 @@ An exception thrown by `fn` goes to the global `error` event, and native code ge
 
 | Function | |
 |:---------|:--|
-| `ffi.alloc(size): ArrayBuffer` | zeroed, garbage-collected, 0 to 256 MB |
-| `ffi.free(ptr: bigint \| null): void` | frees memory a library allocated with the CRT `malloc`; `null` is a no-op |
+| `ffi.alloc(size): ArrayBuffer` | zeroed, garbage-collected |
+| `ffi.free(ptr: bigint \| null): void` | frees memory a library allocated with `malloc` |
 | `ffi.addressOf(value): bigint \| null` | address of a buffer's or view's first byte, `null` when empty; valid while the buffer lives |
 | `ffi.readString(ptr, maxBytes?): string \| null` | NUL-terminated UTF-8; `null` for NULL |
 | `ffi.readWString(ptr, maxUnits?): string \| null` | same for UTF-16 |
 | `ffi.writeString(buffer, text): number` | writes NUL-terminated UTF-8, returns bytes written without the NUL; `RangeError` if it doesn't fit |
-| `ffi.lastError(): number` | `GetLastError()` right after this script's last synchronous FFI call |
-
-`readString` from a buffer or view stops at its end. From an address it reads at most `maxBytes`
-(default 1 MB) and throws `EFAULT` if the memory is unreadable.
+| `ffi.lastError(): number` | `GetLastError()` after the last synchronous FFI call |
 
 ```ts
 const buf = ffi.alloc(260);
@@ -426,21 +408,6 @@ ffi.readString(buf);   // "hello"
 const getModule = k32.func<(name: string) => bigint | null>("HMODULE GetModuleHandleA(LPCSTR)");
 if (getModule("nope.dll") === null) console.log("error", ffi.lastError());   // 126
 ```
-
----
-
-## Errors
-
-| Error | When |
-|:------|:-----|
-| `TypeError` | bad type name or signature, wrong argument type |
-| `RangeError` | number out of range for its type, bad offset or size |
-| `ENOENT` | DLL or export not found |
-| `EACCES`, `ELIBBAD` | the DLL failed to load |
-| `EFAULT` | native fault inside a call (access violation, …), unreadable address |
-| `ESTALE` | disposed `Library` or `Callback`, or a function bound from a disposed library |
-| `EPERM` | import, or `view`/`decode` of an address, without the `ffi` permission |
-| `ETHREAD` | reported (not thrown) for a non-void callback called off the script thread |
 
 ---
 

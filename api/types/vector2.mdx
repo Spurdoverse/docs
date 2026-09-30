@@ -14,9 +14,7 @@ const center = new Vector2(960, 540);
 const corner = center.add([100, -50]);   // [x, y] and { x, y } work anywhere a Vector2 does
 ```
 
-<Note>
-  Fields `x`, `y` are 32-bit floats. Assigning a non-number throws `TypeError`, NaN, Infinity or a value beyond float range throws `RangeError`.
-</Note>
+Fields are 32-bit floats; assigning a non-number or NaN throws.
 
 A [Vector](/api/types/vector) is accepted too and gives its `x` and `y`. To get a screen position from a world one, use [render.worldToScreen](/api/render#worldtoscreen).
 
@@ -39,8 +37,6 @@ A [Vector](/api/types/vector) is accepted too and gives its `x` and `y`. To get 
 ## Common
 
 <ValueClassCommon name="Vector2" like="Vec2Like" />
-
-`normalize()` leaves the zero vector at `(0, 0)`.
 
 | Also | Returns |
 |:-----|:--------|

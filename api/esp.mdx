@@ -13,8 +13,8 @@ import esp from "@native/esp";
 ```
 
 <Note>
-  `evaluate` runs once per entity every tick (128 Hz), not per frame, so keep it cheap. You don't
-  draw anything yourself: return a value and the builder draws it.
+  `evaluate` runs once per entity every tick, so keep it cheap. You don't draw anything yourself:
+  return a value and the builder draws it.
 </Note>
 
 ## Overview
@@ -48,8 +48,7 @@ import esp from "@native/esp";
 esp.class(kind: "enemy" | "team" | "dropped", options?: { context?: ((entity) => Ctx) | null }): EspClass
 ```
 
-The ESP of one kind of entity. Returns the same object every time for the same kind. An unknown
-kind throws `TypeError`.
+The ESP of one kind of entity. Returns the same object every time for the same kind.
 
 | Kind | Evaluates |
 |:-----|:----------|
@@ -95,15 +94,14 @@ Every element takes the same definition object.
 
 | Field | |
 |:------|:--|
-| `name` | Identity within the class and element type. 1–128 bytes. |
+| `name` | Identity within the class and element type. |
 | `label` | Label in the builder. Default `name`. |
 | `area` | Starting spot: `"top"`, `"bottom"`, `"left"`, `"right"` or `"center"`. The user can drag it elsewhere. |
 | `preview` | What the builder preview shows. Same shape as the `evaluate` result. |
 | `evaluate(entity, ctx)` | Returns the value for one entity this tick. |
 
-A missing name, a non-function `evaluate`, an unknown `area` or a bad `preview` throws `TypeError`.
 A throw inside `evaluate` hides the element on that entity for the tick and is reported through
-the global `error` event, once, until it runs a whole tick clean.
+the global `error` event.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -190,7 +188,7 @@ For `text` and `icon`.
 | `text` | String or number. |
 | `color`, `colorAlt` | `ColorLike`. `colorAlt` switches to a gradient. |
 | `colorMode` | `"solid"` or `"gradient"`. |
-| `size` | Font size in pixels, `> 0`. |
+| `size` | Font size in pixels. |
 | `font` | Text only: `"segoe"`, `"tahoma"`, `"verdana"`, `"arial"` or `"weapon-icons"`. |
 | `outline` | `boolean`. |
 | `visible` | `false` hides the element and ignores the other keys. |
@@ -202,10 +200,10 @@ For `text` and `icon`.
 | `value`, `max` | The bar shows `value / max`, clamped to `0..1`. `max` defaults to `1`. |
 | `color`, `colorAlt` | `ColorLike`. `colorAlt` switches to a gradient. |
 | `colorMode` | `"solid"`, `"gradient"`, or `"value"` (blends `color` when empty to `colorAlt` when full). |
-| `thickness`, `rounding` | Pixels, `>= 0`. |
-| `divisions` | `0` for one bar, `1..64` segments. |
+| `thickness`, `rounding` | Pixels. |
+| `divisions` | Number of segments, `0` for one solid bar. |
 | `reverse`, `outline` | `boolean`. |
-| `outlineThickness` | Whole pixels, `0..16`. |
+| `outlineThickness` | Pixels. |
 | `visible` | `false` hides the element and ignores the other keys. |
 
 ---
@@ -225,8 +223,8 @@ the element: the new one keeps the builder slot and the user's layout, the old h
 | `preview` | Read or replace. `undefined` removes it. |
 | `dispose()` | Removes it from the builder. Also `using`. |
 
-On a dead handle reads return `null` and writes throw an `Error` with code `ESTALE`. Everything is
-removed when the script unloads.
+On a dead handle reads return `null` and writes throw. Everything is removed when the script
+unloads.
 
 ```ts
 const armor = esp.class("enemy").bar({ name: "armor", evaluate: (pawn) => pawn.m_ArmorValue / 100 });

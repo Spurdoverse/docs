@@ -40,7 +40,6 @@
             "group": "Overview",
             "pages": [
               "api/globals",
-              "api/conventions",
               "api/manifest",
               "api/web",
               "api/networking"

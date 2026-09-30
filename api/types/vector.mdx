@@ -14,9 +14,7 @@ const eye = new Vector(0, 0, 64);
 const above = eye.add([0, 0, 16]);   // [x, y, z] and { x, y, z } work anywhere a Vector does
 ```
 
-<Note>
-  Fields `x`, `y`, `z` are 32-bit floats. Assigning a non-number throws `TypeError`, NaN, Infinity or a value beyond float range throws `RangeError`.
-</Note>
+Fields are 32-bit floats; assigning a non-number or NaN throws.
 
 ## Overview
 
@@ -37,8 +35,6 @@ const above = eye.add([0, 0, 16]);   // [x, y, z] and { x, y, z } work anywhere 
 ## Common
 
 <ValueClassCommon name="Vector" like="Vec3Like" />
-
-`normalize()` turns a vector shorter than `1e-6` into `(0, 0, 0)`.
 
 | Also | Returns |
 |:-----|:--------|
@@ -84,7 +80,7 @@ Engine convention, in degrees: pitch positive looks down. See [QAngle](/api/type
 toAngles(): QAngle
 ```
 
-The view angles that look along this direction, roll `0`. Straight up is pitch `-90`, straight down `90`, the zero vector gives `(0, 0, 0)`.
+The view angles that look along this direction, roll `0`.
 
 ```ts
 new Vector(0, 1, 0).toAngles();   // QAngle(0, 90, 0)
