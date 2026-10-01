@@ -1,0 +1,100 @@
+---
+title: "Font"
+sidebarTitle: "Font"
+description: "Your own .ttf/.otf fonts for render.text."
+icon: "font"
+---
+
+Any TrueType or OpenType font, drawn with [render.text](/api/render#text) like the built-in ones.
+Global class, no import.
+
+```ts
+const inter = new Font("fonts/Inter-SemiBold.ttf");
+
+on("render", () => {
+    render.text([20, 20], "hello", "#fff", { font: inter, size: 24 });
+});
+```
+
+Every glyph in the file works at any size, Cyrillic, CJK and emoji included, as long as the font
+has them. There are no ranges to set up.
+
+<Note>
+  The font shows up on the overlay's next frame. Until then text drawn with it uses the default
+  font, and the first `measureText` with it waits for that frame.
+</Note>
+
+---
+
+## Loading
+
+{/* ------------------------------------------------------------------ */}
+
+### constructor
+
+<br />
+
+```ts
+new Font(path: string, options?: FontOptions)
+```
+
+Reads a `.ttf`, `.otf` or `.ttc` file. `path` is relative to the script folder. A missing file
+throws `ENOENT`, something that isn't a font throws `EINVAL`.
+
+```ts
+const title = new Font("fonts/Bebas.ttf");
+const emoji = new Font("C:/Windows/Fonts/seguiemj.ttf");   // needs the filesystem permission
+```
+
+<Warning>
+  Without the `filesystem` [permission](/api/manifest#permissions) the file must be inside the script folder.
+</Warning>
+
+{/* ------------------------------------------------------------------ */}
+
+### fromMemory
+
+<br />
+
+```ts
+Font.fromMemory(data: BufferSource, options?: FontOptions): Font
+```
+
+A font from the bytes of a font file, say one you downloaded. `data` is copied.
+
+```ts
+const res = await fetch("https://example.com/fonts/Inter.ttf");
+const inter = Font.fromMemory(await res.arrayBuffer());
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Options
+
+| Option | Default | |
+|:-------|:--------|:--|
+| `pixelSnap` | `false` | Whole-pixel letter spacing. Crisper for small text. |
+| `bold` | `false` | Fake bold, for families without a bold file. |
+| `italic` | `false` | Fake italic (slanted). |
+| `color` | `true` | Color emoji in color. |
+
+---
+
+## Properties
+
+| Property | Type | |
+|:---------|:-----|:--|
+| `ready` | `boolean` | `true` once the overlay has loaded it |
+| `failed` | `boolean` | `true` if the file couldn't be loaded. Text then uses the default font |
+| `path` | `string` or `null` | The resolved file path, `null` for `fromMemory` fonts |
+
+`toString()` gives something like `Font(ready, "C:/…/Inter.ttf")`.
+
+---
+
+## Limits
+
+- Loading the same file with the same options again reuses the font, so reloading a script is free.
+- A session holds up to 64 different fonts. Past that, loading throws `ELIMIT`.
+- Files can be up to 64 MB.
+- [ESP](/api/esp) text still takes only the built-in ESP fonts.

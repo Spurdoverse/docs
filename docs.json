@@ -73,6 +73,7 @@
               "api/types/quaternion",
               "api/types/color",
               "api/types/texture",
+              "api/types/font",
               "api/types/pointer"
             ]
           }

@@ -21,10 +21,19 @@ import render from "@native/render";
 
 <CardGroup cols={2}>
   <Card title="Shapes" icon="shapes" href="#shapes">
-    `line`, `rect`, `circle`, `triangle`, `polyline` and their filled versions.
+    `line`, `rect`, `circle`, `arc`, `triangle`, `polyline`, curves and their filled versions.
   </Card>
   <Card title="Text and images" icon="font" href="#text-and-images">
-    `text`, `measureText`, `image`, fonts.
+    `text`, `measureText`, `image`, `imageQuad`, your own fonts.
+  </Card>
+  <Card title="Effects" icon="wand-magic-sparkles" href="#effects">
+    Gradients, soft shadows and glows, frosted-glass blur.
+  </Card>
+  <Card title="Groups" icon="layer-group" href="#groups">
+    `push` / `pop`: clip, fade, move, rotate, scale, draw above the menu.
+  </Card>
+  <Card title="World space" icon="cube" href="#world-space">
+    `line3d`, `polyline3d`, `circle3d`.
   </Card>
   <Card title="Screen and projection" icon="crosshairs" href="#screen-and-projection">
     `screenSize`, `worldToScreen`, `screenTransform`, `boundsOf`.
@@ -50,25 +59,34 @@ on("render", () => {
 | Call | Options |
 |:-----|:--------|
 | `line(from, to, color, options?)` | `thickness` |
-| `rect(min, max, color, options?)` | `thickness`, `rounding` |
-| `rectFilled(min, max, color, options?)` | `rounding` |
+| `rect(min, max, color, options?)` | `thickness`, `rounding`, `corners` |
+| `rectFilled(min, max, color, options?)` | `rounding`, `corners` |
 | `rectGradient(min, max, from, to, options?)` | `direction` |
 | `circle(center, radius, color, options?)` | `thickness`, `segments` |
 | `circleFilled(center, radius, color, options?)` | `segments` |
+| `arc(center, radius, from, to, color, options?)` | `thickness`, `segments`, `filled` |
 | `triangle(a, b, c, color, options?)` | `thickness` |
-| `triangleFilled(a, b, c, color)` | |
+| `triangleFilled(a, b, c, color, options?)` | |
 | `polyline(points, color, options?)` | `thickness`, `closed` |
-| `polygonFilled(points, color)` | |
+| `polygonFilled(points, color, options?)` | |
+| `bezierCubic(p1, p2, p3, p4, color, options?)` | `thickness`, `segments` |
+| `bezierQuadratic(p1, p2, p3, color, options?)` | `thickness`, `segments` |
+
+Every shape except `rectGradient` also takes a [`gradient`](#gradients).
 
 | Option | Default | |
 |:-------|:--------|:--|
 | `thickness` | `1` | Line width in pixels. |
 | `rounding` | `0` | Corner radius in pixels. |
-| `segments` | `0` | `0` picks a count from the radius. |
+| `corners` | `"all"` | Which corners get rounded: `"top"`, `"bottom"`, `"left"`, `"right"`, `"none"` or a list like `["tl", "br"]`. |
+| `segments` | `0` | `0` picks a count from the size. |
 | `closed` | `false` | Connects the last point back to the first. |
 | `direction` | `"horizontal"` | `"horizontal"` blends `from` left to `to` right, `"vertical"` top to bottom. |
+| `filled` | `false` | Turns an `arc` into a pie slice. |
 
-`polyline` needs at least 2 points, `polygonFilled` at least 3.
+Arc angles are radians: `0` points right and they grow clockwise. `polyline` needs at least 2
+points, `polygonFilled` at least 3. `polygonFilled` takes any shape, convex or not, as long as the
+outline doesn't cross itself.
 
 ```ts
 on("render", () => {
@@ -76,13 +94,12 @@ on("render", () => {
     render.circle([w / 2, h / 2], 60, "#ffffff80");
     render.rectGradient([10, 50], [210, 56], "#ff0000", "#0000ff");
     render.polyline([[0, 0], [50, 20], [100, 0]], "#0f0", { closed: true });
+
+    // a reload ring that fills up clockwise from the top
+    const start = -Math.PI / 2;
+    render.arc([w / 2, h / 2], 24, start, start + reload * 2 * Math.PI, "#4af", { thickness: 3 });
 });
 ```
-
-<Warning>
-  `polygonFilled` only handles convex polygons. A concave outline fills wrong, so split it into
-  triangles.
-</Warning>
 
 ---
 
@@ -98,18 +115,37 @@ on("render", () => {
 render.text(position: Vec2Like, text: unknown, color: ColorLike, options?: TextOptions): void
 ```
 
-Draws `text` with its top-left corner at `position`. Non-strings go through `String()`.
+Draws `text` at `position`, top-left corner by default. Non-strings go through `String()`, and
+`\n` starts a new line.
 
 | Option | Default | |
 |:-------|:--------|:--|
 | `size` | `14` | Font size in pixels. |
-| `font` | `"segoe"` | One of the [fonts](#fonts). |
+| `font` | `"segoe"` | A built-in [font](#fonts) or a [Font](/api/types/font) you loaded. |
 | `outline` | `false` | `true` is a 1px black outline at the text's alpha, a color is that color. |
+| `shadow` | `false` | Same, but a drop shadow. |
+| `shadowOffset` | `[1, 1]` | Where the shadow sits, in pixels. |
+| `align` | `"left"` | `"center"` or `"right"` puts that point of each line at `position.x`. |
+| `valign` | `"top"` | `"middle"` or `"bottom"`, for the whole block at `position.y`. |
+| `rotation` | `0` | Radians, clockwise, around `position`. |
+| `wrap` | `0` | Wraps words onto new lines at this width. `0` never wraps. |
+| `letterSpacing` | `0` | Extra pixels between letters. Negative tightens. |
+| `gradient` | | Colors the letters with a [gradient](#gradients) (not the outline or shadow). |
 
 ```ts
 on("render", () => {
     render.text([10, 10], "spurdo", "#fff", { outline: true });
     render.text([10, 30], "LOW HP", "#ff4040", { size: 18, font: "segoe-bold", outline: "#400000" });
+
+    // centered on the screen, no measuring needed
+    const { x: w, y: h } = render.screenSize;
+    render.text([w / 2, h / 2], "BOMB PLANTED", "#fff", {
+        size: 32, align: "center", valign: "middle", shadow: true, letterSpacing: 2,
+        gradient: { from: "#ffd36b", to: "#ff6b6b", angle: Math.PI / 2 },
+    });
+
+    // a paragraph that wraps inside a 240px column
+    render.text([20, 200], changelog, "#ccc", { wrap: 240 });
 });
 ```
 
@@ -120,10 +156,11 @@ on("render", () => {
 <br />
 
 ```ts
-render.measureText(text: unknown, options?: { size?: number; font?: FontName }): Vector2
+render.measureText(text: unknown, options?: { size?: number; font?: FontName | Font; wrap?: number; letterSpacing?: number }): Vector2
 ```
 
-The size `render.text` covers with the same `size` and `font`.
+The size `render.text` covers with the same `size`, `font`, `wrap` and `letterSpacing`. For
+plain centering, `align` on `render.text` is simpler.
 
 ```ts
 const label = "Planted";
@@ -142,18 +179,52 @@ on("render", () => {
 <br />
 
 ```ts
-render.image(texture: Texture, min: Vec2Like, max: Vec2Like, options?: { tint?: ColorLike; rounding?: number }): void
+render.image(texture: Texture, min: Vec2Like, max: Vec2Like, options?: ImageOptions): void
 ```
 
 Stretches a [Texture](/api/types/texture) over `min`–`max`. Draws nothing until the texture is
-`ready`. `tint` is multiplied with the texture.
+`ready`.
+
+| Option | Default | |
+|:-------|:--------|:--|
+| `tint` | white | Multiplied with the texture. |
+| `rounding` | `0` | Corner radius in pixels. |
+| `corners` | `"all"` | Which corners get rounded, as for [shapes](#shapes). |
+| `uvMin`, `uvMax` | `[0, 0]`, `[1, 1]` | The part of the texture to show. Handy for sprite sheets. |
+| `rotation` | `0` | Radians, clockwise, around the image's center. |
 
 ```ts
 const logo = new Texture("assets/logo.png");
+const sheet = new Texture("assets/spinner.png");   // 4 frames side by side
 
 on("render", () => {
     render.image(logo, [10, 10], [74, 74], { rounding: 8, tint: [255, 255, 255, 180] });
+
+    const frame = Math.floor(Date.now() / 100) % 4;
+    render.image(sheet, [90, 10], [122, 42], { uvMin: [frame / 4, 0], uvMax: [(frame + 1) / 4, 1] });
 });
+```
+
+Need pixels that change every frame (a graph, a visualizer)? Make one texture with
+`Texture.fromMemory` and call [`update`](/api/types/texture#update) on it, instead of making a new
+texture each frame.
+
+{/* ------------------------------------------------------------------ */}
+
+### imageQuad
+
+<br />
+
+```ts
+render.imageQuad(texture: Texture, p1: Vec2Like, p2: Vec2Like, p3: Vec2Like, p4: Vec2Like, options?: { tint?: ColorLike; uvMin?: Vec2Like; uvMax?: Vec2Like }): void
+```
+
+Maps a texture onto any four corners, clockwise from the one that gets the texture's top-left.
+Skewed cards, fake perspective, a texture stuck to a projected box.
+
+```ts
+// a card leaning back
+render.imageQuad(card, [120, 40], [200, 40], [220, 140], [100, 140]);
 ```
 
 {/* ------------------------------------------------------------------ */}
@@ -173,6 +244,178 @@ on("render", () => {
 | `"weapon-icons"` | yes, weapon glyphs |
 
 [ESP](/api/esp) text elements accept only the fonts marked in the second column.
+
+Want something else? Load any `.ttf`/`.otf` as a [Font](/api/types/font) and pass it as `font`:
+
+```ts
+const pixel = new Font("fonts/PressStart2P.ttf", { pixelSnap: true });
+
+on("render", () => {
+    render.text([20, 20], "GAME OVER", "#f44", { font: pixel, size: 24 });
+});
+```
+
+---
+
+## Effects
+
+{/* ------------------------------------------------------------------ */}
+
+### Gradients
+
+Every shape and `text` takes a `gradient` option. It replaces the color, spread across the
+shape's own bounds, so you never have to pass coordinates.
+
+```ts
+gradient: { from: ColorLike; to: ColorLike; angle?: number; type?: "linear" | "radial" }
+```
+
+`angle` is in radians: `0` runs left to right, `Math.PI / 2` top to bottom. `"radial"` goes from
+the center (`from`) out to the edges (`to`). The shape's own color still counts for its alpha, so
+pass `"#fff"` to keep the gradient as it is, or `"#fff8"` to make it half transparent.
+
+```ts
+on("render", () => {
+    // a rounded card with a diagonal gradient
+    render.rectFilled([20, 20], [260, 120], "#fff", {
+        rounding: 14, gradient: { from: "#7b5cff", to: "#ff5c8a", angle: Math.PI / 4 },
+    });
+
+    // an HP bar that goes red to green along its length
+    render.rectFilled([20, 140], [20 + 240 * hp / 100, 150], "#fff", {
+        rounding: 5, gradient: { from: "#ff4b4b", to: "#4bff88" },
+    });
+
+    // a soft spotlight
+    render.circleFilled([400, 300], 120, "#fff", { gradient: { from: "#fff6", to: "#fff0", type: "radial" } });
+});
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### shadow
+
+<br />
+
+```ts
+render.shadow(min: Vec2Like, max: Vec2Like, color: ColorLike, options?: ShadowOptions): void
+```
+
+A soft shadow of a (rounded) rectangle, the CSS `box-shadow` kind. Draw it first, then the shape
+on top. With a bright color and no offset it turns into a glow. Set `rounding` to half the size
+and you get a round glow.
+
+| Option | Default | |
+|:-------|:--------|:--|
+| `blur` | `12` | How far the edge fades out, in pixels. |
+| `spread` | `0` | Grows the shape before blurring (negative shrinks it). |
+| `offset` | `[0, 0]` | Moves the shadow, e.g. `[0, 6]` for light from above. |
+| `rounding`, `corners` | `0`, `"all"` | The shape of whatever casts it. |
+
+```ts
+on("render", () => {
+    render.shadow([40, 40], [300, 140], "#000a", { blur: 20, offset: [0, 8], rounding: 12 });
+    render.rectFilled([40, 40], [300, 140], "#1b1d24", { rounding: 12 });
+
+    // a neon dot
+    render.shadow([395, 295], [405, 305], "#3cf", { blur: 16, rounding: 5 });
+    render.circleFilled([400, 300], 5, "#bff");
+});
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### blur
+
+<br />
+
+```ts
+render.blur(min: Vec2Like, max: Vec2Like, options?: { tint?: ColorLike; rounding?: number; corners?: Corners }): void
+```
+
+Frosted glass: the game behind the box, blurred. It's the same backdrop the HUD panels use. Put a
+translucent fill on top and you've got a glass panel. It blurs the game only, not other overlay
+drawings, and shows nothing for the first few frames while the capture starts up.
+
+```ts
+on("render", () => {
+    render.blur([20, 20], [280, 200], { rounding: 16 });
+    render.rectFilled([20, 20], [280, 200], "#10121870", { rounding: 16 });
+    render.text([36, 36], "glass", "#fff", { size: 20 });
+});
+```
+
+---
+
+## Groups
+
+```ts
+render.push(state?: RenderState): void
+render.pop(): void
+```
+
+Everything drawn between `push` and `pop` gets the state you pushed. This is how you animate whole
+widgets without touching their drawing code.
+
+| State | |
+|:------|:--|
+| `clip: { min, max, intersect? }` | Only draw inside this box. By default it narrows the clip already open, `intersect: false` replaces it. |
+| `alpha` | `0..1`, multiplies the alpha of everything inside. |
+| `translate` | Moves everything by `[x, y]` pixels. |
+| `rotate` | Turns everything around `origin`, radians, clockwise. |
+| `scale` | Scales around `origin`. One number, or `[x, y]`. |
+| `origin` | The point `rotate` and `scale` work around. Default `[0, 0]`. |
+| `layer` | `"foreground"` draws above everything, the menu included. |
+
+Groups nest: alphas multiply, transforms stack, clips narrow. Clips are in screen pixels and
+transforms don't move them. A group you forget to pop is closed once your listener returns, so it
+never leaks into other scripts.
+
+```ts
+on("render", () => {
+    // a toast that slides up and fades in
+    const t = Math.min(1, (Date.now() - shownAt) / 250);
+    render.push({ translate: [0, (1 - t) * 24], alpha: t });
+    render.rectFilled([20, 20], [240, 64], "#1b1d24", { rounding: 10 });
+    render.text([36, 34], "Config saved", "#fff");
+    render.pop();
+
+    // a ticker that scrolls inside its box
+    render.push({ clip: { min: [20, 100], max: [220, 130] } });
+    render.text([20 - scroll, 106], tickerText, "#fff");
+    render.pop();
+
+    // a spinner, rotating around its center
+    render.push({ rotate: Date.now() / 300, origin: [400, 300] });
+    render.arc([400, 300], 14, 0, Math.PI * 1.5, "#fff", { thickness: 3 });
+    render.pop();
+});
+```
+
+---
+
+## World space
+
+Shapes placed in the world. Unlike drawing between two `worldToScreen` points, the part behind
+the camera gets cut off, so a line running past you still draws up to the edge of the view
+instead of vanishing.
+
+| Call | Options |
+|:-----|:--------|
+| `line3d(from, to, color, options?)` | `thickness` |
+| `polyline3d(points, color, options?)` | `thickness`, `closed` |
+| `circle3d(center, radius, color, options?)` | `thickness`, `segments` (`48`), `filled`, `gradient` |
+
+`circle3d` lies flat on the ground plane, and its radius is in world units.
+
+```ts
+on("render", () => {
+    for (const fire of molotovs)
+        render.circle3d(fire.origin, 150, "#f608", { filled: true });
+
+    render.polyline3d(grenadePath, "#fff", { thickness: 2 });
+});
+```
 
 ---
 

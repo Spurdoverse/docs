@@ -64,6 +64,34 @@ for (let i = 0; i < size * size; i++) {
 const gradient = Texture.fromMemory(pixels, size, size);
 ```
 
+{/* ------------------------------------------------------------------ */}
+
+### update
+
+<br />
+
+```ts
+texture.update(data: BufferSource): void
+```
+
+New pixels for the same texture, same size and format as `fromMemory`. This is how you animate
+one: draw a graph or a visualizer into a buffer and update one texture every frame. Making a new
+texture every frame is slow, and every one of them sits in GPU memory until it's collected.
+
+```ts
+const w = 128, h = 48;
+const pixels = new Uint8Array(w * h * 4);
+const graph = Texture.fromMemory(pixels, w, h);
+
+on("render", () => {
+    plotFps(pixels, w, h);     // your own drawing into the buffer
+    graph.update(pixels);
+    render.image(graph, [20, 20], [20 + w, 20 + h]);
+});
+```
+
+A file texture can only be updated once it's `ready` (`ENOTREADY` before that).
+
 ---
 
 ## Properties
