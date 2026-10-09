@@ -135,6 +135,35 @@ disposes at the end of the block.
 | `sleep()` | returns immediately |
 | Sockets | none |
 
+Symlinks and junctions inside a preopen work as long as they stay inside it; one that leads out is
+`ENOTCAPABLE`, like `..`. File access is direct: opening, reading and `stat`-ing thousands of files costs
+about what it costs natively, and the disk time doesn't count against the script's
+[limits](/api/workers#limits).
+
+---
+
+## Long-running modules
+
+A wasm module that runs for seconds at a time (an emulator, an engine, a big parse) would hold up every
+script on the shared thread, and the host stops calls that run too long. Three ways out:
+
+- **Run it in a [Worker](/api/workers).** `@native/wasi` and `@native/fs` work there, there's no time
+  limit, and a `WebAssembly.Module` you post is shared already compiled.
+- **Compile asynchronously.** `await WebAssembly.compile(bytes)` / `WebAssembly.instantiate(bytes)`
+  compile on background threads and don't block anybody. Big modules start on the fast baseline compiler
+  and get optimized in the background while they run.
+- **Yield with JSPI.** Wrap an async import in `WebAssembly.Suspending` and the export in
+  `WebAssembly.promising`. The module can then pause on a promise in the middle of a call and resume in a
+  later tick. It's an experimental V8 feature (TypeScript doesn't declare it yet, cast through `any`).
+
+```ts
+const W = WebAssembly as any;
+const yieldNow = new W.Suspending(() => new Promise((r) => setTimeout(r, 0)));
+const { instance } = await WebAssembly.instantiate(bytes, { env: { yield_now: yieldNow } });
+const runFrame = W.promising(instance.exports.run_frame);
+await runFrame(); // the module calls yield_now() between steps; every script keeps running meanwhile
+```
+
 ---
 
 ## Example

@@ -9,8 +9,9 @@ Scripts run in a context shaped like a Web Worker. The APIs below are globals an
 [MDN](https://developer.mozilla.org/en-US/docs/Web/API) is the reference.
 
 <Note>
-  There's no `window`, `document`, `sessionStorage`, `indexedDB`, `Worker`, `alert`/`prompt` or
-  `onmessage`, even though TypeScript's DOM types declare them. `using` works; `DisposableStack` doesn't exist.
+  There's no `window`, `document`, `sessionStorage`, `indexedDB` or `alert`/`prompt`, even though
+  TypeScript's DOM types declare them. `onmessage` and `postMessage` only exist inside a
+  [Worker](/api/workers). `using` works; `DisposableStack` doesn't exist.
 </Note>
 
 ## What's there
@@ -24,6 +25,7 @@ Scripts run in a context shaped like a Web Worker. The APIs below are globals an
 | Streams | `ReadableStream`, `WritableStream`, `TransformStream`, queuing strategies, `TextEncoderStream`, `TextDecoderStream`, `CompressionStream`, `DecompressionStream` |
 | Crypto | `crypto.getRandomValues`, `crypto.randomUUID`, `crypto.subtle` |
 | Scheduling | `queueMicrotask`, `requestAnimationFrame`, `requestIdleCallback`, `MessageChannel`, `performance`, `reportError` |
+| Threads | `Worker`, `SharedArrayBuffer`, `Atomics`: see [Workers and limits](/api/workers) |
 | Other | `navigator`, `origin`, `WebAssembly` (with [WASI](/api/wasi)) |
 
 Timers, `console` and the game events are on [Globals](/api/globals), storage on

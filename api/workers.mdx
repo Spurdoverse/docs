@@ -1,0 +1,144 @@
+---
+title: "Workers and limits"
+sidebarTitle: "Workers & limits"
+description: "How long a script may run at once, and where long work goes instead."
+icon: "gears"
+---
+
+Every script runs on one shared thread. While your `tick` listener parses a 50 MB file, nobody else
+ticks and nobody draws. So the host times every call it makes into your script, and when one runs far
+too long, it stops it.
+
+Heavy work doesn't belong on that thread. Move it into a [`Worker`](#worker): its own thread, no limits,
+and it can't freeze anyone.
+
+## Limits
+
+| Call | Warning in the log | Stopped after |
+|:-----|:-------------------|:--------------|
+| Events, timers, promise continuations, ui/esp callbacks | 250 ms | 2 s |
+| `render` listeners | 50 ms | 2 s |
+| Loading: top-level code **and everything until your top-level `await` settles** | 2 s | 15 s |
+
+Only time spent in JavaScript (and WebAssembly) counts. Waiting on the disk (`fs`, [WASI](/api/wasi)
+syscalls) or in an [FFI](/api/ffi) call doesn't.
+
+The loading row is the one you want for setup. This works, even if the parse takes eight seconds:
+
+```ts
+import fs from "@native/fs";
+
+const bytes = await fs.readFile("assets.pak");   // a real await...
+const assets = parseAssets(bytes);               // ...and this still counts as loading
+```
+
+Loading ends when the top-level `await` settles, or 30 seconds after the script started at the latest.
+
+When a call hits its limit, it is stopped mid-flight and the script goes into the error state. Its
+listeners, timers and everything else it owns are released, and the log says which call it was. The
+script doesn't recover from this: its state was cut off halfway through, so reload it.
+
+<Tip>
+  A warning is a hint, not a problem in itself. If you see `spent 300 ms in tick` every few seconds,
+  that's a frame drop for every script, every time.
+</Tip>
+
+---
+
+## Worker
+
+<br />
+
+```ts
+new Worker(url: string | URL, options?: WorkerOptions)
+```
+
+A dedicated worker, like in a browser. It runs one of your script's own modules on a thread of its own
+and talks to the script through `postMessage`.
+
+```ts
+// index.ts
+const worker = new Worker("./parser.js", { name: "parser" });
+worker.onmessage = (e) => console.log("parsed", e.data.count, "entries");
+worker.onerror = (e) => console.error("parser died:", e.message);
+
+const bytes = fs.readFileSync("assets.pak");
+worker.postMessage(bytes.buffer, [bytes.buffer]); // moved, not copied
+```
+
+```ts
+// parser.ts
+onmessage = (e) => {
+    const entries = parseAssets(new Uint8Array(e.data)); // takes as long as it takes
+    postMessage({ count: entries.length });
+};
+```
+
+`url` is relative to your entry module's folder (`dist/` for a typical build). A `file:///` URL works
+too, so the bundler idiom `new Worker(new URL("./parser.js", import.meta.url))` does what you'd expect.
+It has to be inside the script folder.
+
+| Option | Default | |
+|:-------|:--------|:--|
+| `name` | `"worker-<n>"` | shows up in its log lines and as `self.name` |
+| `type` | `"classic"` | either works; every worker runs as a module (there's no `importScripts`) |
+| `resourceLimits.maxOldGenerationSizeMb` | `512` | its heap; running out stops the worker with an `error` event |
+| `resourceLimits.maxYoungGenerationSizeMb` | `32` | |
+| `resourceLimits.stackSizeMb` | `8` | |
+
+### What a worker has
+
+- No time limits. It only stops when you call `terminate()`, it calls `close()`, it throws at the top
+  level or runs out of memory, or your script unloads.
+- `postMessage`, `onmessage`, `close()`, `self.name`, timers, `console`, `fetch`, `WebSocket`,
+  `crypto`, compression streams, `WebAssembly`, and `@native/fs` and `@native/wasi`.
+- Not the game: no `@native/render`, `entities`, `game`, `ui`, `esp`, `memory`, `ffi`, no
+  `localStorage`, no `tick`/`render` events, no nested workers. Do that part in the script and post the
+  results across.
+
+### Messages
+
+Messages are structured clones, so you get copies of objects, arrays, Maps, typed arrays, errors and so
+on. Functions and class instances don't survive the trip.
+
+- **Transfer** an `ArrayBuffer` to move it without copying. The sender's copy is detached. Pass
+  `postMessage(data, [buffer])`, or `postMessage(data, { transfer: [buffer] })` inside a worker
+  (that form type-checks against TypeScript's DOM types).
+- **`SharedArrayBuffer`** is shared, not copied: both sides see the same memory. Use `Atomics` to
+  coordinate. `Atomics.wait` blocks, so it only works inside a worker. On the script thread it throws,
+  use `Atomics.waitAsync` there.
+- **`WebAssembly.Module`** arrives already compiled. Compile once in the script, instantiate in the
+  worker.
+
+An exception nobody catches inside the worker becomes an `error` event on the `Worker` object.
+`preventDefault()` keeps it out of the log.
+
+### Example: a wasm engine off the main thread
+
+```ts
+// index.ts
+const module = await WebAssembly.compile(fs.readFileSync("engine.wasm"));
+const frame = new SharedArrayBuffer(640 * 480 * 4);
+const engine = new Worker("./engine.js");
+engine.postMessage({ module, frame });
+
+const pixels = new Uint8Array(frame);
+on("render", () => {
+    // draw from `pixels` - the worker keeps writing the next frame meanwhile
+});
+```
+
+```ts
+// engine.ts
+onmessage = async (e) => {
+    const { module, frame } = e.data;
+    const instance = await WebAssembly.instantiate(module, { env: { /* ... */ } });
+    const run = instance.exports.run_frame as (ptr: number) => void;
+    const out = new Uint8Array(frame);
+    for (;;) {
+        run(0);                                     // a whole frame, however long it takes
+        // copy into `out`...
+        await new Promise((r) => setTimeout(r, 0)); // let messages in between frames
+    }
+};
+```

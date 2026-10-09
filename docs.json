@@ -42,7 +42,8 @@
               "api/globals",
               "api/manifest",
               "api/web",
-              "api/networking"
+              "api/networking",
+              "api/workers"
             ]
           },
           {
