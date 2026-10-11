@@ -1,0 +1,279 @@
+---
+title: "Scene"
+sidebarTitle: "Scene"
+description: "3D in the game's own scene: lines and shapes, players with your shaders, models, GPU particles."
+icon: "cubes"
+---
+
+`@native/scene` draws in 3D, inside the game frame and against its depth: walls hide your lines,
+players get your materials, particles fall on the floor. It's built on [@native/gpu](/api/gpu), but you
+don't touch pipelines here.
+
+```ts
+import scene from "@native/scene";
+```
+
+Positions are game-world [Vec3Like](/api/types/vector) (inches, Z up, what [entities](/api/entities)
+returns), colors are [ColorLike](/api/types/color).
+
+<Note>
+  Like [render](/api/render), draw calls only work inside an `on("render")` listener. Materials and
+  particle emitters are objects: make them once, at the top level.
+</Note>
+
+```ts
+const outline = scene.material({ look: "fresnel", color: "#4cf", xray: true });
+
+on("render", () => {
+    for (const pawn of entities.getPlayers({ skipLocal: true })) {
+        if (pawn.m_iHealth <= 0) continue;
+        scene.player(pawn, outline);
+        scene.circle(pawn.getOrigin(), 24, { color: "#7cff6b", glow: 8 });
+    }
+});
+```
+
+The scene opens its own GPU device in the background. Draws before it's ready are skipped;
+`await scene.ready` if you need to know. `scene.device` is that `GPUDevice`, for mixing in your own
+[@native/gpu](/api/gpu) passes.
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Shapes" icon="draw-polygon" href="#shapes">
+    `line`, `polyline`, `circle`, `box`, `sphere`, `triangle`.
+  </Card>
+  <Card title="Materials" icon="palette" href="#materials">
+    Built-in looks, or your own `Surface()` in HLSL.
+  </Card>
+  <Card title="Players and models" icon="person" href="#players-and-models">
+    `player`, `model`, replacing the cheat's chams.
+  </Card>
+  <Card title="Particles" icon="fire" href="#particles">
+    GPU-simulated emitters: bursts and streams.
+  </Card>
+</CardGroup>
+
+---
+
+## Shapes
+
+| Call | |
+|:-----|:--|
+| `line(from, to, options?)` | |
+| `polyline(points, options?)` | `closed` joins the ends. |
+| `circle(center, radius, options?)` | Flat on the ground; `normal` tilts it. |
+| `box(mins, maxs, options?)` | Axis-aligned. |
+| `sphere(center, radius, options?)` | Three rings, or a solid ball with `filled`. |
+| `triangle(a, b, c, options?)` | Filled by default. |
+
+| Option | Default | |
+|:-------|:--------|:--|
+| `color` | `"#fff"` | |
+| `colorEnd` | `color` | Fades along the line or around the shape. |
+| `width` | `2` | Line width in pixels. |
+| `worldWidth` | | Line width in game units instead: thinner with distance. |
+| `glow` | `0` | Soft halo around lines, in pixels (up to 256). |
+| `filled` | `false` | Faces as well as the outline. |
+| `fillColor` | `color` at ¼ alpha | `color` itself for `triangle`. |
+| `outline` | `true` | Set `false` with `filled` for faces only. |
+| `segments` | `48` | Circles and spheres. |
+| `depth` | `"test"` | See [depth modes](#depth-modes). |
+| `hook` | `"transparent"` | See [hooks](#hooks). |
+
+Lines are drawn as smooth capsules in screen space, cut at the near plane, so a line from you to a
+target behind you still shows its visible half.
+
+### Depth modes
+
+| Mode | |
+|:-----|:--|
+| `test` | Hidden behind walls. |
+| `fade` | Fades out softly where it goes into a wall, instead of a hard cut. |
+| `always` | Drawn through everything. |
+| `occluded` | Only the parts behind walls. |
+
+```ts
+scene.line(me.getEyePosition(), target.getEyePosition(), {
+    color: "#ff3b3b", colorEnd: "#ffd15a40", width: 3, glow: 6, depth: "always",
+});
+scene.box(origin.add([-16, -16, 0]), origin.add([16, 16, 72]), { color: "#ffd15a", depth: "fade" });
+```
+
+### Hooks
+
+Where in the frame a draw happens. `scene.hooks` lists them.
+
+| Hook | |
+|:-----|:--|
+| `begin` | Before the scene. No players yet. |
+| `opaque` | After the map, players and smokes. |
+| `transparent` | After the transparent queue. The default. |
+| `post` | After the scene's post effects (glow, bloom). |
+
+---
+
+## Materials
+
+<br />
+
+```ts
+scene.material(options?): SceneMaterial
+```
+
+How players and models are shaded. A built-in look:
+
+| Look | |
+|:-----|:--|
+| `flat` | One color. |
+| `shaded` | The soft lit body of the cheat's chams. The default. |
+| `fresnel` | Bright at the silhouette, see-through in the middle. |
+| `glow` | Body plus a halo in `glowColor`. |
+| `wire` | Grid lines over the UVs. `gridDensity` sets how many. |
+
+| Option | Default | |
+|:-------|:--------|:--|
+| `look` | `"shaded"` | |
+| `color` | `"#5ad1ff"` | The visible color. |
+| `xray` | `false` | Also draw the parts behind walls. |
+| `occludedColor` | `color` at half alpha | Color of the x-ray parts. |
+| `glowColor` | `"#fff"` | |
+| `intensity` | `1` | Brightness, `0`..`64`. |
+| `blend` | `"alpha"` | `"additive"` adds light instead of covering. |
+| `hlsl` | | Your own surface, see below. Can't be combined with `look`. |
+| `params` | | Your surface's parameters. |
+
+Every option except `look`, `hlsl`, `params` and `blend` is a live property:
+
+```ts
+const mat = scene.material({ look: "glow", color: "#ff4a7a", xray: true });
+mat.color = enemyVisible ? "#ff4a7a" : "#ffffff80";
+mat.intensity = 1.5;
+```
+
+### Your own surface
+
+Write one HLSL function. The scene calls it for every pixel of the model and handles the rest: skinning,
+the camera, x-ray, blending.
+
+```ts
+const hologram = scene.material({
+    params: { speed: 0.6, lineSpacing: 6, rimColor: "#bff4ff" },
+    hlsl: `
+float4 Surface(SurfaceInput s, MaterialParams p)
+{
+    const float band = frac(s.position.z / p.lineSpacing - s.time * p.speed);
+    const float scan = smoothstep(0.0f, 0.08f, band) * (1.0f - smoothstep(0.35f, 0.5f, band));
+    const float rim = pow(1.0f - s.facing, 2.5f);
+    const float3 col = s.color.rgb * (0.3f + scan) + p.rimColor.rgb * rim * 1.5f;
+    return float4(col, s.color.a * saturate(0.12f + scan * 0.55f + rim));
+}`,
+});
+
+hologram.set("speed", 1.2);
+```
+
+Return straight (not premultiplied) RGBA. `SurfaceInput` gives you:
+
+| Field | |
+|:------|:--|
+| `position` | Game-world position of the pixel. |
+| `normal` | Its normal, flipped to face the camera. |
+| `viewDir` | From the surface to the camera. |
+| `uv` | Texture coordinates. |
+| `facing` | `1` facing you, `0` at the silhouette. |
+| `color` | `color`, or `occludedColor` in the x-ray pass. |
+| `occluded` | `true` in the x-ray pass. |
+| `screenUv` | 0..1 across the screen. |
+| `time` | Seconds. |
+
+Each entry of `params` keeps the type of its starting value: a number is a `float`, an array of 2–4
+numbers a `float2`..`float4`, a color a `float4` in 0..1. Up to 32. Read them back with `get(name)`,
+change them with `set(name, value)`; the upload happens once a frame. `camera` and the rest of
+[gpu.hlsli](/api/gpu-hlsl) are in scope too.
+
+Materials compile in the background. Until a material is ready its draws are skipped, and a compile
+error shows up once on the [`error`](/api/globals#errors) event with your own line numbers.
+
+---
+
+## Players and models
+
+| Call | |
+|:-----|:--|
+| `player(target, material?, { hook?, replace? })` | A player's skinned pose this frame. `target` is a pawn, a controller or a slot `0..63`. |
+| `model(model, { origin, angles, scale, material, hook })` | A model: a VPK path, or a `GPUModel` from `scene.device.importModel`. |
+| `preload(path)` | Imports a model path ahead of its first draw. Resolves when it can be drawn. |
+
+`replace: true` turns the cheat's own chams off for that player while your script draws them, so you
+don't get two models on top of each other. They come back the moment your script stops drawing.
+
+```ts
+const mat = scene.material({ look: "fresnel", color: "#4cf", xray: true });
+
+on("render", () => {
+    for (const pawn of entities.getPlayers({ skipLocal: true }))
+        if (pawn.m_iHealth > 0 && pawn.isEnemy(me)) scene.player(pawn, mat, { replace: true });
+});
+```
+
+Players are drawn from the same skinned pose as the cheat's chams, in the same frame: no lag behind the
+model. Each model hides its own far side and is cut by the map, so arms and legs don't show through the
+body.
+
+```ts
+const crate = "models/props/.../crate.vmdl";   // any model path from the game's VPKs
+await scene.preload(crate);
+
+on("render", () => {
+    scene.model(crate, { origin: [100, 200, 0], angles: [0, 45, 0], scale: 1, material: mat });
+});
+```
+
+---
+
+## Particles
+
+<br />
+
+```ts
+scene.particles(options?): SceneParticles
+```
+
+An emitter that lives on the GPU. You only say where and how many; spawning, motion and drawing happen
+there.
+
+```ts
+const sparks = scene.particles({
+    capacity: 4096, lifetime: [0.4, 0.9], speed: [80, 200],
+    spread: 70, gravity: 386, size: [3, 0], color: "#ffcc66",
+});
+
+sparks.burst(hitPosition, 64);              // once
+sparks.position = myFeet; sparks.rate = 200; // continuously, per second
+```
+
+| Option | Default | |
+|:-------|:--------|:--|
+| `capacity` | `4096` | Particles alive at once, `64`..`262144`. |
+| `lifetime` | `[0.6, 1.2]` | Seconds, or one number. |
+| `speed` | `[60, 180]` | Units per second. |
+| `size` | `[4, 0]` | At birth and at death, in units. |
+| `direction` | `[0, 0, 1]` | Launch direction. |
+| `spread` | `60` | Cone around `direction`, degrees (`180` is every way). |
+| `gravity` | `386` | Units/s² downward. Negative floats up. |
+| `drag` | `0.5` | |
+| `radius` | `0` | Spawns around the point, not on it. |
+| `color` | `"#ffcc66"` | At birth. |
+| `colorEnd` | `color`, transparent | At death. |
+| `blend` | `"additive"` | Or `"alpha"`. |
+| `depth` | `"fade"` | `test`, `fade` or `always`. |
+| `softness` | `16` | How soft `fade` is, in units. |
+| `position`, `rate` | origin, `0` | Where `rate` spawns, and how many per second. |
+| `hook` | `"transparent"` | |
+
+`position` and `rate` stay settable. `burst(at?, count)` spawns `count` at once, at `at` or the
+emitter's position. `dispose()` frees it.
+
+While an emitter lives, the scene keeps itself running every frame, even when your script draws nothing
+else.

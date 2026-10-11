@@ -1,0 +1,128 @@
+---
+title: "Your own chams"
+sidebarTitle: "Your own chams"
+description: "A hologram material in HLSL, drawn on enemies in place of the cheat's chams, with x-ray and a menu."
+icon: "user-astronaut"
+---
+
+We'll write a chams material from scratch: scanlines climbing the body, a bright rim, halftone dots
+behind walls, and a speed slider in the menu. It replaces the cheat's own chams on enemies.
+
+Everything here is [@native/scene](/api/scene). No pipelines, no buffers.
+
+---
+
+## Step 1: The surface
+
+A material is one HLSL function. It gets the pixel (position, normal, how much it faces you, time…)
+and returns a color. Create `src/index.ts`:
+
+```ts
+import scene from "@native/scene";
+import entities from "@native/entities";
+
+const hologram = scene.material({
+    color: "#4fd8ff",
+    params: { speed: 0.6, lineSpacing: 6, rimColor: "#bff4ff" },
+    hlsl: `
+float4 Surface(SurfaceInput s, MaterialParams p)
+{
+    // horizontal bands moving up the body
+    const float band = frac(s.position.z / max(p.lineSpacing, 0.5f) - s.time * p.speed);
+    const float scan = smoothstep(0.0f, 0.08f, band) * (1.0f - smoothstep(0.35f, 0.5f, band));
+    // bright where the surface turns away from you
+    const float rim = pow(1.0f - s.facing, 2.5f);
+    const float3 col = s.color.rgb * (0.3f + scan) + p.rimColor.rgb * rim * 1.5f;
+    return float4(col, s.color.a * saturate(0.12f + scan * 0.55f + rim));
+}`,
+});
+```
+
+`params` become fields of `p`. Each keeps its type: `speed` is a `float`, `rimColor` a `float4` in 0..1.
+
+---
+
+## Step 2: Draw it on enemies
+
+```ts
+on("render", () => {
+    const me = entities.getLocalPlayer();
+    if (!me) return;
+
+    for (const pawn of entities.getPlayers({ skipLocal: true })) {
+        if (pawn.m_iHealth > 0 && pawn.isEnemy(me))
+            scene.player(pawn, hologram, { replace: true });
+    }
+});
+```
+
+`replace: true` switches the cheat's own chams off for those players while you draw them. Drop it and
+you get both, one on top of the other.
+
+The model comes from the same skinned pose the cheat's chams use, in the same frame, so it doesn't
+trail behind the player.
+
+---
+
+## Step 3: X-ray with its own look
+
+Turn on `xray` and the material runs a second time for the parts behind walls, with
+`s.occluded = true` and `s.color` set to `occludedColor`. Branch on it:
+
+```ts
+const hologram = scene.material({
+    color: "#4fd8ff",
+    xray: true,
+    occludedColor: "#ff4a7a90",
+    params: { speed: 0.6, lineSpacing: 6, rimColor: "#bff4ff", dotSize: 6 },
+    hlsl: `
+float4 Surface(SurfaceInput s, MaterialParams p)
+{
+    if (s.occluded)
+    {
+        // halftone dots in screen space, bigger towards the silhouette
+        const float2 cell = frac(s.screenUv * camera.screen.xy / p.dotSize) - 0.5f;
+        const float r = lerp(0.18f, 0.48f, pow(1.0f - s.facing, 1.5f));
+        return float4(s.color.rgb, s.color.a * (1.0f - smoothstep(r - 0.06f, r + 0.06f, length(cell))));
+    }
+
+    const float band = frac(s.position.z / max(p.lineSpacing, 0.5f) - s.time * p.speed);
+    const float scan = smoothstep(0.0f, 0.08f, band) * (1.0f - smoothstep(0.35f, 0.5f, band));
+    const float rim = pow(1.0f - s.facing, 2.5f);
+    const float3 col = s.color.rgb * (0.3f + scan) + p.rimColor.rgb * rim * 1.5f;
+    return float4(col, s.color.a * saturate(0.12f + scan * 0.55f + rim));
+}`,
+});
+```
+
+`camera` is the frame camera from [gpu.hlsli](/api/gpu-hlsl), already declared for you.
+
+---
+
+## Step 4: A menu
+
+Material properties and parameters can change any time; the upload happens once a frame.
+
+```ts
+import ui from "@native/ui";
+
+const group = ui.page("Hologram", { icon: "eye" }).group("Look");
+const speed = group.slider("Scan speed", { min: 0, max: 4, default: 0.6, precision: 2 });
+const color = group.color("Color", { default: "#4fd8ff" });
+
+ui.effect(() => {
+    hologram.set("speed", speed.value);
+    hologram.color = color.value;
+});
+```
+
+`ui.effect` re-runs whenever a value it reads changes, so the material follows the menu with no polling.
+
+---
+
+## When it doesn't show up
+
+- A compile error goes to the log once, with your line numbers. Until the material compiles, its draws
+  are skipped.
+- Return straight alpha: the scene premultiplies for you.
+- `scene.player` only works inside `on("render")`, like every draw call.

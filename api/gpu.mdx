@@ -1,0 +1,258 @@
+---
+title: "GPU"
+sidebarTitle: "GPU"
+description: "WebGPU on the overlay's own device, plus the game frame: depth, camera, player poses, map, smokes."
+icon: "microchip"
+---
+
+`@native/gpu` is [WebGPU](https://www.w3.org/TR/webgpu/) running on the overlay's D3D11 / D3D12 device.
+Buffers, textures, pipelines, compute, render passes: the same API a browser has, so the
+[spec](https://www.w3.org/TR/webgpu/) and MDN are the reference for everything on this page that isn't
+marked as an extension.
+
+The extension is the game frame. `device.frame` hands you the scene's color and depth, the camera, every
+player's skinned pose, the map geometry and the smokes as GPU objects, and lets your command buffers run
+at fixed points inside the frame.
+
+```ts
+import gpu from "@native/gpu";
+
+const adapter = await gpu.requestAdapter();   // or navigator.gpu.requestAdapter()
+const device = await adapter.requestDevice();
+```
+
+Importing the module also puts the WebGPU classes (`GPUBufferUsage`, `GPUTextureUsage`, `GPUShaderStage`,
+…) on the global object, so ported WebGPU code runs as is.
+
+<Tip>
+  Most effects don't need any of this. [Scene](/api/scene) draws shapes, players with your own shaders
+  and particles on top of it, with no pipelines to build.
+</Tip>
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Shaders" icon="code" href="#shaders">
+    WGSL by default, HLSL with `language: "hlsl"`.
+  </Card>
+  <Card title="The frame" icon="film" href="#the-frame">
+    `device.frame`: targets, camera, poses, map, smokes, hooks.
+  </Card>
+  <Card title="Players" icon="person" href="#players">
+    `pass.drawPose`, replacing the cheat's chams.
+  </Card>
+  <Card title="Game assets" icon="box-open" href="#game-assets">
+    `importTexture`, `importModel`, `exportImage`.
+  </Card>
+  <Card title="Canvas" icon="square" href="#canvas">
+    `OffscreenCanvas` that shows up over the game.
+  </Card>
+  <Card title="Limits" icon="gauge" href="#limits-and-device-loss">
+    Memory budgets, device loss, GPU resets.
+  </Card>
+</CardGroup>
+
+---
+
+## Shaders
+
+WGSL is the default, exactly as in a browser. HLSL is an extension: pass `language: "hlsl"`.
+
+```ts
+const wgsl = device.createShaderModule({ code: wgslSource });
+const hlsl = device.createShaderModule({ code: hlslSource, language: "hlsl" });
+```
+
+HLSL keeps WebGPU's binding model. Write every resource with an explicit register, the group as the
+space and the binding as the number:
+
+```hlsl
+cbuffer Params : register(b0, space0) { float4 tint; };
+Texture2D<float4> image : register(t1, space0);
+SamplerState linearSampler : register(s2, space0);
+RWByteAddressBuffer output : register(u0, space1);
+```
+
+- `cbuffer` for uniforms (not `ConstantBuffer<T>`), `ByteAddressBuffer` / `RWByteAddressBuffer` for
+  storage buffers. `StructuredBuffer` isn't supported.
+- Vertex inputs use `LOCATION(n)`, the same slot a WGSL `@location(n)` takes.
+- `#include <gpu.hlsli>` gives you the camera, space conversions and the engine data layouts:
+  see [gpu.hlsli](/api/gpu-hlsl).
+- `SV_VertexID` / `SV_InstanceID` start at 0 every draw (that's D3D). WGSL's `vertex_index` /
+  `instance_index` are fixed up for you; in HLSL use `GPU_VERTEX_INDEX(id)` / `GPU_INSTANCE_INDEX(id)`.
+
+Compiler messages come back through `getCompilationInfo()` with your own line numbers. Compiling is
+async: `createRenderPipelineAsync` doesn't block your script, and results are cached across reloads.
+
+---
+
+## The frame
+
+`device.frame` is the game frame as GPU objects. The resources are virtual: they always point at the
+current frame, and resize with the game.
+
+| Resource | What | Usable in |
+|:---------|:-----|:----------|
+| `color` | The scene's color target (`rgba8unorm`), composited over the game with premultiplied alpha | every scene hook |
+| `depth` | The scene's depth (`depth32float`), attachment only | every scene hook |
+| `sceneDepth` | That depth as an `r32float` texture you can read | every hook |
+| `worldDepth` | Depth of the map alone: no players, no smoke boxes (`r32float`) | `opaque` and later |
+| `solidDepth` | Map and players, no smoke boxes (`r32float`) | `opaque` and later |
+| `glowMask` | The cheat's glow mask (`r32uint`) | `post`, `overlay` |
+| `target` | The overlay's back buffer | `overlay` |
+| `camera` | 512-byte uniform buffer, see [GpuCamera](/api/gpu-hlsl#camera) | every hook |
+| `poseVertices`, `poseTable` | Every player skinned this frame | `opaque` and later |
+| `worldVertices`, `worldIndices` | The map's static geometry | every hook, `queue.submit` too |
+| `smokeVoxels`, `smokeTable` | This frame's smoke clouds | every hook |
+
+Plus a few numbers: `width` / `height`, `time`, `deltaTime`, `index`, `targetFormat`, `worldVertexCount`,
+`worldIndexCount`, `worldGeneration` (changes with the map), `smokeCount`, `smokeVoxelCount`.
+
+Engine data costs nothing until you use it. Poses, smokes, `worldDepth` and `solidDepth` are only made
+while some recording reads them; `smokeCount` stays `0` until then.
+
+### Hooks
+
+Your command buffers run inside the frame at five points:
+
+| Hook | When |
+|:-----|:-----|
+| `begin` | Before anything is drawn. No poses yet. |
+| `opaque` | After the map, players and smokes. |
+| `transparent` | After the transparent queue. The default spot for effects. |
+| `post` | After the scene's own post effects. `glowMask` is readable. |
+| `overlay` | On the back buffer, after everything. Render to `frame.target`. |
+
+Submit to a hook from inside an `on("render")` listener:
+
+```ts
+on("render", () => {
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({
+        colorAttachments: [{ view: device.frame.color.createView(), loadOp: "load", storeOp: "store" }],
+    });
+    // ...
+    pass.end();
+    device.frame.submit("transparent", [encoder.finish()]);
+});
+
+// or the short form: a fresh encoder every render, submitted for you
+device.frame.on("post", (encoder, frame) => { /* ... */ });
+```
+
+What you submit is a recording. The render thread replays your latest one every frame until the next
+`render` dispatch replaces it, so the game never waits on your script. `queue.submit` is different: it
+runs once, at the start of the next frame.
+
+### Camera space
+
+The game uses inches with Z up, the engine scene uses meters with Y up. `camera.viewProj` takes game
+positions (what `entities` gives you), `camera.sceneViewProj` takes scene positions (poses, map). The
+matrices are stored as DirectX row-vector matrices; in HLSL `mul(camera.viewProj, float4(p, 1))` is
+the right product. Don't declare them `row_major`.
+
+---
+
+## Players
+
+<br />
+
+```ts
+pass.drawPose(player, options?)
+```
+
+Draws a player's skinned pose with the current pipeline. `player` is a slot `0..63`, a controller or a
+pawn. The pose vertices are bound to `vertexSlot` (stride 64, per vertex) and the pose record to
+`instanceSlot` (stride 64, per instance); bind everything else yourself.
+
+| Option | Default | |
+|:-------|:--------|:--|
+| `vertexSlot` | `0` | Vertex buffer slot for the pose vertices. |
+| `instanceSlot` | `1` | Slot for the pose record, `null` for none. |
+| `instanceCount` | `1` | |
+| `firstInstance` | `0` | |
+| `replaceNative` | `false` | The cheat's own chams of this player aren't drawn while your recording is the latest. |
+
+```ts
+pass.setPipeline(chamsPipeline);
+pass.setBindGroup(0, group);
+for (const pawn of entities.getPlayers({ skipLocal: true }))
+    if (pawn.m_iHealth > 0) pass.drawPose(pawn, { replaceNative: true });
+```
+
+`replaceNative` turns off the visible pass, the x-ray pass and the glow outline of the cheat's chams for
+that player. When your script stops, reloads or loses its device, they come back on their own.
+
+---
+
+## Game assets
+
+| Call | |
+|:-----|:--|
+| `device.importTexture(path, { maxDimension? })` | A VPK texture as an `rgba8unorm` texture with its mips. |
+| `device.importModel(path, { meshGroup? })` | A VPK model: vertex and index buffers, meshes, bones, bounds and a ready `vertexLayout`. |
+| `device.exportImage(texture)` | A [Texture](/api/types/texture) that `render.image` and ui canvases draw. Live: it shows whatever the GPU wrote last. |
+
+```ts
+const model = await device.importModel(pawn.getModelName());
+const pipeline = device.createRenderPipeline({
+    vertex: { module, entryPoint: "VS", buffers: [model.vertexLayout] },
+    // ...
+});
+```
+
+Model vertices are 80 bytes in game space (inches, Z up), bind pose. See
+[GpuModelVertex](/api/gpu-hlsl#models).
+
+---
+
+## Canvas
+
+`OffscreenCanvas` works, with one extension: `present: "overlay"` composites it over the game every
+frame. It's there for code that expects a canvas to draw into, like WebGPU libraries.
+
+```ts
+const canvas = new OffscreenCanvas(1920, 1080);
+const context = canvas.getContext("webgpu");
+context.configure({ device, format: "rgba8unorm", alphaMode: "premultiplied", present: "overlay" });
+
+requestAnimationFrame(function frame() {
+    // draw into context.getCurrentTexture() and queue.submit
+    requestAnimationFrame(frame);
+});
+```
+
+`context.exportImage()` gives you the canvas as a [Texture](/api/types/texture) instead.
+
+---
+
+## Queries
+
+Occlusion and timestamp query sets work, with the `timestamp-query` feature. On D3D12 they resolve on
+the GPU; on D3D11 `resolveQuerySet` waits for the results on the CPU, so don't resolve every frame there.
+
+---
+
+## Limits and device loss
+
+| | |
+|:--|:--|
+| GPU memory | 1 GiB per device, 2 GiB for all scripts together. Past it, creation fails with an out-of-memory error. |
+| Readback | `mapAsync` and `onSubmittedWorkDone` resolve one frame later at the earliest. |
+| Features | `texture-compression-bc`, `depth32float-stencil8`, `float32-filterable`, `float32-blendable`, `rg11b10ufloat-renderable`, `depth-clip-control`, `dual-source-blending`, `indirect-first-instance`, `timestamp-query`. |
+| External textures | Not supported. There are no video frames. |
+
+Textures and buffers you drop without `destroy()` are freed by the garbage collector, which knows how
+much GPU memory they hold. Still, `destroy()` what you're done with.
+
+The device is lost when the overlay rebuilds its own (switching D3D11 / D3D12, a driver reset). Listen
+to `device.lost` and request a new one.
+
+If a shader hangs the GPU, Windows resets it. The overlay recovers, and the script whose work was
+running gets `device.lost` with a message saying so. It can't open a new device until it's reloaded.
+
+<Note>
+  On the CPU, your `@native/gpu` calls cost about as much as a browser's. The GPU work itself is the
+  same as native code. A frame of a few hundred draws is cheap; for thousands, use instancing or
+  indirect draws, like you would on the web.
+</Note>

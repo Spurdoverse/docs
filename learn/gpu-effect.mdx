@@ -1,0 +1,158 @@
+---
+title: "A raw WebGPU effect"
+sidebarTitle: "A raw WebGPU effect"
+description: "A sonar pulse over the map: a full-screen pass that reads the scene's depth and rebuilds world positions."
+icon: "satellite-dish"
+---
+
+[Scene](/api/scene) covers shapes, players and particles. For anything else there's
+[@native/gpu](/api/gpu): plain WebGPU with the game frame on top. We'll build a sonar pulse, a ring
+that spreads from your feet over the floor and the walls.
+
+The trick is one full-screen triangle. For each pixel it reads the scene's depth, turns it back into a
+world position, and lights it up if it's near the ring.
+
+---
+
+## Step 1: A device
+
+```ts
+import gpu from "@native/gpu";
+import entities from "@native/entities";
+
+const adapter = await gpu.requestAdapter();
+const device = await adapter.requestDevice();
+device.addEventListener("uncapturederror", (e) => console.warn(e.error.message));
+```
+
+---
+
+## Step 2: The shader
+
+HLSL here, so the frame camera comes from [gpu.hlsli](/api/gpu-hlsl). Bindings follow WebGPU:
+group as the space, binding as the register number.
+
+```ts
+const SONAR = `
+#include <gpu.hlsli>
+GPU_CAMERA(camera, b0, space0)
+Texture2D<float> sceneDepth : register(t1, space0);
+cbuffer Pulse : register(b2, space0)
+{
+    float4 pulseOrigin; // xyz
+    float4 pulseColor;  // straight alpha
+    float4 pulseParams; // radius, width, max radius
+};
+
+float4 VS(uint id : SV_VertexID) : SV_Position
+{
+    const float2 uv = float2((id << 1) & 2, id & 2);
+    return float4(uv * 2.0f - 1.0f, 0.0f, 1.0f);
+}
+
+float4 PS(float4 pos : SV_Position) : SV_Target0
+{
+    const float depth = sceneDepth.Load(int3(int2(pos.xy), 0));
+    if (depth >= 1.0f)
+        discard; // sky
+    const float3 world = GpuWorldFromDepth(camera, GpuScreenUv(camera, pos), depth);
+
+    const float d = distance(world, pulseOrigin.xyz);
+    const float front = 1.0f - smoothstep(0.0f, pulseParams.y, abs(d - pulseParams.x));
+    const float trail = d < pulseParams.x ? exp(-(pulseParams.x - d) / (pulseParams.y * 6.0f)) * 0.3f : 0.0f;
+    const float fade = saturate(1.0f - pulseParams.x / pulseParams.z);
+    const float a = saturate(front + trail) * fade * pulseColor.a;
+    return float4(pulseColor.rgb * a, a); // the scene's color target takes premultiplied alpha
+}`;
+```
+
+---
+
+## Step 3: The pipeline
+
+```ts
+const layout = device.createBindGroupLayout({
+    entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float" } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+    ],
+});
+const module = device.createShaderModule({ code: SONAR, language: "hlsl" });
+const pipeline = await device.createRenderPipelineAsync({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+    vertex: { module, entryPoint: "VS" },
+    fragment: {
+        module, entryPoint: "PS",
+        targets: [{
+            format: "rgba8unorm",
+            blend: {
+                color: { srcFactor: "one", dstFactor: "one", operation: "add" },
+                alpha: { srcFactor: "one", dstFactor: "one", operation: "add" },
+            },
+        }],
+    },
+});
+
+const pulse = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+const group = device.createBindGroup({
+    layout,
+    entries: [
+        { binding: 0, resource: { buffer: device.frame.camera } },
+        { binding: 1, resource: device.frame.sceneDepth.createView() },
+        { binding: 2, resource: { buffer: pulse } },
+    ],
+});
+const colorView = device.frame.color.createView();
+```
+
+`frame.camera`, `frame.sceneDepth` and `frame.color` are virtual: the views you make once keep
+pointing at the current frame, resizes included.
+
+---
+
+## Step 4: Every frame
+
+Pings start at your feet every three seconds. Submit the pass to the `transparent` hook from a `render`
+listener.
+
+```ts
+const data = new Float32Array(12);
+let start = -1e9, origin = [0, 0, 0];
+
+on("render", () => {
+    const t = performance.now() / 1000;
+    if (t - start > 3) {
+        const o = entities.getLocalPlayer()?.getOrigin();
+        if (o) { origin = [o.x, o.y, o.z + 8]; start = t; }
+    }
+    const radius = (t - start) * 1200;
+    if (radius > 2500) return;
+
+    data.set([...origin, 0, 0.24, 0.95, 1, 1, radius, 40, 2500, 0]);
+    device.queue.writeBuffer(pulse, 0, data);
+
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({
+        colorAttachments: [{ view: colorView, loadOp: "load", storeOp: "store" }],
+    });
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, group);
+    pass.draw(3);
+    pass.end();
+    device.frame.submit("transparent", [encoder.finish()]);
+});
+```
+
+What you submit is replayed every frame until your next `render` replaces it, so the ring keeps up
+with the camera even when your script is busy.
+
+---
+
+## Going further
+
+- The same shader in WGSL: drop `language: "hlsl"` and declare the camera as a struct (the layout is
+  in [gpu.hlsli](/api/gpu-hlsl#camera)). WGSL matrices take `camera.viewProj * vec4f(p, 1.0)`.
+- `frame.worldDepth` instead of `sceneDepth` ignores players and smoke boxes: the ring then only runs
+  over the map.
+- `frame.on("transparent", (encoder) => ...)` saves you the encoder and the `submit`.

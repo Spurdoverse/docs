@@ -28,7 +28,10 @@
           {
             "group": "Learn",
             "pages": [
-              "learn/building-esp"
+              "learn/building-esp",
+              "learn/custom-chams",
+              "learn/gpu-effect",
+              "learn/smoke-vision"
             ]
           }
         ]
@@ -51,6 +54,9 @@
             "pages": [
               "api/math",
               "api/render",
+              "api/scene",
+              "api/gpu",
+              "api/gpu-hlsl",
               "api/esp",
               "api/ui",
               "api/entities",

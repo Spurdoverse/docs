@@ -1,0 +1,173 @@
+---
+title: "gpu.hlsli"
+sidebarTitle: "gpu.hlsli"
+description: "The built-in HLSL header: the frame camera, spaces, depth, and the layouts of poses, models and smokes."
+icon: "file-code"
+---
+
+```hlsl
+#include <gpu.hlsli>
+```
+
+Every HLSL module of [@native/gpu](/api/gpu) and every [scene](/api/scene) material can include it.
+Nothing is read from disk: includes only resolve to built-in headers.
+
+The prelude also defines `LOCATION(n)` for vertex inputs and `GPU_D3D11` or `GPU_D3D12`, whichever the
+overlay runs on.
+
+---
+
+## Camera
+
+Bind `device.frame.camera` to a `GPU_CAMERA` and read it like a struct:
+
+```hlsl
+GPU_CAMERA(camera, b0, space0)
+
+float4 VS(float3 p : LOCATION(0)) : SV_Position
+{
+    return mul(camera.viewProj, float4(p, 1.0f));
+}
+```
+
+| Field | |
+|:------|:--|
+| `viewProj` | Game world (inches, Z up) to clip. |
+| `view`, `proj` | The two halves. `proj` works in meters. |
+| `invViewProj` | Clip to game world. |
+| `sceneViewProj` | Engine scene space (meters, Y up) to clip. For poses and the map. |
+| `eye` | Camera position, game world. |
+| `forward` | View direction. |
+| `screen` | Target width, height, 1 / width, 1 / height. |
+| `time` | Overlay seconds, last frame's length, frame index. |
+| `clip` | Near and far plane, in game units. |
+
+The camera includes the game's TAA jitter, so your draws line up with the engine's. Don't declare
+the matrices `row_major`: `mul(M, v)` is already the right product.
+
+---
+
+## Spaces and depth
+
+| Function | |
+|:---------|:--|
+| `GpuGameToScene(p)`, `GpuSceneToGame(p)` | Inches / Z up and meters / Y up. `GPU_INCHES_TO_METERS` is `0.0254`. |
+| `GpuProject(cam, p)` | `mul(cam.viewProj, float4(p, 1))`. |
+| `GpuScreenUv(cam, svPosition)` | `SV_Position.xy` to 0..1 across the target. |
+| `GpuLinearDepth(cam, depth)` | Post-projection depth to distance along the view, in game units. |
+| `GpuWorldFromDepth(cam, uv, depth)` | A pixel and its depth back to a game-world position. |
+| `GpuUnpackColor(abgr)`, `GpuPackColor(rgba)` | The scripts' packed `0xAABBGGRR` colors. |
+
+`frame.sceneDepth`, `worldDepth` and `solidDepth` hold post-projection depth, `0` near and `1` far,
+cleared to `1`. It's the same value `SV_Position.z` has in your own draws.
+
+```hlsl
+const float depth = sceneDepth.Load(int3(int2(pos.xy), 0));
+const float3 world = GpuWorldFromDepth(camera, GpuScreenUv(camera, pos), depth);
+```
+
+---
+
+## Draw parameters
+
+D3D starts `SV_VertexID` and `SV_InstanceID` at 0 for every draw. WebGPU's numbering includes the
+draw's first vertex (or base vertex) and first instance. To get it in HLSL:
+
+```hlsl
+float4 VS(uint id : SV_VertexID, uint inst : SV_InstanceID) : SV_Position
+{
+    const uint vertexIndex = GPU_VERTEX_INDEX(id);
+    const uint instanceIndex = GPU_INSTANCE_INDEX(inst);
+    ...
+}
+```
+
+`register(b0, space4)` is reserved for this. WGSL doesn't need it.
+
+---
+
+## Poses
+
+Every player skinned this frame, from the `opaque` hook on. `pass.drawPose` binds them as vertex
+buffers; bound as read-only storage, you read them yourself.
+
+```hlsl
+struct GpuPoseVertex { float4 position; float4 normal; float4 tangent; float4 uv; };   // 64 bytes, model space
+
+struct GpuPose                                                                          // 64 bytes per player slot
+{
+    float4 row0, row1, row2;   // model -> scene space
+    uint vertexOffset;         // into frame.poseVertices
+    uint vertexCount;
+    uint indexCount;
+    uint flags;                // GPU_POSE_VALID | GPU_POSE_MIRRORED | entity index << 16
+};
+```
+
+| Function | |
+|:---------|:--|
+| `GpuLoadPoseVertex(poseVertices, index)` | One vertex from `frame.poseVertices`. |
+| `GpuLoadPose(poseTable, player)` | A player slot's record. |
+| `GpuPoseToScene(pose, p)`, `GpuPoseNormalToScene(pose, n)` | Model to scene space. |
+| `GpuPoseEntity(pose)` | The controller's entity index. |
+
+Pose positions end up in scene space: project with `camera.sceneViewProj`, or convert with
+`GpuSceneToGame`.
+
+---
+
+## Models
+
+What `device.importModel` loads: 80 bytes per vertex, bind pose, game space.
+
+```hlsl
+struct GpuModelVertex
+{
+    float3 position;   // @0
+    float3 normal;     // @12
+    uint   bones;      // @24, four indices, a byte each: GpuUnpackBones
+    float4 weights;    // @32
+    float4 tangent;    // @48
+    float2 uv;         // @64
+};
+```
+
+`GpuLoadModelVertex(buffer, index)` reads one from a storage buffer. As a vertex buffer, use the
+model's `vertexLayout`.
+
+---
+
+## Map
+
+`frame.worldVertices` is `float3` positions in scene space, `frame.worldIndices` is a `uint32` triangle
+list. They are vertex and index buffers; copy them into a buffer of your own to read them in a compute
+shader.
+
+---
+
+## Smokes
+
+```hlsl
+struct GpuSmokeVoxel { float3 center; uint cloud; };   // 16 bytes
+
+struct GpuSmoke                                         // 64 bytes per cloud
+{
+    float3 center;  uint firstVoxel;
+    float3 mins;    uint voxelCount;
+    float3 maxs;    uint entity;
+    float  age;          // seconds since it started spreading, negative before
+    float  secondsLeft;
+};
+```
+
+Game space. A voxel is a box of `GPU_SMOKE_VOXEL_HALF` (60, 60, 30) around its center, and they
+overlap a lot: treat them as "smoke is somewhere around here", not as the cloud's exact shape.
+`GpuLoadSmokeVoxel(smokeVoxels, index)` and `GpuLoadSmoke(smokeTable, cloud)` read them.
+
+In WGSL:
+
+```wgsl
+struct SmokeVoxel { center: vec3f, cloud: u32 }
+struct Smoke { center: vec3f, firstVoxel: u32, mins: vec3f, voxelCount: u32,
+               maxs: vec3f, entity: u32, age: f32, secondsLeft: f32, pad: vec2f }
+```

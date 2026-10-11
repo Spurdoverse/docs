@@ -23,17 +23,12 @@ your code only supplies the value. Replace `src/index.ts` with:
 ```ts
 import esp from "@native/esp";
 
-const enemies = esp.class("enemy");
-
-enemies.text({
-    name: "health",
-    area: "top",
-    preview: "100 hp",
-    evaluate: (pawn) => (pawn.m_iHealth > 0 ? `${pawn.m_iHealth} hp` : null),
-});
+esp.enemy.text("health", { area: "top", preview: "100 hp" },
+    (pawn) => (pawn.m_iHealth > 0 ? `${pawn.m_iHealth} hp` : null));
 ```
 
-`evaluate` runs every tick for every enemy pawn. Returning `null` hides the element on that pawn.
+The function runs every tick for every enemy pawn, as long as the user has the element switched
+on. Returning `null` hides it on that pawn.
 Open the ESP builder: "health" is there, showing the `preview` text.
 
 ---
@@ -43,16 +38,10 @@ Open the ESP builder: "health" is there, showing the `preview` text.
 A bar takes a fraction, or an object when you want to set the colors. Add:
 
 ```ts
-enemies.bar({
-    name: "health-bar",
-    label: "Health bar",
-    area: "left",
-    preview: 1,
-    evaluate: (pawn) => {
-        const hp = pawn.m_iHealth;
-        if (hp <= 0) return null;
-        return { value: hp, max: 100, color: "#ff4040", colorAlt: "#40ff40", colorMode: "value" };
-    },
+esp.enemy.bar("health-bar", { label: "Health bar", area: "left", preview: 1 }, (pawn) => {
+    const hp = pawn.m_iHealth;
+    if (hp <= 0) return null;
+    return { value: hp, max: 100, color: "#ff4040", colorAlt: "#40ff40", colorMode: "value" };
 });
 ```
 
@@ -61,8 +50,9 @@ keep whatever the user set in the builder.
 
 <Tip>
   When several elements need the same data, compute it once per pawn with `context`:
-  `esp.class("enemy", { context: (pawn) => ({ hp: pawn.m_iHealth }) })`, then read
-  `ctx.hp` in each `evaluate(pawn, ctx)`.
+  `esp.enemy.context = (pawn) => ({ hp: pawn.m_iHealth })`, then read `ctx.hp` in each
+  `(pawn, ctx) => ...`. Or feed them all from one function with
+  [`esp.enemy.group`](/api/esp#group).
 </Tip>
 
 ---
@@ -166,7 +156,7 @@ Then read them in the listeners:
 if (!me || !boxes.value) return; // [!code ++]
 
 // render
-const color = (visible ? visibleColor.value : hiddenColor.value) ?? "#ffffff"; // [!code ++]
+const color = visible ? visibleColor.value : hiddenColor.value; // [!code ++]
 ```
 
 Pressing F6 flips the switch in the menu too.
@@ -187,25 +177,13 @@ const boxes = settings.switch("Enabled", { default: true });
 const visibleColor = settings.color("Visible", { default: "#40ff40" });
 const hiddenColor = settings.color("Hidden", { default: "#ff4040" });
 
-const enemies = esp.class("enemy");
+esp.enemy.text("health", { area: "top", preview: "100 hp" },
+    (pawn) => (pawn.m_iHealth > 0 ? `${pawn.m_iHealth} hp` : null));
 
-enemies.text({
-    name: "health",
-    area: "top",
-    preview: "100 hp",
-    evaluate: (pawn) => (pawn.m_iHealth > 0 ? `${pawn.m_iHealth} hp` : null),
-});
-
-enemies.bar({
-    name: "health-bar",
-    label: "Health bar",
-    area: "left",
-    preview: 1,
-    evaluate: (pawn) => {
-        const hp = pawn.m_iHealth;
-        if (hp <= 0) return null;
-        return { value: hp, max: 100, color: "#ff4040", colorAlt: "#40ff40", colorMode: "value" };
-    },
+esp.enemy.bar("health-bar", { label: "Health bar", area: "left", preview: 1 }, (pawn) => {
+    const hp = pawn.m_iHealth;
+    if (hp <= 0) return null;
+    return { value: hp, max: 100, color: "#ff4040", colorAlt: "#40ff40", colorMode: "value" };
 });
 
 let targets: { pawn: IPlayerPawn; visible: boolean }[] = [];
@@ -226,7 +204,7 @@ on("render", () => {
         const box = render.boundsOf(pawn);
         if (!box) continue;
 
-        const color = (visible ? visibleColor.value : hiddenColor.value) ?? "#ffffff";
+        const color = visible ? visibleColor.value : hiddenColor.value;
         render.rect(box.min, box.max, color, { thickness: 1.5 });
 
         const eye = pawn.getEyePosition();

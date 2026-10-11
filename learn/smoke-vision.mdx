@@ -1,0 +1,193 @@
+---
+title: "Seeing the map through smoke"
+sidebarTitle: "Seeing through smoke"
+description: "Outline the walls and corners a smoke hides, from frame.smokeTable and the map-only depth."
+icon: "smog"
+---
+
+The game draws its smoke, and you can't take it away. What you can do is draw what it hides: when a
+wall or a doorway is behind smoke, outline it.
+
+Two pieces of the [frame](/api/gpu#the-frame) make this easy:
+
+- `frame.smokeTable` has every cloud's center and bounds this frame.
+- `frame.worldDepth` is the depth of the map alone. No players, and none of the cheat's smoke boxes, so
+  the outlines follow the real walls.
+
+---
+
+## Step 1: How much smoke is in the way
+
+For each pixel, take the ray from your eye to the wall behind it and measure how much of it runs through
+a cloud. A cloud is roughly an ellipsoid, so treat it as one inside its bounds: a ray against a
+stretched sphere is a quadratic, no marching. Keep this function in a string, `SMOKE_BEFORE`, for the
+shader in step 2:
+
+```hlsl
+float SmokeBefore(float3 eye, float3 dir, float tEnd, uint count)
+{
+    float thickness = 0.0f;
+    for (uint c = 0u; c < count; ++c)
+    {
+        const GpuSmoke s = GpuLoadSmoke(smokeTable, c);
+        if (s.voxelCount == 0u)
+            continue;
+        // the ray in the space where the cloud's ellipsoid is a unit sphere
+        const float3 radii = max((s.maxs - s.mins) * 0.5f, 1.0f);
+        const float3 o = (eye - s.center) / radii;
+        const float3 d = dir / radii;
+        const float a = dot(d, d), b = dot(o, d), k = dot(o, o) - 1.0f;
+        const float disc = b * b - a * k;
+        if (disc <= 0.0f)
+            continue;
+        const float root = sqrt(disc);
+        const float t0 = max((-b - root) / a, 0.0f);
+        const float t1 = min((-b + root) / a, tEnd);
+        thickness += max(t1 - t0, 0.0f);
+    }
+    return thickness;
+}
+```
+
+Bounds are a rough shape. For the exact one, mark the voxels into a grid with a compute pass and march
+it, like the `gpu-showcase` script does. The ellipsoid is good enough to start.
+
+---
+
+## Step 2: The map from its depth
+
+Where enough smoke is in the way, rebuild the map from `worldDepth`: four neighbouring pixels give the
+normal, and jumps or bends in depth are edges.
+
+```ts
+const SHADER = `
+#include <gpu.hlsli>
+GPU_CAMERA(camera, b0, space0)
+Texture2D<float> worldDepth : register(t1, space0);
+ByteAddressBuffer smokeTable : register(t2, space0);
+cbuffer Look : register(b3, space0)
+{
+    float4 edgeColor;
+    float4 surfaceColor;
+    float4 params; // cloud count, smoke needed (units), fade-in (units)
+};
+
+${SMOKE_BEFORE} // the function from step 1
+
+float DepthAt(int2 p) { return worldDepth.Load(int3(clamp(p, int2(0, 0), int2(camera.screen.xy) - 1), 0)); }
+
+float4 VS(uint id : SV_VertexID) : SV_Position
+{
+    const float2 uv = float2((id << 1) & 2, id & 2);
+    return float4(uv * 2.0f - 1.0f, 0.0f, 1.0f);
+}
+
+float4 PS(float4 pos : SV_Position) : SV_Target0
+{
+    const int2 px = int2(pos.xy);
+    const float d = DepthAt(px);
+    const uint count = (uint)params.x;
+    if (count == 0u || d >= 1.0f)
+        discard;
+
+    const float3 eye = camera.eye.xyz;
+    const float3 p = GpuWorldFromDepth(camera, GpuScreenUv(camera, pos), d);
+    const float tScene = distance(p, eye);
+    const float smoke = SmokeBefore(eye, (p - eye) / tScene, tScene, count);
+    const float mask = smoothstep(params.y, params.y + params.z, smoke);
+    if (mask <= 0.0f)
+        discard;
+
+    // edges: a jump in distance (a wall against what's behind it) or a bend (a corner)
+    const float dl = DepthAt(px + int2(-1, 0)), dr = DepthAt(px + int2(1, 0));
+    const float du = DepthAt(px + int2(0, -1)), dd = DepthAt(px + int2(0, 1));
+    const float lc = GpuLinearDepth(camera, d);
+    const float jump = max(max(abs(GpuLinearDepth(camera, dl) - lc), abs(GpuLinearDepth(camera, dr) - lc)),
+                           max(abs(GpuLinearDepth(camera, du) - lc), abs(GpuLinearDepth(camera, dd) - lc))) / lc;
+    const float bend = (abs(dl + dr - 2.0f * d) + abs(du + dd - 2.0f * d)) / max(abs(dr - dl) + abs(dd - du), 1e-7f);
+    const float edge = max(smoothstep(0.02f, 0.06f, jump), smoothstep(0.15f, 0.5f, bend));
+
+    const float aSurface = surfaceColor.a * mask;
+    const float aEdge = edge * edgeColor.a * mask;
+    return float4(surfaceColor.rgb * aSurface + edgeColor.rgb * aEdge, saturate(aSurface + aEdge));
+}`;
+```
+
+Post-projection depth changes linearly across a flat surface on screen, so its second difference is
+zero on a wall and spikes at a corner. That's the whole edge detector.
+
+---
+
+## Step 3: Wiring it up
+
+```ts
+import gpu from "@native/gpu";
+
+const device = await (await gpu.requestAdapter()).requestDevice();
+const layout = device.createBindGroupLayout({
+    entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float" } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+    ],
+});
+const module = device.createShaderModule({ code: SHADER, language: "hlsl" });
+const pipeline = await device.createRenderPipelineAsync({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+    vertex: { module, entryPoint: "VS" },
+    fragment: {
+        module, entryPoint: "PS",
+        targets: [{
+            format: "rgba8unorm",
+            blend: {
+                color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+                alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+            },
+        }],
+    },
+});
+
+const look = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+const group = device.createBindGroup({
+    layout,
+    entries: [
+        { binding: 0, resource: { buffer: device.frame.camera } },
+        { binding: 1, resource: device.frame.worldDepth.createView() },
+        { binding: 2, resource: { buffer: device.frame.smokeTable } },
+        { binding: 3, resource: { buffer: look } },
+    ],
+});
+const colorView = device.frame.color.createView();
+const data = new Float32Array(12);
+
+on("render", () => {
+    // edge color, surface color, then: clouds, smoke needed, fade-in
+    data.set([0.75, 0.92, 1, 1, 0.3, 0.6, 1, 0.25, device.frame.smokeCount, 24, 60, 0]);
+    device.queue.writeBuffer(look, 0, data);
+
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({
+        colorAttachments: [{ view: colorView, loadOp: "load", storeOp: "store" }],
+    });
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, group);
+    pass.draw(3);
+    pass.end();
+    device.frame.submit("transparent", [encoder.finish()]);
+});
+```
+
+Record this every frame, smoke or not. The smoke buffers and `worldDepth` are only filled while some
+recording uses them; `frame.smokeCount` reads `0` until yours does.
+
+---
+
+## Tuning
+
+- **Smoke needed** is how many units of smoke the ray must cross before anything shows. Raise it if
+  the outlines pop up at the cloud's thin edges.
+- Swap `worldDepth` for `solidDepth` and players hide the outlines behind them, while the smoke still
+  doesn't.
+- Draw players in the smoke with [scene.player](/api/scene#players-and-models) and an `xray` material:
+  that part is already done for you.

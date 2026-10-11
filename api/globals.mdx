@@ -106,7 +106,8 @@ onkeydown = (e) => console.log(e.key);
 | `render` | `Event` | Once per overlay frame. Draw here. |
 | `unload` | `Event` | Before the script is unloaded or reloaded. Not fired when it stops on an error. |
 | `keydown` / `keyup` | `KeyboardEvent` | Key pressed (again while held, `repeat: true`) / released |
-| `mousemove` | `MouseEvent` | The mouse moved |
+| `mousemove` | `MouseEvent` | The pointer moved over the game |
+| `mouseenter`, `mouseleave` | `MouseEvent` | The pointer came over the game window, or left it |
 | `mousedown` / `mouseup` | `MouseEvent` | Button pressed / released |
 | `wheel` | `WheelEvent` | One wheel notch |
 | `error` | `ErrorEvent` | A listener, timer or other callback threw, or `reportError(e)` was called |
@@ -129,12 +130,23 @@ Fields follow the DOM.
 | `repeat` | `keydown` | `true` for auto-repeat |
 | `button` | `mousedown`, `mouseup` | `0` left, `1` middle, `2` right, `3` back, `4` forward |
 | `buttons` | mouse events | Held buttons: `1` left, `2` right, `4` middle, `8` back, `16` forward |
-| `clientX`, `clientY`, `x`, `y`, `screenX`, `screenY` | mouse events | Screen pixels |
-| `movementX`, `movementY` | `mousemove` | Raw delta since the last `mousemove` |
+| `clientX`, `clientY`, `x`, `y` | mouse events | Pixels over the game window, the ones render draws in |
+| `screenX`, `screenY` | mouse events | Screen pixels |
+| `movementX`, `movementY` | `mousemove` | How far the cursor moved since the last `mousemove` (see below) |
 | `deltaY` | `wheel` | `-100` per notch up, `+100` per notch down |
 | `ctrlKey`, `shiftKey`, `altKey`, `metaKey` | all input | Modifier state |
 
 `preventDefault()` on input events does nothing; the game still gets the input.
+
+Mouse events work like on a page: they come while the pointer is over the game window, and
+`mouseenter` / `mouseleave` fire at its edge. Press a button over the game and you keep getting
+them until it's released, even outside, so mid-drag `clientX` can be negative or wider than the
+window. Don't use `-1` as "no position".
+
+`movementX` always adds up to where the pointer really is. Dragging the game window by its title
+bar isn't movement. In a match the game hides and pins the cursor: `clientX` stands still and
+`movementX` is the mouse itself, like pointer lock in a browser. For your own cursor, follow
+`clientX` while it moves and add `movementX` only while it stands still.
 
 {/* ------------------------------------------------------------------ */}
 

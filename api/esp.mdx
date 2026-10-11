@@ -13,56 +13,40 @@ import esp from "@native/esp";
 ```
 
 <Note>
-  `evaluate` runs once per entity every tick, so keep it cheap. You don't draw anything yourself:
-  return a value and the builder draws it.
+  `evaluate` runs once per entity every tick, but only while the user has the element switched on.
+  You don't draw anything yourself: return a value and the builder draws it.
 </Note>
 
 ## Overview
 
 <CardGroup cols={2}>
-  <Card title="Classes" icon="users" href="#classes">
-    `esp.class`, `context`.
+  <Card title="Kinds" icon="users" href="#kinds">
+    `esp.enemy`, `esp.team`, `esp.dropped`, `context`.
   </Card>
   <Card title="Elements" icon="layer-group" href="#elements">
-    `text`, `bar`, `icon`.
+    `text`, `bar`, `icon`, `group`.
   </Card>
   <Card title="Return values" icon="arrow-right-from-bracket" href="#return-values">
     Text and bar shapes.
   </Card>
-  <Card title="Element handles" icon="hand" href="#element-handles">
-    `alive`, `enabled`, `preview`, `dispose`.
+  <Card title="Handles and helpers" icon="hand" href="#element-handles">
+    `enabled`, `preview`, `dispose`, `esp.health`, `esp.money`.
   </Card>
 </CardGroup>
 
 ---
 
-## Classes
+## Kinds
 
-{/* ------------------------------------------------------------------ */}
-
-### class
-
-<br />
-
-```ts
-esp.class(kind: "enemy" | "team" | "dropped", options?: { context?: ((entity) => Ctx) | null }): EspClass
-```
-
-The ESP of one kind of entity. Returns the same object every time for the same kind.
+Each kind is a property of `esp` and decides which entities its elements see.
 
 | Kind | Evaluates |
 |:-----|:----------|
-| `"enemy"` | Enemy `C_CSPlayerPawn`s, dead ones included. Never the local player. |
-| `"team"` | Teammates, same rules. `mp_teammates_are_enemies` moves everyone to `"enemy"`. |
-| `"dropped"` | Weapons, grenades and C4 lying in the world. Held weapons are drawn with their player. |
+| `esp.enemy` | Enemy `C_CSPlayerPawn`s, dead ones included. Never the local player. |
+| `esp.team` | Teammates, same rules. `mp_teammates_are_enemies` moves everyone to `enemy`. |
+| `esp.dropped` | Weapons, grenades and C4 lying in the world. Held weapons are drawn with their player. |
 
-```ts
-const enemies = esp.class("enemy");
-const dropped = esp.class("dropped");
-```
-
-`class` is a reserved word, so the named import needs a rename:
-`import { class as espClass } from "@native/esp";`.
+They're named exports too: `import { enemy } from "@native/esp";`.
 
 {/* ------------------------------------------------------------------ */}
 
@@ -71,98 +55,107 @@ const dropped = esp.class("dropped");
 <br />
 
 ```ts
-cls.context: ((entity) => Ctx) | null
+kind.context: ((entity) => Ctx) | null
 ```
 
-Runs once per entity per tick, before the elements. Its result is the `ctx` every `evaluate` of
-the class gets. A throw hides all of the class's elements on that entity for the tick. Set it to
-`null` to remove it.
+Runs once per entity per tick, before the elements. Whatever it returns is the `ctx` every
+`evaluate` of the kind gets, so shared reads happen once. A throw hides all of the kind's elements
+on that entity for the tick. Set it to `null` to remove it.
 
 ```ts
-const enemies = esp.class("enemy", {
-    context: (pawn) => ({ hp: pawn.m_iHealth, name: pawn.controller?.m_iszPlayerName ?? "" }),
-});
+esp.enemy.context = (pawn) => ({ hp: pawn.m_iHealth, name: pawn.controller?.m_iszPlayerName ?? "" });
 
-enemies.text({ name: "name", evaluate: (pawn, ctx) => ctx.name || null });
+esp.enemy.text("name", (pawn, ctx) => ctx.name || null);
 ```
 
 ---
 
 ## Elements
 
-Every element takes the same definition object.
+```ts
+kind.text(name, options?, evaluate)
+kind.bar(name, options?, evaluate)
+kind.icon(name, options?, evaluate)
+```
 
-| Field | |
-|:------|:--|
-| `name` | Identity within the class and element type. |
+`name` is the element's identity within the kind and type. Define the same one again and the new
+element takes over: same builder slot, same user layout, and the old handle goes dead.
+
+| Option | |
+|:-------|:--|
 | `label` | Label in the builder. Default `name`. |
 | `area` | Starting spot: `"top"`, `"bottom"`, `"left"`, `"right"` or `"center"`. The user can drag it elsewhere. |
 | `preview` | What the builder preview shows. Same shape as the `evaluate` result. |
-| `evaluate(entity, ctx)` | Returns the value for one entity this tick. |
+| `enabled` | Your own switch, default `true`. `false` hides it everywhere and skips `evaluate`. |
 
-A throw inside `evaluate` hides the element on that entity for the tick and is reported through
-the global `error` event.
+`label`, `preview` and `enabled` also take a function, a signal or a ui control, and follow it.
+Hand `enabled` a switch from your settings page and you're done:
+
+```ts
+const showHp = ui.page("ESP").group("Flags").switch("HP", { default: true });
+
+esp.enemy.text("hp", { area: "top", preview: "100", enabled: showHp },
+    (pawn) => ({ text: pawn.m_iHealth, color: esp.health(pawn.m_iHealth) }));
+```
+
+A throw inside `evaluate`, or a value of the wrong shape, hides the element on that entity for the
+tick and lands in the global `error` event. Once, not 128 times a second: you hear about it again
+only after it ran a clean tick.
 
 {/* ------------------------------------------------------------------ */}
 
 ### text
 
-<br />
-
-```ts
-cls.text(definition: EspTextDefinition): EspElement
-```
-
 A line of text. Return a string or number, a [style object](#text-style), or `null` to hide it.
 
 ```ts
-esp.class("enemy").text({
-    name: "hp",
-    area: "top",
-    preview: "100",
-    evaluate: (pawn) => ({ text: pawn.m_iHealth, color: pawn.m_iHealth < 30 ? "#f44" : "#fff" }),
-});
+esp.enemy.text("hp", { area: "top", preview: "100" },
+    (pawn) => ({ text: pawn.m_iHealth, color: pawn.m_iHealth < 30 ? "#f44" : "#fff" }));
 ```
 
 {/* ------------------------------------------------------------------ */}
 
 ### bar
 
-<br />
-
-```ts
-cls.bar(definition: EspBarDefinition): EspElement
-```
-
 A bar. Return the fill as `0..1`, a [style object](#bar-style), or `null` to hide it.
 
 ```ts
-esp.class("enemy").bar({
-    name: "armor",
-    area: "left",
-    preview: 1,
-    evaluate: (pawn) => ({ value: pawn.m_ArmorValue, max: 100, color: "#48f" }),
-});
+esp.enemy.bar("armor", { area: "left", preview: 1 },
+    (pawn) => ({ value: pawn.m_ArmorValue, max: 100, color: "#48f" }));
 ```
 
 {/* ------------------------------------------------------------------ */}
 
 ### icon
 
+Works like `text`, but always drawn with the `"weapon-icons"` font: the text is the glyph.
+[`esp.weaponIcon`](#helpers) finds it for you.
+
+```ts
+esp.dropped.icon("weapon", { area: "top", preview: "W" }, (weapon) => esp.weaponIcon(weapon));
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### group
+
 <br />
 
 ```ts
-cls.icon(definition: EspIconDefinition): EspElement
+kind.group({ key: esp.text(options?) | esp.bar(options?) | esp.icon(options?) }, evaluate): EspGroup
 ```
 
-Works like `text`, but always drawn with the `"weapon-icons"` font: the text is the glyph string.
+Several elements fed by one `evaluate` per entity. Return an object with a value per key; a missing
+key hides that element, `null` hides them all. Each key is a normal element with its own handle.
 
 ```ts
-esp.class("dropped").icon({
-    name: "weapon",
-    area: "top",
-    evaluate: (weapon) => weaponGlyph(weapon), // your own weapon → glyph lookup
-});
+esp.enemy.group({
+    weapon: esp.icon({ area: "bottom", preview: "W" }),
+    money: esp.text({ area: "bottom", preview: "$4,750" }),
+}, (pawn) => ({
+    weapon: esp.weaponIcon(pawn),
+    money: esp.money(pawn.controller?.m_pInGameMoneyServices?.m_iAccount ?? 0),
+}));
 ```
 
 ---
@@ -198,36 +191,37 @@ For `text` and `icon`.
 | Key | |
 |:----|:--|
 | `value`, `max` | The bar shows `value / max`, clamped to `0..1`. `max` defaults to `1`. |
+| `text` | String or number the bar carries. |
 | `color`, `colorAlt` | `ColorLike`. `colorAlt` switches to a gradient. |
 | `colorMode` | `"solid"`, `"gradient"`, or `"value"` (blends `color` when empty to `colorAlt` when full). |
 | `thickness`, `rounding` | Pixels. |
 | `divisions` | Number of segments, `0` for one solid bar. |
 | `reverse`, `outline` | `boolean`. |
-| `outlineThickness` | Pixels. |
+| `outlineThickness` | Pixels, `0..16`. |
 | `visible` | `false` hides the element and ignores the other keys. |
 
 ---
 
 ## Element handles
 
-`text`, `bar` and `icon` return an `EspElement`. Defining the same type and `name` again replaces
-the element: the new one keeps the builder slot and the user's layout, the old handle goes dead.
+`text`, `bar` and `icon` return an `EspElement`.
 
 | Member | |
 |:-------|:--|
 | `alive` | `false` after `dispose()`, a replacement or unload. |
-| `name`, `type` | `type` is `"text"`, `"bar"` or `"icon"`. |
-| `label` | Read or rename in the builder. |
-| `enabled` | Your switch, default `true`. `false` hides it everywhere and skips `evaluate`. |
+| `name`, `type`, `kind` | `type` is `"text"`, `"bar"` or `"icon"`. |
+| `label` | Read or rename. A plain value ends a reactive one. |
+| `enabled` | Your switch. Takes a value, a function or a signal. |
 | `enabledByUser` | Whether the user has it switched on in the builder. |
 | `preview` | Read or replace. `undefined` removes it. |
 | `dispose()` | Removes it from the builder. Also `using`. |
 
-On a dead handle reads return `null` and writes throw. Everything is removed when the script
-unloads.
+On a dead handle reads return `null` and writes throw `ESTALE`. A group's handle has `alive`,
+`elements` (by key) and `dispose()`. `kind.elements` lists a kind's live elements, `kind.clear()`
+and `esp.clear()` remove them, and unload removes everything anyway.
 
 ```ts
-const armor = esp.class("enemy").bar({ name: "armor", evaluate: (pawn) => pawn.m_ArmorValue / 100 });
+const armor = esp.enemy.bar("armor", (pawn) => pawn.m_ArmorValue / 100);
 
 on("keydown", (e) => {
     if (e.code === "F7") armor.enabled = !armor.enabled;
@@ -236,37 +230,37 @@ on("keydown", (e) => {
 
 ---
 
+## Helpers
+
+| Helper | |
+|:-------|:--|
+| `esp.health(hp, max = 100)` | A `Color`: green when full, yellow at half, red when empty. |
+| `esp.money(amount)` | `"$4,750"`. |
+| `esp.distance(entity, digits = 0)` | Distance from the local player: `"12m"`. `""` when it's unknown. |
+| `esp.weaponIcon(value)` | The weapon-icon glyph of a definition index, a weapon or a pawn's active weapon. `""` if none. |
+
+---
+
 ## Example
 
-Name, health and armor for enemies, ammo on dropped weapons.
+Name, health, weapon and money for enemies, ammo on dropped weapons.
 
 ```ts
 import esp from "@native/esp";
 
-const enemies = esp.class("enemy", {
-    context: (pawn) => ({ hp: pawn.m_iHealth, name: pawn.controller?.m_iszPlayerName ?? null }),
-});
+esp.enemy.context = (pawn) => ({ hp: pawn.m_iHealth });
 
-enemies.text({ name: "name", area: "top", preview: "Player", evaluate: (pawn, ctx) => ctx.name });
+esp.enemy.text("name", { area: "top", preview: "Player" },
+    (pawn) => pawn.controller?.m_iszPlayerName || null);
 
-enemies.bar({
-    name: "health",
-    area: "left",
-    preview: 1,
-    evaluate: (pawn, ctx) => ctx.hp > 0 && { value: ctx.hp, max: 100, color: "#ff4040", colorAlt: "#40ff40", colorMode: "value" },
-});
+esp.enemy.bar("health", { area: "left", preview: 1 },
+    (pawn, ctx) => ctx.hp > 0 && { value: ctx.hp, max: 100, color: esp.health(ctx.hp) });
 
-enemies.text({
-    name: "armor",
-    area: "right",
-    preview: "100",
-    evaluate: (pawn) => pawn.m_ArmorValue > 0 && { text: pawn.m_ArmorValue, color: "#48f" },
-});
+esp.enemy.group({
+    weapon: esp.icon({ area: "bottom", preview: "W" }),
+    distance: esp.text({ area: "bottom", preview: "12m" }),
+}, (pawn) => ({ weapon: esp.weaponIcon(pawn), distance: esp.distance(pawn) }));
 
-esp.class("dropped").text({
-    name: "ammo",
-    area: "bottom",
-    preview: "30",
-    evaluate: (weapon) => (weapon.m_iClip1 > 0 ? weapon.m_iClip1 : null),
-});
+esp.dropped.text("ammo", { area: "bottom", preview: "30" },
+    (weapon) => (weapon.m_iClip1 > 0 ? weapon.m_iClip1 : null));
 ```

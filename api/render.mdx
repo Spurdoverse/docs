@@ -365,7 +365,7 @@ widgets without touching their drawing code.
 | `rotate` | Turns everything around `origin`, radians, clockwise. |
 | `scale` | Scales around `origin`. One number, or `[x, y]`. |
 | `origin` | The point `rotate` and `scale` work around. Default `[0, 0]`. |
-| `layer` | `"foreground"` draws above everything, the menu included. |
+| `layer` | `"foreground"` draws above everything else on the overlay (ESP, other scripts), but under the cheat's menu. |
 
 Groups nest: alphas multiply, transforms stack, clips narrow. Clips are in screen pixels and
 transforms don't move them. A group you forget to pop is closed once your listener returns, so it
