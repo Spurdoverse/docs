@@ -1,0 +1,251 @@
+---
+title: "spd commands"
+sidebarTitle: "spd commands"
+description: "The spd commands for publishing: login, publish, version, rollback, promote, yank, add, fork and upstream."
+icon: "terminal"
+---
+
+Everything the market gets from you goes through `spd`. These commands work from any folder inside
+a project, and read the package name and version from its `manifest.json`.
+
+| Command | |
+|:--------|:-|
+| [`spd login`](#login) | Sign in through the browser |
+| [`spd logout`, `spd whoami`](#logout-and-whoami) | Revoke the key, show the account |
+| [`spd publish`](#publish) | Upload this version and follow the server build |
+| [`spd version`](#version) | Raise the version in the manifest |
+| [`spd rollback`](#rollback) | Point a branch back at an earlier version |
+| [`spd promote`](#promote) | Put a published version on another branch |
+| [`spd yank`](#yank) | Withdraw a version from new buyers |
+| [`spd add`](#add) | Install a library and see its permissions |
+| [`spd fork`](#fork) | Your own project from an open script |
+| [`spd upstream`](#upstream) | In a fork: the original's new versions |
+| [`spd doctor`](#doctor) | Check Node.js, npm, the login and the project |
+
+Writing code: `spd new`, `spd watch`, `spd build` and the rest are on [Getting started](/).
+
+---
+
+## Account
+
+{/* ------------------------------------------------------------------ */}
+
+### login
+
+<br />
+
+```bash
+spd login [--no-browser] [--token spc_…] [--npm]
+```
+
+Opens `spurdoverse.app/cli` with a code; press **Allow** there and the terminal gets a key. The
+request lives 10 minutes. The key is stored in the Windows Credential Manager and doesn't expire.
+
+| Flag | |
+|:-----|:-|
+| `--no-browser` | Only print the link, for a machine without a browser |
+| `--token spc_…` | Sign in with an existing key instead of the browser |
+| `--npm` | Also write the key into your user `~/.npmrc`, so plain `npm install` sees your unpublished libraries |
+
+`SPD_TOKEN` overrides the stored key, for CI. Create one for it in the editor:
+**Branches & versions → How to release → CLI keys**. An account has 10 keys at most, the ones
+`spd login` made included: revoke old ones there.
+
+<Note>
+  The **Allow** page asks to confirm your email first if it isn't confirmed. Without that, there's
+  no key.
+</Note>
+
+{/* ------------------------------------------------------------------ */}
+
+### logout and whoami
+
+<br />
+
+```bash
+spd logout
+spd whoami
+```
+
+`spd logout` revokes the stored key and removes it. `spd whoami` prints the account, the key's id,
+its scopes and your package scope (`@yournick`); it exits with code 1 when you're not signed in.
+
+---
+
+## Versions
+
+{/* ------------------------------------------------------------------ */}
+
+### publish
+
+<br />
+
+```bash
+spd publish [--branch stable|beta|dev] [--notes <text>] [--no-wait] [--accept-library-license]
+```
+
+Checks the project, uploads its sources and follows the server build to the end. The version is
+the one in `manifest.json`; the release notes are `--notes`, or the section for this version in
+`CHANGELOG.md`.
+
+```bash
+spd publish                          # to stable
+spd publish --branch beta            # 1.5.0-beta.1, or any version, to beta
+spd publish --notes "Fixed ESP"      # with release notes
+spd publish --no-wait                # upload and return; the build shows in the editor
+```
+
+| Flag | |
+|:-----|:-|
+| `--branch` | `stable` (default), `beta` or `dev`. Stable takes no prereleases |
+| `--notes` | The changelog for this version, one change per line |
+| `--no-wait` | Don't follow the build |
+| `--accept-library-license` | Accept the spurdo! library license without asking. For CI |
+
+The first publish creates the market item as a draft and prints the link to its editor. The whole
+walkthrough: [Publishing a script](/market/publish).
+
+{/* ------------------------------------------------------------------ */}
+
+### version
+
+<br />
+
+```bash
+spd version patch|minor|major|<version>
+```
+
+Raises the version in `manifest.json` and `package.json`, as `npm version` does.
+
+```bash
+spd version patch            # 1.4.0 → 1.4.1
+spd version minor            # 1.4.1 → 1.5.0
+spd version 2.0.0-beta.1     # exactly this
+```
+
+A prerelease becomes its release: `1.5.0-beta.2` → `1.5.0` with `minor` or `patch`.
+
+{/* ------------------------------------------------------------------ */}
+
+### rollback
+
+<br />
+
+```bash
+spd rollback <version> [--branch stable|beta|dev]
+```
+
+Points a branch (stable by default) at a version published earlier, from any branch. Nothing is
+rebuilt or deleted: buyers on that branch get that version from now on, as a normal update.
+
+```bash
+spd rollback 1.3.2
+spd rollback 1.5.0-beta.1 --branch beta
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### promote
+
+<br />
+
+```bash
+spd promote <version> --to stable|beta|dev
+```
+
+Puts a published version on another branch as it is, without a rebuild. Typically: a beta that
+proved itself goes to stable. Stable only takes releases, so publish `1.5.0` to beta first, not
+`1.5.0-beta.3`.
+
+```bash
+spd promote 1.5.0 --to stable
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### yank
+
+<br />
+
+```bash
+spd yank <version> --reason <text>
+```
+
+Withdraws a version: new buyers don't get it, and the registry marks it deprecated with your
+reason. Branches that pointed at it move to the newest live version of their branch. The number
+is never published again. Only a moderator can delete a version.
+
+```bash
+spd yank 1.4.0 --reason "breaks the ESP on 4:3"
+```
+
+---
+
+## Libraries and forks
+
+{/* ------------------------------------------------------------------ */}
+
+### add
+
+<br />
+
+```bash
+spd add <package>...
+```
+
+`npm install` plus a warning when a spurdo! library needs `ffi` or `filesystem`: its permissions
+become your script's, and your versions go to a moderator.
+
+```bash
+spd add @yournick/vec-math
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### fork
+
+<br />
+
+```bash
+spd fork @author/name [dir] [--version <v>] [--scope @x] [--no-install]
+```
+
+Makes your own project from an open script or library you own: renamed to your scope,
+`displayName` `"<original> (моя версия)"`, version `1.0.0`, and `"forkOf"` in the manifest naming the
+original. It gets no automatic updates.
+
+You can publish a fork on the market only if the original's author allows it; otherwise
+`spd publish` refuses with `fork-not-allowed`. Keep such a copy local.
+
+{/* ------------------------------------------------------------------ */}
+
+### upstream
+
+<br />
+
+```bash
+spd upstream [--to <version>]
+spd upstream diff [--to <version>]
+spd upstream apply [--to <version>]
+```
+
+In a fork. `spd upstream` (or `spd fork status`) says whether the original has a new version,
+`diff` shows its changes since the version your fork is based on, `apply` merges them into your
+files: three-way, with conflict markers where you both changed the same lines.
+
+---
+
+## Checks
+
+{/* ------------------------------------------------------------------ */}
+
+### doctor
+
+<br />
+
+```bash
+spd doctor
+```
+
+Checks Node.js, npm, the login, the scripts directory, the shared types and the current project
+(manifest, bundling). Run it first when `spd publish` fails before uploading.

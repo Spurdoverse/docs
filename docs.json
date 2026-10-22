@@ -37,6 +37,37 @@
         ]
       },
       {
+        "tab": "Market",
+        "groups": [
+          {
+            "group": "Selling scripts",
+            "pages": [
+              "market/overview",
+              "market/publish",
+              "market/cli",
+              "market/libraries"
+            ]
+          },
+          {
+            "group": "Your item",
+            "pages": [
+              "market/item-card",
+              "market/pricing",
+              "market/publishing",
+              "market/versions"
+            ]
+          },
+          {
+            "group": "After publishing",
+            "pages": [
+              "market/buyers",
+              "market/income",
+              "market/faq"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "API",
         "groups": [
           {

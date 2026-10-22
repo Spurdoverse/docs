@@ -1,0 +1,131 @@
+---
+title: "The item card"
+sidebarTitle: "The item card"
+description: "Every field of the editor's Basics section, its limits, and how to write and shoot a card people buy from."
+icon: "image"
+---
+
+The card is what buyers see before they pay: the cover, the name and one line in the catalog grid,
+then the gallery, the description and the tags on the item page. All of it lives in the editor's
+**Basics** section. `spd publish` only sets the first name and summary; the rest is up to you.
+
+The draft saves itself as you type. **Preview card** shows how the item will look in the catalog.
+
+---
+
+## Fields
+
+| Field | Limits | |
+|:------|:-------|:-|
+| **Category** | | Script or Library, from `type` in `manifest.json`. Can't be changed here |
+| **Product** | | The game. `spd publish` doesn't set it: pick it once. Scripts can't go to CS2 Inventory |
+| **Name** | 3–80 characters | Taken from `displayName` on the first publish, later changed only here |
+| **Summary** | 10–120 characters, one line | The line under the name in the catalog |
+| **Description** | 40–5000 characters, Markdown | The item page. **Write** and **Preview** switch between text and result |
+| **Tags** | up to 8, 24 characters each | Search and filters. Enter or a comma adds a tag |
+| **Screenshots** | 1–10, JPG, PNG or WebP | The first one is the cover. Libraries have none |
+
+The fields that are wrong turn red when you press the publish button, and the toast says how many
+to fix.
+
+---
+
+## Name and summary
+
+Say what it does and what makes it different. Buyers scan the grid; the name and the summary are
+all they read there.
+
+| | |
+|:-|:-|
+| Good | **Legit ESP — boxes that fade behind smoke** · "Visibility colors, health bar, a menu page, 0.1 ms a frame" |
+| Not so good | **BEST SCRIPT 2026!!!** · "best esp" |
+
+Leave the price, "cheap" and "undetected" out of the name: the price is already on the card, and
+promises about bans get items rejected.
+
+---
+
+## Description
+
+Answer what a buyer would ask in a DM before paying. A structure that works:
+
+```md
+### What it does
+- Enemy boxes, green when visible, red behind walls
+- Health bar on the left, hidden at full health
+
+### Menu
+A page called "ESP" with a toggle on F6 and two colors.
+
+### Requirements
+CS2. No ffi, no filesystem: it doesn't touch your files.
+
+### Tested on
+Client 2026.10, 1920×1080 and 2560×1440.
+```
+
+Headings with `### `, lists with `- `, links as `[text](https://…)`. Check **Preview** before
+publishing.
+
+- Describe only what's really there. "Doesn't match the description" is a reason to report an
+  item, and a reason for a dispute and a refund.
+- If the script asks for `ffi` or `filesystem`, say what for: buyers and the moderator will want
+  to know.
+- No links to other shops, payment chats, or "write me for a discount". Deals outside the market
+  break the rules and aren't covered by disputes.
+
+---
+
+## Tags
+
+Tags are how people find the item in search and how the catalog filters it. Use the words they
+type: `legit`, `rage`, `esp`, `aim`, `hvh`, `faceit`, `hud`. Tags are lowercase; a leading `#` is
+dropped. Search understands common spellings in both languages (aim and аим, esp and вх), so one
+form of each word is enough.
+
+---
+
+## Screenshots
+
+### Upload and order
+
+- Press **Add** and pick the files. JPG, PNG or WebP, up to 10 MB each.
+- Large pictures (over 2 MB) are shrunk in your browser before upload: to 2560 px on the long side,
+  saved as WebP. You don't need to resize anything yourself. Animated pictures are uploaded as they
+  are, so they must fit in 10 MB.
+- **The first screenshot is the cover.** Drag a screenshot to the front, or press **Make cover**
+  on it. On a phone, press and hold a screenshot until it lifts, then drag. With the keyboard,
+  focus a screenshot and move it with the arrow keys.
+- A screenshot is saved once it has uploaded. If one fails, the editor names the file and says
+  why.
+
+### What to shoot
+
+- **The cover:** the result, not the code. The ESP in a real round, the HUD in action, the menu
+  page your script adds. It's shown small, so one clear subject beats a collage.
+- **Then the details:** the script's menu, its settings, a close-up of what it draws.
+- **16:9 at 1920×1080 or more.** Full-screen game captures fit the card best.
+- **Your own work only.** The spurdo! menu and the game with your script running.
+
+### What not to put there
+
+- Other cheats' or other authors' interfaces.
+- Ads, watermarks of other shops, links, contacts, prices.
+- Your account details: nick, Steam profile, balance, emails.
+- Promises such as "undetected" or "no bans" on the picture.
+
+Screenshots that don't match the item, or show someone else's interface, get the item rejected or
+taken down on a report.
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Prices, discounts and grants" icon="tags" href="/market/pricing">
+    Free, forever, by term, discounts and promo codes.
+  </Card>
+  <Card title="Publishing and moderation" icon="badge-check" href="/market/publishing">
+    What the button does and why it can refuse.
+  </Card>
+</CardGroup>

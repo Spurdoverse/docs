@@ -1,0 +1,146 @@
+---
+title: "Publishing and moderation"
+sidebarTitle: "Publishing and moderation"
+description: "What the editor's button does, every reason it refuses and how to fix it, the automated checks, and how moderation works."
+icon: "badge-check"
+---
+
+Two things have to happen before a script is in the catalog: a version passes its build and
+checks, and you put the item on the market with the button at the bottom of the editor. This page
+covers both, and what happens when either says no.
+
+---
+
+## The button
+
+| Item | Button | What it does |
+|:-----|:-------|:-------------|
+| Draft | **Send for review** | Checks the item. Live stable version: the item is **Published**. Stable version with a moderator: the item is **In review** and goes live on approval |
+| Rejected | **Send again** | The same, after you've fixed what the moderator wrote |
+| Published or hidden | **Save changes** | Saves text and price edits. They're live right away |
+
+You press it once per item. New versions after that don't need it: each one goes live on its
+branch when it passes.
+
+---
+
+## When the button refuses
+
+### Fields in red
+
+First the editor checks the form. Wrong fields turn red, the page scrolls to the first one, and
+the toast says **Fix N fields**.
+
+| Field | Needs |
+|:------|:------|
+| Name | At least 3 characters |
+| Product | A product picked |
+| Summary | At least 10 characters |
+| Description | At least 40 characters |
+| Screenshots | At least one (not for libraries) |
+| Price & access | Free, forever or a term plan picked; each price at least $0.50 |
+| Discount | 5–90%, the end date after the start |
+| Branches & versions | A version on stable |
+
+### Not published
+
+Then the server checks the item and answers **Not published** with every reason at once:
+
+| Message | Fix |
+|:--------|:----|
+| No name. | Fill in **Name** |
+| No product picked. | Pick the **Product**. `spd publish` never sets it |
+| The product doesn't fit: scripts and libraries are for the cheats only. | Pick a game, not CS2 Inventory |
+| A plan is below the minimum price — $0.50 and up. | Raise the price |
+| The plans don't fit the category: check the terms and "forever". | A library with a price, or two "forever" plans. Fix **Price & access** |
+| Nothing to publish: no built version. Run spd publish. | There's no build yet. Run `spd publish` |
+| Build 1.0.0 is still queued — publish once it is built. | Wait for the build. **Builds** shows its progress |
+| Build 1.0.0 is still running — publish once it finishes. | Same |
+| Build 1.0.0 failed — fix the error from its log under "Builds" and run spd publish again. | Open the build's log, fix, `spd version patch` or keep the number, `spd publish` |
+| Version 1.0.0 was rejected by a moderator — fix it and run spd publish. | Read the moderator's note, fix, publish a new version |
+| Version 1.1.0-beta.1 was built on beta, but the catalog takes stable — run spd publish to stable. | Publish a release to stable: `spd publish`, or `spd promote <version> --to stable` |
+| Publishing is closed: the author account is blocked on the market. | Contact support |
+
+<Tip>
+  A failed build's number is free again: nobody saw that version. You can fix the code and
+  publish the same number.
+</Tip>
+
+---
+
+## Moderation
+
+Only code with extra permissions is reviewed by a person. A version goes to a moderator when:
+
+- it ends up with `ffi` or `filesystem`, its own or through a library;
+- or most of its code matches an open script whose author doesn't allow forks ("Looks like a
+  fork").
+
+Everything else is published by the automated checks alone, in the time the build takes.
+
+A moderator reads your sources, the dependencies, the permissions and what changed against the
+live version, usually within a day. The decision is one of:
+
+| Decision | What you see |
+|:---------|:-------------|
+| Approve | The version is live on its branch |
+| Request changes | A new item goes back to **Draft** with the moderator's note |
+| Reject | The version is rejected. A new item is **Rejected**, with the reason in **My items** |
+
+The note is in the editor's **Moderation** section and next to the item in **My items**. Fix the code and
+run `spd publish` again. While a request is open, a new version on the same branch replaces the
+old one in it, so the moderator always looks at your latest.
+
+### After approval
+
+- **You already pressed Send for review:** the item goes live by itself. Nothing else to do.
+- **You didn't:** the version is approved, but the item stays a draft until you press the button.
+- **The moderator requested changes:** the item went back to a draft. Publish the fix and press
+  **Send for review** again.
+- **A new version of a published item:** it becomes current on its branch, and buyers on that
+  branch get it.
+
+---
+
+## Automated checks
+
+Every build, with or without a moderator, goes through these checks. Any **failed** check stops
+the version: the build is **failed** with `checks-failed`, and the log lists why. **Warnings**
+don't stop anything.
+
+| Check | Fails when |
+|:------|:-----------|
+| **Build** | The bundle is missing or doesn't parse |
+| **Imports** | The code imports something other than `@native/*` and packages from the lock file, uses `require` for `@native/*`, or imports `@native/ffi` without the `ffi` permission |
+| **Permissions** | Never fails. Says whether the version needs manual review, and warns when it asks for more than the live version |
+| **Dependencies** | A spurdo! library isn't in the registry at that version, is blocked, doesn't match the registry, or is another author's unpublished library |
+| **Size** | Built JS over 120 MB, or source maps over 192 MB. Over 1 MB is a warning |
+| **Sources** | `src/` has no `.ts` or `.js`, or a file is packed (`eval(function(p,a,c,k,e…`), obfuscated (`_0x…` names), dense `\xNN`, or a built file with a `sourceMappingURL`. Very long lines are only a warning: they're often embedded data |
+| **Banned files** | A file matches one that was taken down before |
+| **assets/ files** | Never fails. Lists the files and any `.wasm` |
+
+---
+
+## States
+
+| State | |
+|:------|:-|
+| **Draft** | Only you see it |
+| **In review** | Waiting for a moderator's decision on the stable version |
+| **Published** | In the catalog |
+| **Rejected** | Didn't pass review. The reason is in **My items** and the editor |
+| **Hidden** | Off the catalog by your choice. Buyers keep their access |
+| **Banned** | Taken down by moderation. Editing is closed; questions go to support |
+
+---
+
+## After publishing
+
+- **Text and price** edits are live as soon as they're saved. They aren't reviewed in advance.
+- **Category** can't change, and the product stays what you picked.
+- **Hide from catalog** in the item's menu in **My items** takes it off the shelf; **Back to
+  catalog** returns it. Buyers keep their access either way.
+- **Delete draft** works only for a draft or a rejected item that nobody owns. A script or
+  library with approved versions can't be deleted: hide it instead.
+- Moderators can take an item down after a report. See
+  [Reviews, reports and disputes](/market/buyers).

@@ -1,0 +1,74 @@
+---
+title: "Reviews, reports and disputes"
+sidebarTitle: "Reviews and disputes"
+description: "How buyers review your script, how you reply, what happens on a report, and how disputes and refunds work."
+icon: "comments"
+---
+
+Once the script sells, buyers talk back: reviews on the item page, reports to moderators, and
+disputes when something doesn't work. The **Author dashboard** collects what needs you under
+**Needs attention**.
+
+---
+
+## Reviews
+
+- Anyone with access can review the item 24 hours after getting it. Expired term access counts;
+  access closed by a refund doesn't.
+- A rating from 1 to 5 and 20–2000 characters of text. One review per buyer, which they can edit.
+  The version and branch are filled in for them.
+- Reviews from [grants](/market/pricing#grants) are marked **Granted**. They're visible but don't
+  count toward the rating, so handing out access can't raise it.
+- Other users mark reviews **Helpful** and can report them: abuse, spam or ads, not about the
+  item, extortion ("5 stars if you refund me"). Moderators hide the ones that break the rules.
+
+### Replying
+
+You can post one reply under each review, shown as **Author's reply**. Edit it any time; an empty
+reply removes it. The share of reviews you answered is on your author profile, so reply to the bad
+ones too: calmly, with the fix or the version that has it.
+
+{/* TODO: confirm where the reply box is in the UI; the backend has POST /v2/me/market/reviews/:id/reply and the dashboard's Reply links to the item's reviews, but no reply form was found in item-reviews.tsx */}
+
+---
+
+## Reports
+
+Anyone can report an item: **Someone else's or stolen content**, **Malicious code**, **Doesn't
+match the description** or **Other**. A moderator looks at it and either dismisses it, takes the
+item down, or writes to you.
+
+When moderation writes to you, it's a support ticket named after the item, and the dashboard
+shows **Moderation wrote about «…»** with **Reply**. Answer there.
+
+A taken-down item is **Banned**: it's off the catalog and editing is closed.
+
+---
+
+## Disputes
+
+A dispute is how a buyer gets money back for a script that doesn't work or isn't as described.
+
+- **Paid purchases only**, within **7 days** of the purchase or renewal. Grants and free items
+  can't be disputed.
+- **Reasons:** doesn't work, not as described, removed by the author.
+- **While it's open,** the buyer keeps access, and your money for that sale stays on hold.
+- **You have 48 hours** to reply. Open it from **Needs attention**. Ask for a log, fix the bug,
+  point to the version with the fix. Your reply goes to the moderator and the buyer.
+- **Then a moderator decides:** a full refund, a partial refund, or no refund.
+
+### Refunds
+
+| Decision | The buyer | You |
+|:---------|:----------|:----|
+| Full refund | Money back to their site balance, access closes | The sale comes out of your income |
+| Partial refund | Part of the money back, access stays | Your share of that part comes out |
+| Denied | Nothing changes | Nothing changes |
+
+The refund comes out of that sale's hold first, then out of your available income. The buyer's
+review stays either way.
+
+<Tip>
+  Most disputes are "doesn't work after the game update". A beta branch, a changelog that says what
+  was tested, and a quick reply in the dispute solve them before a moderator has to.
+</Tip>

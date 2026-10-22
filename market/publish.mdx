@@ -1,0 +1,224 @@
+---
+title: "Publishing a script"
+sidebarTitle: "Publishing a script"
+description: "From spd login to the catalog: the manifest, the changelog, spd publish, the server build and the editor."
+icon: "rocket"
+---
+
+`spd publish` uploads your project's sources, the server builds them with the same bundler as
+`spd build`, checks the result, and the version goes live. We'll take a script from a fresh
+`spd new` project to the catalog.
+
+<Note>
+  You need a project made with `spd new` (see [Getting started](/)) and a confirmed email on your
+  spurdo! account.
+</Note>
+
+---
+
+## Step 1: Sign in
+
+```bash
+spd login
+```
+
+The browser opens `spurdoverse.app/cli` with an 8-character code such as `ABCD-EFGH`. Check that
+it matches the one in the terminal and press **Allow**. The page shows the scope you'll publish
+as, for example `@yournick`.
+
+The key goes to the Windows Credential Manager and doesn't expire. `spd whoami` shows who you're
+signed in as, `spd logout` revokes the key. No browser on that machine? `spd login --no-browser`
+only prints the link.
+
+---
+
+## Step 2: The manifest
+
+For publishing, `name` is a package id in your scope and `version` is semver. `spd new` already
+writes both:
+
+```json
+{
+    "name": "@yournick/legit-esp",
+    "displayName": "Legit ESP",
+    "version": "1.0.0",
+    "description": "Quiet enemy boxes and a health bar",
+    "visibility": "private",
+    "permissions": []
+}
+```
+
+| Field | Default | |
+|:------|:--------|:-|
+| `name` | required | `@scope/slug`. The scope is your account's; `spd whoami` prints it |
+| `version` | required | `1.4.0` for stable, `1.5.0-beta.1` for beta and dev |
+| `displayName` | the slug | The item's name on the first publish only. After that, rename it in the editor |
+| `type` | `script` | `script` or `library` |
+| `visibility` | `private` | `private` or `public`, see [Private and open code](#private-and-open-code) |
+| `permissions` | `[]` | `ffi`, `filesystem`. They decide whether a moderator looks, see [below](#permissions-and-moderation) |
+| `description` | `""` | The item's summary on the first publish |
+
+The scope is fixed by your first publish and doesn't change if you change your nick. `license`
+isn't read.
+
+---
+
+## Step 3: The changelog
+
+Add a section for the version to `CHANGELOG.md`:
+
+```md
+## 1.0.0
+- Enemy boxes, colored by visibility
+- Health bar on the left
+```
+
+`## [1.0.0] - 2026-10-01` and `## v1.0.0` work too. Or skip the file and pass the notes:
+`spd publish --notes "Fixed ESP"`. Buyers read them on the item page, under the branch's
+changelog.
+
+---
+
+## Step 4: Publish
+
+```bash
+spd publish
+```
+
+Before uploading anything, spd checks what it can on your machine:
+
+- `manifest.json` is valid and `name` is in your scope;
+- TypeScript has no type errors and the project bundles;
+- `package-lock.json` exists (run `npm install` if it doesn't);
+- the version is higher than every published one, and a prerelease isn't going to stable.
+
+Then it packs the sources, uploads them and prints the server build's log until it ends:
+published, with a moderator, or failed. `spd publish --no-wait` uploads and returns without
+following the build.
+
+### What gets uploaded
+
+`manifest.json`, `package.json`, `package-lock.json`, `tsconfig.json` or `jsconfig.json`,
+`CHANGELOG.md`, `README.md`, `LICENSE`, `src/` and `assets/`. Never `dist/`, `node_modules/`,
+`data/` or `.npmrc`. The server installs packages exactly as `package-lock.json` lists them.
+
+| Limit | |
+|:------|:-|
+| Upload | 150 MB packed, 600 MB unpacked, 5000 files |
+| Built JS | 120 MB. Over 1 MB is a warning, not a failure |
+| Builds | 20 an hour, 100 a day, failed ones included |
+
+---
+
+## Step 5: Fill in the item
+
+The first publish creates the market item as a draft and prints a link to its editor:
+
+```text
+https://spurdoverse.app/marketplace/seller/items/item-123/edit
+```
+
+Open it and fill in:
+
+- **Product**: `spd publish` doesn't set one, so pick the game here once.
+- **The card**: name, summary, description, tags and at least one screenshot. See
+  [The item card](/market/item-card).
+- **Price & access**: free, forever, by term. See [Prices, discounts and grants](/market/pricing).
+
+The draft saves itself as you type. Later the item is always in **My items**.
+
+---
+
+## Step 6: Put it on the market
+
+Press **Send for review** at the bottom of the editor.
+
+- The stable version is already live (no `ffi`, no `filesystem`): the item goes to the catalog
+  right away.
+- The stable version is with a moderator: the item is **In review** and goes live by itself when
+  the version is approved.
+
+If the button refuses, it says why, field by field. See
+[When the button refuses](/market/publishing#when-the-button-refuses).
+
+<Warning>
+  A draft stays a draft. A version that passed its checks doesn't put a new item in the catalog by
+  itself: you press the button once, for the first publish. After that, new versions go live on
+  their own.
+</Warning>
+
+---
+
+## The server build
+
+Every `spd publish` is built on the server. The editor's **Builds** section shows each build's
+status, its log, the automated checks, dependencies and sizes. It's the same log your terminal
+showed.
+
+| Status | |
+|:-------|:-|
+| queued, building | Waiting for a builder or building |
+| published | Passed. The version is live on its branch |
+| with a moderator | Passed, but asks for `ffi` or `filesystem`: waits for review |
+| failed | Didn't build or failed a check. The log says why |
+| rejected | A moderator rejected it, or a newer version replaced it in review |
+
+What the automated checks look at: [Automated checks](/market/publishing#automated-checks).
+Why builds fail: [FAQ](/market/faq).
+
+---
+
+## Permissions and moderation
+
+A version's permissions are its own from `manifest.json` plus those of every library it uses.
+
+- **No `ffi`, no `filesystem`:** the version is published as soon as the build passes. No person
+  looks at it.
+- **`ffi` or `filesystem`:** a moderator reviews the code first, usually within a day.
+
+Ask only for what you use. `spd build --fix-permissions` adds `ffi` when the code imports
+`@native/ffi`. What each permission gives: [Permissions](/api/manifest#permissions).
+
+---
+
+## Private and open code
+
+`"visibility"` decides whether buyers can read your code.
+
+<Tabs>
+  <Tab title="private">
+    The default for scripts. The server minifies the bundle and encrypts it for each cheat session
+    on delivery. Buyers run it but can't read it. Moderators still see your sources.
+  </Tab>
+  <Tab title="public">
+    Buyers read the code of the version they have in **My purchases**, see what changed between
+    versions and download the project. Files too large to show on the page get a download button
+    instead. With `spd fork @yournick/legit-esp` they make their own
+    version: it gets no automatic updates, and `spd upstream` tells them when yours has a new one.
+
+    Whether they may publish such forks on the market is up to you: **Allow forks on the market**
+    in the editor's **Forks** section. It's off by default.
+  </Tab>
+</Tabs>
+
+Either way, `src/` has to be readable source. Minified, packed or obfuscated files fail the
+checks: the server minifies private scripts itself.
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Updates and branches" icon="code-branch" href="/market/versions">
+    New versions, beta and dev, rollbacks, yanks.
+  </Card>
+  <Card title="spd commands" icon="terminal" href="/market/cli">
+    Every publishing command with examples.
+  </Card>
+  <Card title="Libraries" icon="book" href="/market/libraries">
+    Free code for other scripts.
+  </Card>
+  <Card title="Publishing and moderation" icon="badge-check" href="/market/publishing">
+    Refusals, checks, what happens after review.
+  </Card>
+</CardGroup>

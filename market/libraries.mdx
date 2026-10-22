@@ -1,0 +1,84 @@
+---
+title: "Libraries"
+sidebarTitle: "Libraries"
+description: "Publishing code for other scripts: always free, always open, the spurdo! library license, spd add."
+icon: "book"
+---
+
+A library is code that other scripts import: math helpers, a UI kit, a parser. It's published like
+a script, with `spd publish`, and lands both on the market and in the spurdo! package registry, where
+other authors install it from.
+
+---
+
+## Create one
+
+```bash
+spd new --library
+```
+
+The manifest gets `"type": "library"` and `"visibility": "public"`. Export what other scripts use
+from `src/index.ts`; they compile your TypeScript together with theirs, so it has to pass the same
+strict `tsconfig` the `spd new` template has.
+
+---
+
+## The rules
+
+- **Always free.** A library can't have a price: the editor's **Price & access** says
+  **Libraries are always free**. You earn on the scripts that use it.
+- **Always open.** `"visibility"` must be `"public"`: the library is installed as source, so
+  anyone who installs it can read it.
+- **No screenshots.** The card has a name, summary, description and tags; the item page shows the
+  install command, versions, permissions and **Used by**.
+- **Can't be deleted** once a version was approved: other scripts' lock files point at it. Yank a
+  version instead, see [yank](/market/cli#yank).
+
+---
+
+## The spurdo! library license
+
+Every library is published under the
+[spurdo! library license](https://spurdoverse.app/legal/library-license); `"license"` in the
+manifest isn't read. In short:
+
+- everyone on spurdo! may use your library and bundle it into their scripts, paid ones included,
+  inside the spurdo! ecosystem;
+- you keep the copyright and confirm you have the right to publish the code;
+- a version that was published stays usable in scripts that already bundled it, even after a yank.
+
+Before your first library, `spd publish` shows this summary with the link and asks y/N. When the
+license text changes, it asks again before your next library. In CI, where nobody can answer, pass
+`--accept-library-license`.
+
+<Note>
+  The license allows building a library into your packages, not publishing a modified copy of it.
+  That's why forks of libraries are off by default: see
+  [Private and open code](/market/publish#private-and-open-code).
+</Note>
+
+---
+
+## How others use it
+
+```bash
+spd add @yournick/vec-math
+```
+
+The package goes into the script's `package.json` and `package-lock.json`, with the version pinned
+in the lock file. When the script is published, the server installs exactly that version from the
+registry. The item page lists the scripts that use your library.
+
+**Permissions travel.** If your library asks for `ffi` or `filesystem`, every script that uses it
+gets those permissions too, and its versions go to a moderator. `spd add` warns about it. Keep
+libraries free of permissions when you can.
+
+---
+
+## Drafts
+
+Until the library's item is published, it's in the registry for you only: `spd add` and `spd
+publish` use your key. For plain `npm install` to see your drafts too, sign in with
+`spd login --npm`.
+
+A script that depends on another author's unpublished library fails the automated checks.

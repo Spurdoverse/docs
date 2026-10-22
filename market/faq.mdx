@@ -1,0 +1,139 @@
+---
+title: "FAQ"
+sidebarTitle: "FAQ"
+description: "Answers to what scripters ask most about publishing on the market."
+icon: "circle-question"
+---
+
+## The item
+
+<AccordionGroup>
+  <Accordion title="Why can't I see my item in the catalog?">
+    Check its status in **My items**:
+
+    - **Draft:** you haven't pressed **Send for review** yet. `spd publish` creates the item as a
+      draft and never puts it on the market by itself. See
+      [Step 6](/market/publish#step-6-put-it-on-the-market).
+    - **In review:** a moderator is looking at the stable version, because it asks for `ffi` or
+      `filesystem`. It goes live by itself on approval.
+    - **Rejected:** the reason is in **My items** and in the editor's **Moderation** section.
+    - **Hidden:** you hid it. **Back to catalog** in the item's menu.
+    - **Banned:** moderation took it down. Ask support.
+
+    **Published** but still not there? Check the catalog's product and category filters: the item
+    shows only under the product you picked in the editor.
+  </Accordion>
+  <Accordion title="The button says “Nothing to publish”">
+    The item has no built version on stable. Run `spd publish` in the project folder and wait for the
+    build to pass. If the only version is on beta or dev, publish a release to stable or
+    `spd promote <version> --to stable`. All the reasons: [When the button refuses](/market/publishing#when-the-button-refuses).
+  </Accordion>
+  <Accordion title="How do I rename the item?">
+    In the editor's **Name**. `displayName` in `manifest.json` names the item only on the first
+    publish; changing it later doesn't rename anything.
+  </Accordion>
+  <Accordion title="How do I hide or remove an item?">
+    **My items → the item's menu → Hide from catalog.** It disappears from the catalog and search;
+    buyers keep their access and keep getting updates. **Back to catalog** returns it.
+
+    Only a draft or a rejected item that nobody owns can be deleted. A script with approved
+    versions can't: hide it, and `spd yank` versions you don't want new buyers to get.
+  </Accordion>
+  <Accordion title="Can I change the category or the product?">
+    The category comes from `type` in `manifest.json` and can't change. Pick the product carefully
+    the first time: once it's set, it stays.
+  </Accordion>
+</AccordionGroup>
+
+## Screenshots
+
+<AccordionGroup>
+  <Accordion title="Why won't my pictures upload?">
+    - **Wrong format:** JPG, PNG and WebP only. HEIC, GIF, BMP and AVIF are refused.
+    - **Too large:** the limit is 10 MB. Big pictures are shrunk in the browser to 2560 px and WebP
+      first, so this usually means an animated picture or a huge file that's still over 10 MB.
+      Lower the resolution and try again.
+    - **Too many:** 10 per item.
+    - **The connection dropped:** the editor names the file that didn't upload. Add it again.
+  </Accordion>
+  <Accordion title="How do I pick the cover?">
+    The first screenshot is the cover. Drag one to the front or press **Make cover** on it. On a
+    phone, press and hold a screenshot, then drag. See [Screenshots](/market/item-card#screenshots).
+  </Accordion>
+</AccordionGroup>
+
+## Builds
+
+<AccordionGroup>
+  <Accordion title="Why did my build fail?">
+    Open the build in the editor's **Builds** section: the log and the checks say exactly what.
+    The usual causes:
+
+    | Error | What to do |
+    |:------|:-----------|
+    | Lock-file packages didn't install | Run `npm install` and publish again, with `package-lock.json` |
+    | package-lock.json won't do | A spurdo! package from npmjs, a `git`/`http`/`file` dependency, or an old lock file. Delete `node_modules`, run `npm install` |
+    | Build failed | A bundling error, with the file and line. `spd build` shows the same locally |
+    | Failed the automated checks | The log lists the checks. See [Automated checks](/market/publishing#automated-checks) |
+    | manifest.json has errors | Fix the fields the log names |
+    | The build ran out of time | Publish again. If it keeps happening, the project is too heavy to build |
+    | Server error | Publish again |
+  </Accordion>
+  <Accordion title="“A bundle instead of sources” in Sources">
+    A file in `src/` looks packed or obfuscated: `eval(function(p,a,c,k,e…`, hundreds of `_0x…`
+    names, dense `\xNN`, or a built file with `sourceMappingURL`. Publish your real sources; the
+    server minifies private scripts itself. Long lines alone are only a warning: embedded JSON or
+    base64 data is fine.
+  </Accordion>
+  <Accordion title="“the version must be higher” or “this version number was published before”">
+    Each branch only moves forward, and a number is used once per item, even if it was rejected or
+    yanked. Run `spd version patch` and publish again. A failed build's number is the exception:
+    it's free.
+  </Accordion>
+  <Accordion title="“the build limit is used up”">
+    20 builds an hour and 100 a day per account, failed ones included. Check locally with
+    `spd build` before publishing.
+  </Accordion>
+  <Accordion title="spd login says to confirm my email">
+    Confirm the email on your spurdo! account, then press **Allow** again. Publishing needs it too.
+  </Accordion>
+  <Accordion title="“You already have 10 CLI keys”">
+    That's the limit. Revoke old ones in the editor: **Branches & versions → How to release → CLI
+    keys**. Then press **Allow** again.
+  </Accordion>
+</AccordionGroup>
+
+## Prices and updates
+
+<AccordionGroup>
+  <Accordion title="How do I change the price without a new version?">
+    Change it in the editor's **Price & access** and press **Save changes**. It's live right away,
+    with no review and no new version. See [Changing the price](/market/pricing#changing-the-price).
+  </Accordion>
+  <Accordion title="How do buyers get my update?">
+    Publish a new version to their branch. Buyers on that branch get it on their next launch, for
+    free, while their access lasts. Without `ffi` or `filesystem` that's as soon as the build
+    passes; with them, after approval.
+  </Accordion>
+  <Accordion title="An update broke the script. What now?">
+    `spd rollback <last good version>`. Buyers get the old version back as an update right away,
+    with no new review. Then fix it and publish a new number. See [Roll back](/market/versions#roll-back).
+  </Accordion>
+  <Accordion title="How long does moderation take?">
+    Usually within a day, and only for versions with `ffi` or `filesystem`. Everything else is live
+    when the build passes.
+  </Accordion>
+  <Accordion title="Can buyers read my code?">
+    Not if it's private, which is the default. With `"visibility": "public"` they can read it and
+    make their own version; publishing those on the market is off unless you allow forks. See
+    [Private and open code](/market/publish#private-and-open-code).
+  </Accordion>
+  <Accordion title="How do I give a tester access to dev?">
+    **Grants → Grant access**, pick the item, the person, the term and the dev branch. See
+    [Grants](/market/pricing#grants).
+  </Accordion>
+  <Accordion title="Why isn't my income available yet?">
+    Each sale is on hold for 7 days, the dispute window. Then it's **Available** by itself. See
+    [Hold](/market/income#hold).
+  </Accordion>
+</AccordionGroup>

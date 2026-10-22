@@ -1,0 +1,112 @@
+---
+title: "Selling scripts"
+sidebarTitle: "Overview"
+description: "What you can sell on the spurdo! market as a scripter, how a script gets there, and where everything is."
+icon: "store"
+---
+
+The [market](https://spurdoverse.app/marketplace) sells scripts for spurdo! products. Any spurdo!
+account can sell: there's no application and no "become an author" form. You publish with `spd`,
+fill in the item's card on the site, and buyers pay from their site balance.
+
+<Note>
+  There's no upload button on the site. Every version comes from `spd publish` in your project
+  folder: the server builds your sources and checks them. The site only holds the card: name,
+  text, screenshots and price.
+</Note>
+
+---
+
+## What you can publish
+
+<CardGroup cols={2}>
+  <Card title="Script" icon="code">
+    Runs in the cheat. Free, forever, or for 7, 30 or 90 days. Its code is private by default:
+    buyers run it but can't read it.
+  </Card>
+  <Card title="Open script" icon="lock-open">
+    A script with `"visibility": "public"`. Buyers can read its code, see what changed between
+    versions and make their own version of it.
+  </Card>
+  <Card title="Library" icon="book">
+    Code other scripts import. Always free and open, installed with `spd add`, published under
+    the spurdo! library license.
+  </Card>
+  <Card title="Branches" icon="code-branch">
+    Every script and library has stable, beta and dev, each with its own version and changelog.
+  </Card>
+</CardGroup>
+
+The details: [Publishing a script](/market/publish), [Libraries](/market/libraries).
+
+---
+
+## Before you start
+
+- **A project made with `spd new`.** See [Getting started](/).
+- **A confirmed email.** `spd login` and `spd publish` refuse without it. Confirm it in the account's
+  security settings on the site.
+- **Your own code.** Code you bought, or someone's open script whose author doesn't allow forks,
+  can't be published as yours.
+- **The rules.** Read the [author rules](https://spurdoverse.app/marketplace/rules?tab=authors)
+  once: what gets rejected, what discounts are allowed, how disputes work.
+
+---
+
+## How it goes
+
+<Steps>
+  <Step title="Sign in">
+    `spd login` once per machine.
+  </Step>
+  <Step title="Publish">
+    `spd publish` in the project folder. The first publish creates the item as a draft and prints
+    the link to its editor.
+  </Step>
+  <Step title="Fill in the item">
+    Product, name, summary, description, tags, screenshots, price. See
+    [The item card](/market/item-card) and [Prices, discounts and grants](/market/pricing).
+  </Step>
+  <Step title="Put it on the market">
+    **Send for review** in the editor. A version without `ffi` or `filesystem` permissions is
+    live as soon as the build passes; with them, a moderator looks first. See
+    [Publishing and moderation](/market/publishing).
+  </Step>
+  <Step title="Keep it updated">
+    Each `spd publish` is a new version. Beta and dev branches, rollbacks and yanks are on
+    [Updates and branches](/market/versions).
+  </Step>
+</Steps>
+
+---
+
+## Where everything is
+
+The author's pages are in the market's left column, under **For authors**:
+
+| Page | |
+|:-----|:-|
+| **Author dashboard** | Income, sales, views, conversion, refunds, and what needs your attention |
+| **My items** | Every item you have: drafts, in review, published, rejected |
+| **Grants** | Free access for testers, streamers, compensation |
+| **Discounts & promo codes** | Running and scheduled discounts, your promo codes |
+| **Income & payouts** | Hold, available income, withdrawals |
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Publishing a script" icon="rocket" href="/market/publish">
+    From `spd login` to the catalog, step by step.
+  </Card>
+  <Card title="spd commands" icon="terminal" href="/market/cli">
+    What each publishing command does.
+  </Card>
+  <Card title="Publishing and moderation" icon="badge-check" href="/market/publishing">
+    What the button does, why it refuses, the automated checks.
+  </Card>
+  <Card title="FAQ" icon="circle-question" href="/market/faq">
+    The questions authors ask most.
+  </Card>
+</CardGroup>

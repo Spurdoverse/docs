@@ -1,0 +1,131 @@
+---
+title: "Updates and branches"
+sidebarTitle: "Updates and branches"
+description: "New versions, stable, beta and dev branches, release notes, rollbacks, promotions and yanks."
+icon: "code-branch"
+---
+
+Every `spd publish` is a new version. Buyers with active access get updates for free, on the
+branch they picked. Nothing is ever rebuilt or deleted behind your back: a branch is a pointer to
+one of your versions, and you move it.
+
+---
+
+## Branches
+
+| Branch | Who gets it | Versions |
+|:-------|:------------|:---------|
+| **stable** | Every buyer by default | Releases only: `1.4.0` |
+| **beta** | All buyers, or granted only | Anything: `1.5.0-beta.1`, `1.5.0` |
+| **dev** | Granted only, always | Anything |
+
+Buyers switch branches in **My purchases** or in their Cloud. The first `spd publish --branch beta`
+turns beta on, open to all owners. To change who can load it, open **Branches & versions** in the
+editor: **Who can load it** is **All buyers** or **Granted only**. Testers get a closed branch
+through a [grant](/market/pricing#grants).
+
+Turning a branch off moves its users to stable. Stable can't be turned off.
+
+<Tip>
+  The **Author dashboard** shows **Who is on which branch**. Lots of people on beta means it's
+  time to promote it.
+</Tip>
+
+---
+
+## Release a new version
+
+<Steps>
+  <Step title="Raise the version">
+    ```bash
+    spd version patch
+    ```
+
+    Or `minor`, `major`, or an exact number. The number has to be higher than the branch's current
+    version, and a number the item ever had can't be used again.
+  </Step>
+  <Step title="Write what changed">
+    A `## 1.4.1` section in `CHANGELOG.md`, or `--notes`. Buyers read it on the item page.
+  </Step>
+  <Step title="Publish">
+    ```bash
+    spd publish                    # stable
+    spd publish --branch beta      # beta
+    ```
+
+    Without `ffi` or `filesystem`, buyers on that branch get it as soon as the build passes. With
+    them, after a moderator approves it.
+  </Step>
+</Steps>
+
+Branches are independent: a hotfix `1.4.1` can go to stable while beta is already on
+`1.5.0-beta.1`.
+
+---
+
+## A typical cycle
+
+```bash
+spd version 1.5.0-beta.1
+spd publish --branch beta          # testers try it
+
+spd version 1.5.0-beta.2
+spd publish --branch beta          # fixes
+
+spd version 1.5.0
+spd publish --branch beta          # the release, still on beta
+spd promote 1.5.0 --to stable      # everyone gets it, no rebuild
+```
+
+---
+
+## Roll back
+
+A version broke something? Point the branch back at the last good one:
+
+```bash
+spd rollback 1.4.0
+spd rollback 1.5.0-beta.1 --branch beta
+```
+
+In the editor, the same is **Make current** next to the version in **Branches & versions**. Buyers
+get it as a regular update. Nothing is rebuilt and there's no new review: that version was
+already checked.
+
+---
+
+## Promote
+
+```bash
+spd promote 1.5.0 --to stable
+```
+
+Puts a published version on another branch as it is, without a rebuild. In the editor it's
+**Move to stable**. Stable takes releases only: promote `1.5.0`, not `1.5.0-beta.2`.
+
+---
+
+## Yank
+
+```bash
+spd yank 1.4.0 --reason "breaks the ESP on 4:3"
+```
+
+Withdraws a version: new buyers don't get it, and the registry marks it deprecated with your
+reason. Branches that pointed at it move to the newest live version of their branch. Its number is
+never published again. Use it for a version that's broken or harmful; for "I want the old one
+back", roll back.
+
+---
+
+## Version numbers
+
+| Rule | Error |
+|:-----|:------|
+| Semver: `1.4.0` or `1.4.0-beta.1` | `invalid-manifest` |
+| No prerelease on stable | `prerelease-on-stable` |
+| Higher than the branch's current version | `version-not-higher` |
+| Never reused, even if rejected or yanked | `version-exists` |
+| A failed build's number is free | |
+
+`spd publish` checks all of it before uploading.
