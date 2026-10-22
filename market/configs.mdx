@@ -1,0 +1,166 @@
+---
+title: "Selling cheat configs"
+sidebarTitle: "Cheat configs"
+description: "Publishing a cheat config from Cloud: the source config, releasing versions, branches, rollbacks, and configs carried over from the old market."
+icon: "sliders"
+---
+
+A config is a set of cheat settings from your Cloud. Nothing is uploaded by hand: you pick one of
+your Cloud configs as the item's source, and every version is a snapshot of it at the moment you
+release. Configs aren't reviewed by a person: once the automated checks pass, the item and each
+new version are live.
+
+<Note>
+  CS2 Inventory configs are skin loadouts and work a bit differently: see
+  [Selling CS2 Inventory loadouts](/market/loadouts).
+</Note>
+
+---
+
+## Before you start
+
+- **The config in your Cloud**, for the product you'll sell it for. It has to be yours: your own
+  config or one gifted to you. A config you bought, or a copy of one, can't be a source.
+- **The rules.** Read the [author rules](https://spurdoverse.app/marketplace/rules?tab=authors)
+  once.
+
+---
+
+## Step 1: Create the item
+
+Either way works:
+
+- In **Cloud**, open the config's menu and press **Publish on the market**. The draft gets the
+  config's name and product, and the config is already its source.
+- In **My items**, press **New item**, pick **Config** and the product, then pick the source in
+  **Basics** under **Which Cloud config to publish**.
+
+The source can only be a config of the item's product. You can switch to another one of your
+configs later: the next version is released from it.
+
+---
+
+## Step 2: Fill in the card
+
+Name, summary, description, tags and at least one screenshot, the same as for a script: see
+[The item card](/market/item-card).
+
+**Price & access** takes **Free** or **Forever** only: configs aren't sold by term. A paid plan has
+to be at least the market's minimum price, $0.50. See [Prices, discounts and grants](/market/pricing).
+
+---
+
+## Step 3: Publish
+
+Press **Publish** at the bottom of the editor. The server checks the name, the product, the
+plans and that there's something to publish. If the item has no version yet, it releases `1.0.0`
+to stable from the source config right then.
+
+The automated checks on every version:
+
+| Check | |
+|:------|:-|
+| Not empty | An empty config isn't released |
+| Size | Up to 4 MB |
+| JSON | A config that starts like JSON has to be valid JSON |
+
+When they pass, the item is in the catalog at once. If the button refuses, it says why, field by
+field: see [When the button refuses](/market/publishing#when-the-button-refuses).
+
+Moderators look at configs only after a report. A config that breaks the
+[rules](https://spurdoverse.app/marketplace/rules?tab=authors) is taken down.
+
+---
+
+## Release a new version
+
+Edit the config in Cloud as usual: buyers don't see those edits until you release them. When it's
+ready, open **Branches & versions** in the editor and press **Release a version**:
+
+| Field | |
+|:------|:-|
+| **Config from Cloud** | The source. The version is taken from it as it is now |
+| **Branch** | stable, or beta and dev once they're on |
+| **Version number** | Optional. Empty means the next patch: `1.0.0` → `1.0.1` |
+| **What's changed** | One line per change. Buyers read it in the changelog |
+
+The version is live on its branch right away, and owners on that branch get it as an update.
+The number follows the same rules as scripts: semver, higher than the branch's newest version,
+never used before in the item, no `-beta` suffix on stable.
+
+---
+
+## Branches
+
+Configs have the same three branches as scripts:
+
+| Branch | Who gets it |
+|:-------|:------------|
+| **stable** | Every buyer by default. Can't be turned off |
+| **beta** | All buyers, or granted only. You pick under **Who can load it** |
+| **dev** | Granted only, always |
+
+Turn a branch on in **Branches & versions** before releasing to it. Turning it off moves its users
+back to stable. Buyers pick their branch in **My purchases** or in Cloud; testers get a closed
+branch through a [grant](/market/pricing#grants).
+
+---
+
+## Roll back and promote
+
+- **Make current** next to an older version of a branch rolls back to it. That makes a new
+  version with the next number, the old content and the old changelog, marked "rollback to …".
+- **Move to stable** takes a beta or dev version to stable with the same content. The number is
+  the version without its suffix (`1.5.0-beta.2` → `1.5.0`) unless you pick another, higher
+  than stable's newest.
+
+Neither goes through any review: the content was already checked when it was released.
+
+---
+
+## What buyers get
+
+A bought config shows up in the buyer's Cloud under **From the market** and in the cheat. They
+can use it and change it, but not publish or share it. When you release a new version on their
+branch, they see the update:
+
+- without edits on their side, the copy just becomes the new version;
+- with edits, they choose to replace their edits with your version or keep them;
+- **Restore** brings their copy back to the version they're on.
+
+Configs are sold forever only, so a bought config doesn't expire.
+
+---
+
+## Configs from the old market
+
+Configs sold on the old market were moved to the new one as **drafts**, with their versions,
+buyers and reviews. The editor and **My items** mark them **Carried over from the old market**
+(the **From the old market** filter in **My items** lists them).
+
+- They aren't in the catalog until you publish them. Buyers keep their access meanwhile and see
+  "The author has not released it in the new market yet".
+- Check the description, the price and the screenshots, then press **Publish**. A price below
+  $0.50 has to be raised first.
+- If the original Cloud config wasn't found, pick any of your configs of that product as the
+  source; without a product, pick it in **Basics**.
+- A draft with buyers can't be deleted.
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="CS2 Inventory loadouts" icon="shirt" href="/market/loadouts">
+    Selling a skin loadout from your Inventory.
+  </Card>
+  <Card title="The item card" icon="image" href="/market/item-card">
+    Name, summary, description, screenshots.
+  </Card>
+  <Card title="Prices and grants" icon="tags" href="/market/pricing">
+    Prices, discounts, promo codes, free access.
+  </Card>
+  <Card title="Income and payouts" icon="wallet" href="/market/income">
+    Commission, hold, withdrawals.
+  </Card>
+</CardGroup>

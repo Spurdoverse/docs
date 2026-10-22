@@ -49,6 +49,13 @@
             ]
           },
           {
+            "group": "Selling configs",
+            "pages": [
+              "market/configs",
+              "market/loadouts"
+            ]
+          },
+          {
             "group": "Your item",
             "pages": [
               "market/item-card",

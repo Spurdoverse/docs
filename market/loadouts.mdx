@@ -1,0 +1,149 @@
+---
+title: "Selling CS2 Inventory loadouts"
+sidebarTitle: "CS2 Inventory loadouts"
+description: "Publishing a skin loadout from your Inventory: the source set, new versions, the cover, unique skins, what buyers get, and loadouts from the old market."
+icon: "shirt"
+---
+
+A CS2 Inventory config is a skin loadout: the skins, stickers and slots of one of your saved
+Inventory sets. Like a cheat config, it isn't uploaded by hand. You pick a set from
+**Inventory → Configs**, and every version is a snapshot of that set at the moment you release.
+Loadouts aren't reviewed by a person: once the automated checks pass, the item and each new
+version are live.
+
+---
+
+## Before you start
+
+- **A saved set in Inventory → Configs.** It has to be yours: your own set or one gifted to you.
+  A loadout you bought, or a copy you made of one, can't be published.
+- **The rules.** Read the [author rules](https://spurdoverse.app/marketplace/rules?tab=authors)
+  once.
+
+---
+
+## Step 1: Create the item
+
+- In **Inventory → Configs**, open the set's menu and press **Publish on the market**. The draft
+  gets the set's name, the CS2 Inventory product, and the set as its source.
+- Or in **My items**, press **New item**, pick **Config** and **CS2 Inventory**, then pick the set
+  in **Basics** under **Which inventory config to publish**.
+
+**Basics** shows the chosen loadout as buyers will see it on the item page.
+
+---
+
+## Step 2: Fill in the card
+
+Name, summary, description and tags work as for any item: see [The item card](/market/item-card).
+
+**Screenshots are optional.** With them, the first one is the card's cover. Without them, the
+cover is a mosaic of the loadout's skins.
+
+**Price & access** takes **Free** or **Forever** only. A paid plan has to be at least the market's
+minimum price, $0.50. See [Prices, discounts and grants](/market/pricing).
+
+---
+
+## Step 3: Publish
+
+Press **Publish** at the bottom of the editor. If the item has no version yet, the server releases
+`1.0.0` from the chosen set right then and runs the automated checks:
+
+| Check | |
+|:------|:-|
+| The set | Its snapshot reads, and every slot points at an item that's in it |
+| Size | 1 to 1000 items |
+| Skins | Every item and every paint exists in the skin catalog |
+
+When they pass, the item is in the catalog at once. If the button refuses, it says why, field by
+field: see [When the button refuses](/market/publishing#when-the-button-refuses). Links to your own
+live inventory are removed from the snapshot: buyers get the skins, not your items.
+
+The catalog filters loadouts by what's inside: knives, gloves, weapons, custom skins.
+
+---
+
+## New versions
+
+A loadout has **no branches**: no beta, no dev, only versions on one line that every owner gets.
+
+Change the set in your Inventory as usual: buyers don't see it until you release. Then open
+**Loadout versions** in the editor and press **New loadout version**:
+
+| Field | |
+|:------|:-|
+| **Config from Inventory** | The set. The version is taken from it as it is now |
+| **Version number** | Optional. Empty means the next patch: `1.0.0` → `1.0.1` |
+| **What's changed** | One line per change: "Added Karambit \| Lore" |
+
+The dialog shows how many skins there were and how many there will be. The version is live right
+away, and owners see the update in their Inventory.
+
+**Make current** next to an older version rolls back to it: a new version with the next number and
+the old loadout, marked "rollback to …".
+
+---
+
+## Unique skins
+
+A loadout can hold unique spurdo! skins, the ones traded on the
+[skin market](https://spurdoverse.app/marketplace/skins). The changer draws them only for players who
+own them:
+
+- the item page lists them under **Not in your inventory**, and the buy box says how many before
+  the buyer pays;
+- when a buyer applies the loadout, those skins stay out of the game, and the rest applies. The
+  toast says how many were left out.
+
+Say in the description which skins are unique, so nobody is surprised.
+
+---
+
+## What buyers get
+
+The bought loadout shows up in the buyer's **Inventory → Configs**, under **From the market**:
+
+- **Apply** puts it on like one of their own sets. Applying makes their personal copy of your
+  current version; their changes to the inventory go into that copy.
+- **Restore the original version** throws away their changes and brings back your version.
+- **Update to …** appears when you release a new version. Without changes on their side the copy
+  just becomes the new version. With changes, they pick: replace their edits, keep their edits,
+  or keep their edits as a separate set and update the copy. **What changed** lists the skins
+  added, removed and set up differently.
+- **Make a copy** saves it as a set of their own. They can apply and edit it, but not share it or
+  publish it on the market.
+
+Loadouts are sold forever only, so a bought loadout doesn't expire.
+
+---
+
+## Loadouts from the old market
+
+Inventory configs sold on the old market were moved to the new one as the same items, with their
+versions, buyers and reviews. Their versions are on stable, and the one that was active is
+current.
+
+- A loadout that was public on the old market is published; an unlisted or private one is hidden.
+  Check its card in the editor and **Back to catalog** in **My items** when you want it shown.
+- A loadout without a single version with skins wasn't moved: its buyers and reviews stay on the
+  old market.
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Cheat configs" icon="sliders" href="/market/configs">
+    Selling cheat settings from Cloud.
+  </Card>
+  <Card title="The item card" icon="image" href="/market/item-card">
+    Name, summary, description, screenshots.
+  </Card>
+  <Card title="Reviews and disputes" icon="message" href="/market/buyers">
+    Reviews, reports, disputes, refunds.
+  </Card>
+  <Card title="Income and payouts" icon="wallet" href="/market/income">
+    Commission, hold, withdrawals.
+  </Card>
+</CardGroup>

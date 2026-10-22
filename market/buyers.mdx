@@ -24,11 +24,19 @@ disputes when something doesn't work. The **Author dashboard** collects what nee
 
 ### Replying
 
-You can post one reply under each review, shown as **Author's reply**. Edit it any time; an empty
-reply removes it. The share of reviews you answered is on your author profile, so reply to the bad
-ones too: calmly, with the fix or the version that has it.
+You reply right on the item page. Signed in as the item's author, open **Reviews**: every review
+without an answer has **Reply** under it. Write the answer in the box that opens (up to 2000
+characters) and press **Post reply**.
 
-{/* TODO: confirm where the reply box is in the UI; the backend has POST /v2/me/market/reviews/:id/reply and the dashboard's Reply links to the item's reviews, but no reply form was found in item-reviews.tsx */}
+- One reply per review. It shows under the review for everyone as **Author's reply**, with your
+  name and the date.
+- The pencil next to your reply opens it for editing; the bin deletes it, and the review goes back
+  to having no answer.
+- On the **Author dashboard**, **Needs attention** counts the reviews you haven't answered yet;
+  its **Reply** opens the reviews of the item with the most of them.
+
+The share of reviews you answered is on your author profile, so reply to the bad ones too: calmly,
+with the fix or the version that has it.
 
 ---
 
@@ -53,8 +61,9 @@ A dispute is how a buyer gets money back for a script that doesn't work or isn't
   can't be disputed.
 - **Reasons:** doesn't work, not as described, removed by the author.
 - **While it's open,** the buyer keeps access, and your money for that sale stays on hold.
-- **You have 48 hours** to reply. Open it from **Needs attention**. Ask for a log, fix the bug,
-  point to the version with the fix. Your reply goes to the moderator and the buyer.
+- **When the moderator asks for your side,** you get a notification, and **Needs attention**
+  counts the open disputes. Ask for a log, fix the bug, point to the version with the fix. Your
+  reply goes to the moderator.
 - **Then a moderator decides:** a full refund, a partial refund, or no refund.
 
 ### Refunds

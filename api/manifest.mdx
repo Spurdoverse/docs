@@ -1,20 +1,32 @@
 ---
 title: "Manifest"
 sidebarTitle: "Manifest"
-description: "manifest.json: script metadata, entry file and permissions."
+description: "manifest.json: the package id, version, permissions and the rest of a script's metadata."
 icon: "file-json"
 ---
 
-Every script folder has a `manifest.json`. The loader reads it first; no manifest, no script.
+Every script folder has a `manifest.json`. The cheat reads it first when it loads the script, and
+`spd build`, `spd publish` and `spd doctor` check it with the same rules the market's server uses.
+
+Only `name` and `version` are required. Everything else has a default, so this is a complete
+manifest:
 
 ```json
 {
-    "name": "my-script",
-    "author": "you",
+    "name": "@yournick/legit-esp",
+    "version": "1.0.0"
+}
+```
+
+`spd new` writes a bit more:
+
+```json
+{
+    "name": "@yournick/legit-esp",
+    "displayName": "Legit ESP",
     "version": "1.0.0",
-    "description": "Enemy boxes and a health bar",
-    "entry": "dist/index.js",
-    "permissions": ["filesystem"]
+    "description": "",
+    "author": "yournick"
 }
 ```
 
@@ -22,33 +34,102 @@ Every script folder has a `manifest.json`. The loader reads it first; no manifes
 
 ## Fields
 
-All fields are optional. The values end up on the [`script`](/api/globals#script) global.
-
 | Field | Type | Default | |
 |:------|:-----|:--------|:-|
-| `name` | `string` | `"unnamed"` | Shown in the menu and the log. Two loaded scripts can't share a name. |
-| `author` | `string` | `"unknown"` | |
-| `version` | `string` | `"1.0.0"` | |
+| `name` | `string` | required | The package id, `@scope/slug`. See [below](#name). |
+| `version` | `string` | required | Semver: `1.0.0`, `1.1.0-beta.1`. No `v` prefix and no `+build` suffix. |
+| `displayName` | `string` | the slug | The name the cheat's script list shows. Up to 64 characters, one line. |
+| `type` | `string` | `"script"` | `"script"` or `"library"`. |
+| `visibility` | `string` | `"private"` | `"private"` or `"public"`. A library is always `"public"`. |
 | `description` | `string` | `""` | |
-| `entry` | `string` | `"dist/index.js"` | The module to run, relative to the folder. It can't point outside it. |
-| `permissions` | `string[]` | both granted | See [below](#permissions). |
+| `author` | `string` | none | `script.author` is `"unknown"` without it. |
+| `permissions` | `string[]` | `[]` | `"ffi"`, `"filesystem"`. Nothing is granted by default, see [below](#permissions). |
+| `source` | `string` | `src/index.ts` | The entry module inside `src/`. See [below](#source-and-entry). |
+| `entry` | `string` | `"dist/index.js"` | Where the bundle goes. It can't be anything else. |
+| `budgetMs` | `number` | the cheat's default | How long one call into the script may run before the watchdog stops it, from 2000 to 60000. |
+| `forkOf` | `object` | none | `{ "name", "version" }` of the original. `spd fork` writes it. |
 
-`localStorage` is keyed by the folder name, not `name`.
+`name`, `version`, `author`, `description` and `permissions` end up on the
+[`script`](/api/globals#script) global. `license` isn't read: a library is published under the
+spurdo! library license, and a script's license isn't used for anything.
+
+An invalid field fails `spd build` and `spd publish` with the field and what's wrong with it. An
+unknown permission also fails the load in the cheat.
+
+---
+
+## name
+
+`name` is the key of the script everywhere: the cheat's settings and script list, the registry and
+the market. It's a package id:
+
+- `@scope/slug`, lowercase letters, digits, `.`, `_` and `-`, up to 214 characters;
+- the scope is your account's, `spd whoami` prints it. `spd build` warns while it's still the
+  `@your-nick` placeholder, and `spd publish` refuses a scope that isn't yours;
+- the slug is yours to pick, and it's the `displayName` when there isn't one.
+
+Changing `name` makes it a different script: settings saved under the old one don't follow it. Old
+scripts with a free-form name are moved to a package id by `spd migrate`, which keeps the old name
+as `displayName`.
+
+On the market, `displayName` and `description` are used once: the first `spd publish` takes them
+as the item's name and summary. After that the item's card is edited on the site. See
+[Publishing a script](/market/publish#step-2-the-manifest).
 
 ---
 
 ## Permissions
 
-By default a script can do everything. To restrict it, list only what it needs:
+A script without `permissions`, or with `[]`, gets neither. List what it needs:
 
 ```json
-"permissions": ["filesystem"]
+"permissions": ["ffi"]
 ```
 
 | Permission | Gives |
 |:-----------|:------|
-| `filesystem` | Files outside the script's own folder. Without it [fs](/api/fs) stays in `data/`. |
+| `filesystem` | Files outside the script's own folder for [fs](/api/fs), [WASI](/api/wasi), textures and fonts. Without it they stay in the script's folder. |
 | `ffi` | [@native/ffi](/api/ffi): loading DLLs and calling native code. |
+
+`spd build` fails when the code imports `@native/ffi` and the manifest has no `ffi`;
+`spd build --fix-permissions` adds it and builds again.
+
+<Note>
+  Manifests used to grant both permissions when `permissions` was missing. They don't anymore:
+  `spd migrate` warns about it. A version on the market that asks for `ffi` or `filesystem`, its
+  own or through a library, is reviewed by a moderator before buyers get it. See
+  [Permissions and moderation](/market/publish#permissions-and-moderation).
+</Note>
+
+---
+
+## Source and entry
+
+`source` is the module the bundle starts from. Without it, the first of `src/index.ts`,
+`src/index.tsx`, `src/index.js` and `src/index.jsx` that exists is used. Set it only if your entry
+is somewhere else; it has to be inside `src/`, with forward slashes.
+
+`entry` is always `dist/index.js`: `spd build` writes the bundle there and the cheat loads it from
+there. You can leave it out.
+
+---
+
+## Workers
+
+Workers aren't listed in the manifest. `spd build` finds them in the code:
+
+```ts
+new Worker("./parser.ts")
+new Worker(new URL("./parser.ts", import.meta.url))
+```
+
+Each one becomes a bundle of its own next to `dist/index.js`: `src/parser.ts` goes to
+`dist/parser.js`, `src/workers/zip.ts` to `dist/workers_zip.js`, and the path in the code is
+rewritten to it. Workers started by workers are found the same way. The path has to be a string
+literal, relative to the file; a computed path fails the build.
+
+A worker only has `@native/fs` and `@native/wasi`; the build warns when it imports another native
+module. See [Workers](/api/workers).
 
 ---
 
@@ -57,12 +138,13 @@ By default a script can do everything. To restrict it, list only what it needs:
 ```
 my-script/
 ├── manifest.json
-├── src/index.ts
-├── dist/index.js     <- "entry"
+├── src/index.ts      <- "source"
+├── dist/index.js     <- "entry", written by spd build
 └── data/             <- fs and WASI root, created on first use
 ```
 
-Imports resolve to `@native/*` modules and relative files inside the folder. `.js` is appended
-when there's no extension. There's no `node_modules` at runtime.
+Imports resolve to `@native/*` modules and to files inside the folder; npm packages are bundled
+in by `spd build`. There's no `node_modules` at runtime.
 
-The script hot-reloads when any file in its folder changes, except under `data/`.
+`localStorage` is keyed by the folder name, not `name`. The script hot-reloads when any file in
+its folder changes, except under `data/`.
