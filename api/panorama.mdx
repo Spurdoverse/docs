@@ -1,0 +1,322 @@
+---
+title: "Panorama"
+sidebarTitle: "Panorama"
+description: "The game's own UI: HUD, menus and popups. What's painted, where, and how opaque."
+icon: "window-maximize"
+---
+
+CS2's HUD, main menu, popups and scoreboard are panorama. This module reads them: which panels exist,
+what was painted in the last frame and in what order, where it sits on screen, its opacity, text and
+classes. Stick a box to the money counter, or keep your ESP from drawing over the HUD.
+
+```ts
+import panorama from "@native/panorama";
+```
+
+<Note>
+  No permission needed. `panorama.ready` is `false` while the UI engine isn't found; lookups return
+  `null` and lists come back empty until it is.
+</Note>
+
+```ts
+const money = panorama.ref("HudMoney");
+
+on("render", () => {
+    const panel = money.get();
+    const box = panel?.drawn ? panel.screenBounds() : null;
+    if (box) render.rect(box.min, box.max, "#00ff80");
+});
+```
+
+Every value is panorama's as of its last frame, at most a frame behind. Screen positions are overlay
+pixels, the same ones [render](/api/render) draws in.
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Finding panels" icon="magnifying-glass" href="#finding-panels">
+    `ref`, `find`, `path`, `findAll`, `walk`, windows, the inspector.
+  </Card>
+  <Card title="Panels" icon="square" href="#panels">
+    `Panel` and `UIWindow`: tree, visibility, opacity, text, classes, screen position.
+  </Card>
+  <Card title="What's painted" icon="layer-group" href="#whats-painted">
+    `drawList`, `panelsAt`, `paintOps`, `DrawItem`, `PaintOp`.
+  </Card>
+  <Card title="Coverage" icon="mask" href="#coverage">
+    `coverageShapes`, `coverage`, `isCovered`: keep your drawing off the HUD.
+  </Card>
+</CardGroup>
+
+---
+
+## Finding panels
+
+| Call | |
+|:-----|:--|
+| `ref(query, options?)` | A [PanelRef](#ref). Use this for anything you keep. |
+| `find(id, options?)` | The first panel with this id, breadth-first, shown windows first. `null` if none. |
+| `path(path, options?)` | `/`-separated ids, each searched below the previous one: `"CSGOHud/HudLowerLeft/HudMoney"`. Levels in between can be skipped. |
+| `findAll(predicate, options?)` | Every panel the predicate accepts. |
+| `walk(start, visit, options?)` | Depth-first from a panel, a window, or `null` for every window. Return `false` to skip the children, `"stop"` to end. |
+| `windows()` | Every top-level window, in paint order. |
+| `window(rootId)`, `hud`, `mainMenu` | A window by the id of its root panel. |
+| `panel(address)` | The panel at a `Pointer`, `bigint` or number. |
+
+`find`, `path`, `findAll` and `ref` take `{ in, visibleOnly }`: `in` limits the search to a panel's
+subtree or one window, `visibleOnly` skips hidden subtrees (a lot cheaper on the menu, where most pages
+are hidden). `walk` takes `{ maxDepth, visibleOnly, paintOrder }`.
+
+`Layer` names the windows: `hud` (`"CSGOHud"`), `mainMenu`, `loadingScreen`, `popups`, `customHuds`,
+`console`.
+
+{/* ------------------------------------------------------------------ */}
+
+### ref
+
+<br />
+
+```ts
+panorama.ref(query: string, options?: { in?: Panel | UIWindow; visibleOnly?: boolean; retryMs?: number }): PanelRef
+```
+
+Panels die on a map change or a HUD reload, and a new one with the same id takes their place. A
+`PanelRef` finds it again: `get()` returns the panel, or `null` while there isn't one. A miss is
+retried at most every `retryMs` (default `500`), so calling `get()` every frame is fine.
+
+```ts
+const radar = panorama.ref("HudRadar");
+const scoreboard = new panorama.PanelRef("CSGOHud/Scoreboard");
+```
+
+{/* ------------------------------------------------------------------ */}
+
+### Finding an id
+
+Hover the thing you want:
+
+```ts
+panorama.inspector();
+```
+
+`F8` toggles it, `PageUp` / `PageDown` walk through the panels stacked under the cursor. It shows the
+path, class, bounds, opacity, classes and text. Options: `toggleKey`, `enabled` (default `true`),
+`intervalMs` (hit-test interval, default `100`). It returns `{ enabled, hovered, dispose() }`.
+
+Or print the tree:
+
+```ts
+console.log(panorama.dump(panorama.hud, { maxDepth: 3, visibleOnly: true }));
+// CSGOHud [Panel2D] 0,0 1280x720
+//   Hud [CSGO_Hud] 0,0 1280x720
+//     HudLowerLeft [Panel2D] 0,519 573x201
+//       HudMoney [CSGOMoneyPanel] 0,667 136x53
+```
+
+`dump` positions are in window pixels. `panorama.draw(panel, options?)` outlines one panel where it's
+drawn, inside `render` only: `color` (magenta), `fill`, `label` (`true` for `id [Type] WxH`, a string,
+or `false`), `thickness`.
+
+---
+
+## Panels
+
+A `Panel` is one panorama panel. You get the same object for the same panel while you hold it.
+
+| Member | |
+|:-------|:--|
+| `id`, `path` | `""` without an id. `path` is `CSGOHud/Hud/HudLowerLeft/HudMoney`, unnamed panels show as `#index`. |
+| `type`, `classInfo`, `isA(name)` | `type` as layout files name it (`Label`, `CSGO_HudRadar`). `classInfo` is `{ name, hierarchy }` with the base classes, `isA("CLabel")` checks it. |
+| `parent`, `window`, `children`, `childCount`, `child(i)` | The tree. |
+| `paintChildren` | Children in the order they're painted: by `z-index`, then children order. |
+| `findChild(id)`, `find(id)`, `findAll(pred)` | Direct child, first descendant breadth-first, every match. |
+| `ancestor(id)`, `isInside(other)`, `lineage()` | Walking up. `lineage()` yields the panel, then each parent. |
+| `drawn` | Painted in the last frame: its window is shown and neither it nor any parent is hidden, transparent, clipped away or not laid out yet. Usually the one you want. |
+| `visible`, `visibleInTree` | Its own flag; the flag with every parent and the window (it can still be clipped or transparent). |
+| `skipped`, `laidOut` | The parent skipped it last paint; it has been laid out at least once. |
+| `drawsContent` | Paints pixels of its own (background, border, shadow, text, image, 3D), not just a container. A heuristic. |
+| `opacity`, `effectiveOpacity` | Its own; what it's drawn with, times every parent's, `0` when hidden. |
+| `zIndex`, `animating` | Style `z-index`; a transition is running, so position or opacity may be between two values. |
+| `classes`, `hasClass(name)` | CSS classes: `["money", "team--ct"]`. |
+| `text` | The text of a label, `null` for other panels. |
+| `imageUrl` | What an image panel shows (`s2r://panorama/images/...`). |
+| `overflow`, `borderRadius`, `clip`, `opacityMask`, `boxShadow`, `textShadow`, `imageShadow`, `hasBackgroundImage` | Style values, `null` when unset. |
+| `size`, `width`, `height`, `contentSize`, `desiredSize`, `offset`, `scroll`, `uiScale` | Layout, in window pixels. |
+| `animatedOffset`, `clipRect` | Where a position transition has it this frame; the part its parent let it paint, in its own pixels. |
+| `screenBounds()`, `screenQuad()` | Where it is on screen. The quad is the four corners, for rotated panels. |
+| `visibleBounds()`, `visibleQuad()` | Only the part that's painted, after parents clip it. |
+| `windowBounds()`, `windowQuad()` | Same in window pixels. |
+| `toScreen(local)`, `contains(point)` | A point in the panel's own pixels to screen; is a screen point inside it. |
+| `alive`, `address`, `clientPointer` | The panel still exists; its address and the client.dll object, as [Pointer](/api/types/pointer)s for your own reads. |
+| `paintStamp`, `repaintPending` | Changes whenever anything in its subtree is repainted; a repaint is queued. |
+
+Bounds are `{ x, y, width, height, min, max }`, so `min`/`max` go straight into `render.rect`. Quads
+are top-left, top-right, bottom-right, bottom-left. The position methods return `null` for a panel
+that's gone.
+
+A `UIWindow` is one top-level layer: HUD, main menu, loading screen, popups, console. It has `name`
+(its root's id), `root`, `roots` (in paint order), `shown` (the main menu isn't, in a match), `width`,
+`height`, `size`, `scale` (height / 1080), `find(id)`, `toScreenScale()`, `address` and `alive`.
+
+---
+
+## What's painted
+
+| Call | |
+|:-----|:--|
+| `drawList(options?)` | Every panel painted last frame, back to front, as `DrawItem`s. |
+| `panelsAt(point, options?)` | Painted panels under a screen point, topmost first. |
+| `panelAt(point, options?)` | The topmost one that paints pixels there (`contentOnly` on by default). |
+| `paintOps(options?)` | Every primitive painted last frame, back to front, as `PaintOp`s. |
+| `visiblePanels(options?)` | `drawList` as `{ panel, bounds, opacity }`, with an optional `filter`. |
+| `paintedXforms(window?)` | Where panorama placed each painted panel of a window (the HUD by default), with its position transition. |
+
+`drawList` takes `{ in, contentOnly, minOpacity }`, `panelsAt` / `panelAt` the same plus `skip(panel)`.
+`contentOnly` drops layout containers, `minOpacity` defaults to `0.01`.
+
+| `DrawItem` | |
+|:-----------|:--|
+| `panel`, `window` | |
+| `order`, `depth` | Paint order across every window (higher is on top); depth below the window root. |
+| `opacity` | What it's painted with. |
+| `quad`, `bounds` | The painted part with its own transform; the box it covers after parents clip it. |
+| `content`, `contains(x, y)` | It paints its own pixels; a point is on its painted part. |
+
+A `PaintOp` is one thing panorama drew: a fill, gradient, image, text run, blur, border or shadow.
+`paintOps` takes `{ in, minAlpha, kinds, skip(op) }`, `minAlpha` defaulting to `0.02`.
+
+| `PaintOp` | |
+|:----------|:--|
+| `kind` | `"fill"`, `"gradient"`, `"image"`, `"text"`, `"blur"`, `"border"` or `"shadow"`. |
+| `panel`, `item`, `order` | Its panel, that panel's `DrawItem`, paint order. |
+| `color`, `alpha` | A `Color` for fills, text and shadows (`null` otherwise); the highest alpha it paints with, opacity included. |
+| `text`, `gradient` | The string of a text run; the stops of a gradient. |
+| `rect`, `quad` | The rectangle in the panel's pixels; its corners on screen, unclipped. |
+| `polygons`, `bounds` | What it covers on screen as convex polygons: clipped by parents, rounded corners (the radar's circle) and `clip`. |
+| `coverPolygons(minAlpha?)`, `coverBounds(minAlpha?)` | Only the part painted with at least `minAlpha` (`0.1`): a gradient gives its band, an icon its pixels. |
+| `alphaAt(point)` | The alpha it paints a screen point with. |
+
+Read an op's geometry in the frame you got it. It's kept for a few frames, then it's gone.
+
+```ts
+// what the HUD says right now
+for (const op of panorama.paintOps({ in: panorama.hud ?? undefined, kinds: ["text"] }))
+    console.log(op.panel.id, op.text);
+```
+
+---
+
+## Coverage
+
+Where panorama actually paints, built from every primitive above. This is the mask to keep your
+drawing off the HUD, the menu and the scoreboard.
+
+| Call | |
+|:-----|:--|
+| `coverageShapes(options?)` | Convex polygons where something is painted with at least `minAlpha` (`0.1`). Ready for `render.polygonFilled`. |
+| `coverage(options?)` | The same as rectangles. |
+| `isCovered(point, options?)` | Whether a screen point is painted with at least `minAlpha` (`0.1`). Gradients are evaluated at the point. |
+
+Both shape calls take the `paintOps` options. `isCovered` takes `{ in, minAlpha, skip(panel) }`.
+
+Icons and `opacity-mask` images are cut to their real pixels, so a weapon silhouette or a round avatar
+covers just its shape. The images load in the background; until one has, it counts as a full rectangle.
+`panorama.imageAlpha = false` turns this off and every image is a rectangle.
+
+```ts
+on("render", () => {
+    // the HUD's bottom shading is panorama too: leave it out
+    const shapes = panorama.coverageShapes({ minAlpha: 0.3, skip: (op) => op.panel.id === "HudBottomGradient" });
+    for (const poly of shapes) render.polygonFilled(poly, [255, 0, 0, 60]);
+
+    const head = render.worldToScreen(target.getEyePosition());
+    if (head && !panorama.isCovered(head)) render.circleFilled(head, 3, "#fff");
+});
+```
+
+---
+
+## Draw order
+
+The same order panorama paints in:
+
+1. Windows in `windows()` order: HUD, then main menu, loading screen, popups, console.
+2. The window's roots, in order.
+3. Depth-first: a parent, then its children sorted by `z-index` (ties keep children order). `z-index`
+   only sorts siblings.
+
+HUD popups, context menus and tooltips live inside `CSGOHud`; the main menu's popups are their own
+window. The scoreboard is `Scoreboard` in the HUD and stays empty (0×0) until it's opened. All of it
+lands in `drawList` and the coverage as soon as it's painted.
+
+## Styles that count
+
+| Style | |
+|:------|:--|
+| `width`, `height`, `margin`, `padding`, `align`, `flow-children`, `ui-scale` | Taken from the finished layout. |
+| `x`, `y`, `transform`, `transform-origin`, `pre-transform-scale2d`, `pre-transform-rotate2d` | Screen position, rotated panels included. |
+| `transition` on position | Interpolated, so a sliding panel is where it is this frame. |
+| `opacity`, `visible`, `z-index` | Opacity, visibility, draw order. |
+| `overflow` | Parents clip children, unless `noclip`. |
+| `border-radius` | Rounded corners and circles, children clipped to them. |
+| `clip` | `rect(...)` and `radial(...)`, on the panel and its children. |
+| `box-shadow`, `text-shadow`, `image-shadow` | Separate `"shadow"` ops. |
+| `opacity-mask`, image alpha | Cut by the image's pixels, see [Coverage](#coverage). |
+| `background-color`, gradients, `background-image`, text, `background-blur`, `world-blur` | Exact rectangle, color, alpha and gradient stops. |
+
+## Limitations
+
+- Text covers its line box, not the glyphs.
+- Only what panorama draws. The engine's own overlays and console text (the radio and chat lines in
+  the corner) aren't in it.
+- During a transition or animation, opacity and transforms read as their end values. Only position is
+  interpolated. `animating` tells you when it's happening.
+- `perspective` is applied without the perspective divide.
+- Color filters (`wash-color`, `brightness`, `saturation`, `hue-rotation`, `mix-blend-mode`) are
+  ignored. Borders follow the panel's edge.
+- `background-image` on non-image panels and Steam avatars stay rectangles.
+
+---
+
+## Tools
+
+| Call | |
+|:-----|:--|
+| `inspector(options?)`, `dump(start?, options?)`, `draw(panel, options?)` | See [Finding an id](#finding-an-id). |
+| `stats()` | What the last frame took: `{ panels, commandLists, timing, frame }`, `timing` in milliseconds. |
+| `invalidate()` | Drops everything kept from earlier frames; the next call reads the game fresh. |
+| `rasterizeSvg(svg, width, height)` | An SVG as `{ width, height, alpha }`, `null` if it doesn't parse. Up to 4096 on a side. |
+| `svgSize(svg)` | The size an SVG asks for. |
+
+Nothing is read until you ask. After the first frame only what panorama changed gets read again, so
+calling `coverageShapes` every frame is fine.
+
+---
+
+## Example
+
+Enemy boxes that duck under the HUD, plus a frame around the money counter.
+
+```ts
+import entities from "@native/entities";
+import panorama from "@native/panorama";
+import render from "@native/render";
+
+const money = panorama.ref("HudMoney");
+
+on("render", () => {
+    const me = entities.getLocalPlayer();
+    if (!me) return;
+
+    for (const pawn of entities.getPlayers({ skipLocal: true })) {
+        if (pawn.m_iHealth <= 0 || !pawn.isEnemy(me)) continue;
+        const box = render.boundsOf(pawn);
+        if (!box || panorama.isCovered(box.min) || panorama.isCovered(box.max)) continue;
+        render.rect(box.min, box.max, "#ff4040");
+    }
+
+    const panel = money.get();
+    const bounds = panel?.drawn ? panel.screenBounds() : null;
+    if (bounds) render.rect(bounds.min, bounds.max, "#00ff80", { rounding: 4 });
+});
+```

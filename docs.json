@@ -97,6 +97,7 @@
               "api/gpu-hlsl",
               "api/esp",
               "api/ui",
+              "api/panorama",
               "api/entities",
               "api/game",
               "api/trace",

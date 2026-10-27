@@ -97,11 +97,11 @@ current frame, and resize with the game.
 | `depth` | The scene's depth (`depth32float`), attachment only | every scene hook |
 | `sceneDepth` | That depth as an `r32float` texture you can read | every hook |
 | `worldDepth` | Depth of the map alone: no players, no smoke boxes (`r32float`) | `opaque` and later |
-| `solidDepth` | Map and players, no smoke boxes (`r32float`) | `opaque` and later |
+| `solidDepth` | Map, players and your viewmodel, no smoke boxes (`r32float`) | `opaque` and later |
 | `glowMask` | The cheat's glow mask (`r32uint`) | `post`, `overlay` |
 | `target` | The overlay's back buffer | `overlay` |
 | `camera` | 512-byte uniform buffer, see [GpuCamera](/api/gpu-hlsl#camera) | every hook |
-| `poseVertices`, `poseTable` | Every player skinned this frame | `opaque` and later |
+| `poseVertices`, `poseTable` | Every player and your viewmodel, skinned this frame | `opaque` and later |
 | `worldVertices`, `worldIndices` | The map's static geometry | every hook, `queue.submit` too |
 | `smokeVoxels`, `smokeTable` | This frame's smoke clouds | every hook |
 
@@ -182,6 +182,23 @@ for (const pawn of entities.getPlayers({ skipLocal: true }))
 
 `replaceNative` turns off the visible pass, the x-ray pass and the glow outline of the cheat's chams for
 that player. When your script stops, reloads or loses its device, they come back on their own.
+
+### Viewmodel
+
+Your own first-person model goes through `drawPose` too, split in four: `"hands"`, `"gloves"`,
+`"sleeves"` and `"weapon"`. Draw the first three together for the full arms.
+
+```ts
+for (const part of ["hands", "gloves", "sleeves", "weapon"])
+    pass.drawPose(part);
+```
+
+The game draws the viewmodel with its own FOV. The pose records already account for it, so
+`camera.sceneViewProj` puts every part exactly where the game shows it, with its real depth. That's
+also why the viewmodel ends up in `solidDepth`. No `replaceNative` here.
+
+In `poseTable` they sit after the players, at `GPUEngineLayout.POSE_VIEWMODEL_HANDS` / `_GLOVES` /
+`_SLEEVES` / `_WEAPON` (64 to 67). Their records have `POSE_VIEWMODEL` set in `flags`.
 
 ---
 

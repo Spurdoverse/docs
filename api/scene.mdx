@@ -202,6 +202,7 @@ error shows up once on the [`error`](/api/globals#errors) event with your own li
 | Call | |
 |:-----|:--|
 | `player(target, material?, { hook?, replace? })` | A player's skinned pose this frame. `target` is a pawn, a controller or a slot `0..63`. |
+| `viewmodel(part, material?, { hook? })` | Your first-person model: `"hands"`, `"gloves"`, `"sleeves"`, `"weapon"`, or `"arms"` for the first three. |
 | `model(model, { origin, angles, scale, material, hook })` | A model: a VPK path, or a `GPUModel` from `scene.device.importModel`. |
 | `preload(path)` | Imports a model path ahead of its first draw. Resolves when it can be drawn. |
 
@@ -220,6 +221,18 @@ on("render", () => {
 Players are drawn from the same skinned pose as the cheat's chams, in the same frame: no lag behind the
 model. Each model hides its own far side and is cut by the map, so arms and legs don't show through the
 body.
+
+The viewmodel lines up with what the game draws, FOV included, so a material on `"weapon"` sits right on
+your gun:
+
+```ts
+const glass = scene.material({ look: "fresnel", color: "#8ef" });
+
+on("render", () => {
+    scene.viewmodel("weapon", glass);
+    scene.viewmodel("gloves", mat);
+});
+```
 
 ```ts
 const crate = "models/props/.../crate.vmdl";   // any model path from the game's VPKs

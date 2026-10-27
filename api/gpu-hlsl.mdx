@@ -88,28 +88,35 @@ float4 VS(uint id : SV_VertexID, uint inst : SV_InstanceID) : SV_Position
 
 ## Poses
 
-Every player skinned this frame, from the `opaque` hook on. `pass.drawPose` binds them as vertex
-buffers; bound as read-only storage, you read them yourself.
+Every player skinned this frame, from the `opaque` hook on, plus your viewmodel. `pass.drawPose` binds
+them as vertex buffers; bound as read-only storage, you read them yourself.
 
 ```hlsl
 struct GpuPoseVertex { float4 position; float4 normal; float4 tangent; float4 uv; };   // 64 bytes, model space
 
-struct GpuPose                                                                          // 64 bytes per player slot
+struct GpuPose                                                                          // 64 bytes per slot
 {
     float4 row0, row1, row2;   // model -> scene space
     uint vertexOffset;         // into frame.poseVertices
     uint vertexCount;
     uint indexCount;
-    uint flags;                // GPU_POSE_VALID | GPU_POSE_MIRRORED | entity index << 16
+    uint flags;                // GPU_POSE_VALID | GPU_POSE_MIRRORED | GPU_POSE_VIEWMODEL | entity index << 16
 };
 ```
+
+Slots `0..63` are players. The viewmodel follows: `GPU_POSE_VM_HANDS`, `GPU_POSE_VM_GLOVES`,
+`GPU_POSE_VM_SLEEVES` and `GPU_POSE_VM_WEAPON`, `GPU_MAX_POSES` in total. The three arm parts share
+one set of vertices and differ only in which triangles they draw.
 
 | Function | |
 |:---------|:--|
 | `GpuLoadPoseVertex(poseVertices, index)` | One vertex from `frame.poseVertices`. |
-| `GpuLoadPose(poseTable, player)` | A player slot's record. |
+| `GpuLoadPose(poseTable, slot)` | A slot's record. |
 | `GpuPoseToScene(pose, p)`, `GpuPoseNormalToScene(pose, n)` | Model to scene space. |
-| `GpuPoseEntity(pose)` | The controller's entity index. |
+| `GpuPoseEntity(pose)` | The controller's entity index (`0` for the viewmodel). |
+
+The viewmodel's rows have its FOV baked in, so they scale x and y unevenly. `GpuPoseNormalToScene`
+handles that; if you transform normals yourself, use the inverse transpose, not the rows.
 
 Pose positions end up in scene space: project with `camera.sceneViewProj`, or convert with
 `GpuSceneToGame`.
